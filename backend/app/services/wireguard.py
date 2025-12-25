@@ -5,10 +5,8 @@ from sqlalchemy import select
 from app.models import Device
 from app.config import settings
 
-WG_CONF_PATH = "/etc/wireguard/wg_confs/wg0.conf" # LinuxServer image uses this path usually, need to check. 
-# Wait, linuxserver image structure: /config/wg0.conf is the main one usually?
-# Let's check where wg0.conf is. ls -R indicated wg_confs dir.
-# But for the public key, we know it is at /etc/wireguard/server/publickey-server (mapped from host)
+WG_CONF_PATH = "/etc/wireguard/wg_confs/wg0.conf"
+WG_SUBNET = "10.13.13."
 
 # We will read the key dynamically.
 
