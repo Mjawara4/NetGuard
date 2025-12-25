@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # WireGuard
     WG_SERVER_PUBLIC_KEY: str = "SERVER_PUBLIC_KEY_PLACEHOLDER"
-    WG_SERVER_ENDPOINT: str = "74.208.192.189" # VPS IP
+    WG_SERVER_ENDPOINT: str = "74.208.167.166" # VPS IP
     WG_SERVER_PORT: int = 51820
 
     
