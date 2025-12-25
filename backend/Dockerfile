@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     iputils-ping \
     curl \
+    wireguard-tools \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
