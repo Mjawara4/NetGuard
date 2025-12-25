@@ -99,6 +99,46 @@ export default function Devices() {
         return () => clearInterval(interval);
     }, [selectedDevice]);
 
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editDeviceData, setEditDeviceData] = useState({});
+
+    const handleEditClick = (device) => {
+        setEditDeviceData({ ...device });
+        setShowEditModal(true);
+    };
+
+    const handleUpdate = async (e) => {
+        e.preventDefault();
+        try {
+            const { id, ...data } = editDeviceData;
+            // Only send relevant fields
+            const updatePayload = {
+                name: data.name,
+                ip_address: data.ip_address,
+                device_type: data.device_type,
+                site_id: data.site_id,
+                ssh_username: data.ssh_username,
+                ssh_password: data.ssh_password,
+                ssh_port: data.ssh_port,
+                snmp_community: data.snmp_community,
+                is_active: data.is_active
+            };
+
+            await api.put(`/inventory/devices/${id}`, updatePayload);
+            setShowEditModal(false);
+            fetchDevices();
+            // Update selected device view if it's the one being edited
+            if (selectedDevice && selectedDevice.id === id) {
+                // Fetch fresh details or merge
+                setSelectedDevice({ ...selectedDevice, ...updatePayload });
+            }
+        } catch (err) {
+            console.error(err);
+            const msg = err.response?.data?.detail || 'Failed to update device.';
+            alert(`Error: ${JSON.stringify(msg)}`);
+        }
+    };
+
     const [showProvisionModal, setShowProvisionModal] = useState(false);
     const [provisionScript, setProvisionScript] = useState('');
 
@@ -175,7 +215,7 @@ export default function Devices() {
                                                 </td>
                                                 <td className="px-6 sm:px-8 py-5 text-right">
                                                     <div className="flex justify-end gap-3 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button onClick={(e) => { e.stopPropagation(); openDetails(device); }} className="text-blue-600 font-bold text-[10px] uppercase hover:underline">View</button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleEditClick(device); }} className="text-amber-500 font-bold text-[10px] uppercase hover:underline">Edit</button>
                                                         <button onClick={(e) => { e.stopPropagation(); handleDelete(device.id); }} className="text-red-500 font-bold text-[10px] uppercase hover:underline">Del</button>
                                                     </div>
                                                 </td>
@@ -208,6 +248,9 @@ export default function Devices() {
                                                     <Server size={24} />
                                                 </button>
                                             )}
+                                            <button onClick={() => handleEditClick(selectedDevice)} className="p-2 hover:bg-amber-50 text-amber-500 rounded-xl transition-colors" title="Edit Device">
+                                                <Cpu size={24} /> {/* Reusing CPU icon as edit/settings placeholder or use specialized icon if imported */}
+                                            </button>
                                             <button onClick={() => setSelectedDevice(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
                                                 <X size={24} className="text-gray-400" />
                                             </button>
@@ -264,7 +307,7 @@ export default function Devices() {
                 </div>
             </div>
 
-            {/* ADD DEVICE MODAL - Redesigned */}
+            {/* ADD DEVICE MODAL */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
@@ -314,6 +357,62 @@ export default function Devices() {
                             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4">
                                 <button type="button" onClick={() => setShowAddModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
                                 <button type="submit" className="order-1 sm:order-2 flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Register</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* EDIT DEVICE MODAL */}
+            {showEditModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
+                        <div className="bg-amber-500 p-6 sm:p-8 text-white relative flex-shrink-0">
+                            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Edit Device</h3>
+                            <p className="text-amber-100 mt-1 font-medium text-xs sm:text-sm">Update configuration for {editDeviceData.name}</p>
+                            <button onClick={() => setShowEditModal(false)} className="absolute top-6 right-6 text-amber-200 hover:text-white transition-colors p-2">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleUpdate} className="p-6 sm:p-8 space-y-6 overflow-y-auto">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <div className="sm:col-span-2">
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Name</label>
+                                    <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.name || ''} onChange={e => setEditDeviceData({ ...editDeviceData, name: e.target.value })} required />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">IP Address</label>
+                                    <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-mono font-bold text-sm" value={editDeviceData.ip_address || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ip_address: e.target.value })} required />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Type</label>
+                                    <select className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.device_type} onChange={e => setEditDeviceData({ ...editDeviceData, device_type: e.target.value })}>
+                                        <option value="router">Router</option>
+                                        <option value="switch">Switch</option>
+                                        <option value="server">Server</option>
+                                    </select>
+                                </div>
+                                <div className="sm:col-span-2 bg-gray-50 p-6 rounded-2xl space-y-4">
+                                    <div className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Control Credentials</div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Username</label>
+                                            <input className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_username || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_username: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Password</label>
+                                            <input type="password" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="• • • • •" value={editDeviceData.ssh_password || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_password: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Port</label>
+                                            <input type="number" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_port || 22} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_port: parseInt(e.target.value) })} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4">
+                                <button type="button" onClick={() => setShowEditModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
+                                <button type="submit" className="order-1 sm:order-2 flex-1 px-6 py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 shadow-xl shadow-amber-100 transition-all active:scale-95">Save Changes</button>
                             </div>
                         </form>
                     </div>
