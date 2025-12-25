@@ -13,7 +13,8 @@ export default function Devices() {
         name: '',
         ip_address: '',
         device_type: 'router',
-        site_id: ''
+        site_id: '',
+        ssh_port: 22
     });
 
     useEffect(() => {
@@ -280,6 +281,10 @@ export default function Devices() {
                                         <div>
                                             <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Password</label>
                                             <input type="password" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="••••••••" value={newDevice.ssh_password || ''} onChange={e => setNewDevice({ ...newDevice, ssh_password: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Port</label>
+                                            <input type="number" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="22" value={newDevice.ssh_port || 22} onChange={e => setNewDevice({ ...newDevice, ssh_port: parseInt(e.target.value) })} />
                                         </div>
                                     </div>
                                 </div>
