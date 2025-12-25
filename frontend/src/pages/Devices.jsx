@@ -67,7 +67,7 @@ export default function Devices() {
                 if (sitesRes.data.length > 0) {
                     siteId = sitesRes.data[0].id;
                 } else {
-                    alert("No sites found. Please run seed_data.py on backend.");
+                    alert("No sites found. Please create a Site first.");
                     return;
                 }
             }
