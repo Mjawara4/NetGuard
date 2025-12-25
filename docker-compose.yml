@@ -63,9 +63,11 @@ services:
 
   monitor-agent:
     build: ./agents
-    command: python monitor_agent.py
+    command: sh -c "echo 'Adding VPN Route...'; ip route add 10.13.13.0/24 via \$(getent hosts wireguard | awk '{ print \$1 }') || true; python monitor_agent.py"
     volumes:
       - ./agents:/app
+    cap_add:
+      - NET_ADMIN
     environment:
       - API_URL=http://backend:8000/api/v1
       - NETGUARD_API_KEY=agent-secret-key-123
@@ -75,6 +77,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      wireguard:
+        condition: service_started
     networks:
       - netguard-net
     restart: unless-stopped
