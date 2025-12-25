@@ -9,7 +9,7 @@ class SiteBase(BaseModel):
     auto_fix_enabled: bool = False
 
 class SiteCreate(SiteBase):
-    organization_id: UUID4
+    organization_id: Optional[UUID4] = None
 
 class SiteResponse(SiteBase):
     id: UUID4

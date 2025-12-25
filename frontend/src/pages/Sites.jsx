@@ -33,27 +33,13 @@ export default function Sites() {
     const handleAdd = async (e) => {
         e.preventDefault();
         try {
-            // Fetch default org if not present (simple hack for MVP)
-            let orgId = newSite.organization_id;
-            if (!orgId && sites.length > 0) {
-                orgId = sites[0].organization_id;
-            } else if (!orgId) {
-                // If no sites exist, we might be stuck. 
-                // Ideally, we should fetch "me" from user endpoint.
-                // Let's try to get it from a seeded site if possible or hardcode for the known seed.
-                // For this agent task, let's assume one exists or valid UUID.
-                // Actually, the seed_data.py creates an org. We should probably fetch it.
-                // But for now, let's just alert if we can't find one.
-                alert("Cannot determine Organization ID. Please ensure seed data is run.");
-                return;
-            }
-
-            await api.post('/inventory/sites', { ...newSite, organization_id: orgId });
+            // Backend handles organization_id from current user
+            await api.post('/inventory/sites', { ...newSite });
             setShowModal(false);
             setNewSite({ name: '', location: '', auto_fix_enabled: false, organization_id: '' });
             fetchSites();
         } catch (err) {
-            alert('Failed to add site.');
+            alert('Failed to add site. ' + (err.response?.data?.detail || ''));
             console.error(err);
         }
     };
@@ -79,7 +65,7 @@ export default function Sites() {
 
                 {showModal && (
                     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
-                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-300">
                             <div className="bg-blue-600 p-6 sm:p-8 text-white relative">
                                 <h3 className="text-xl font-black uppercase tracking-tight">New Site</h3>
                                 <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Define a new operational area.</p>
