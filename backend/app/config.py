@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "supersecretkey" # Change in production
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # WireGuard
+    WG_SERVER_PUBLIC_KEY: str = "SERVER_PUBLIC_KEY_PLACEHOLDER"
+    WG_SERVER_ENDPOINT: str = "74.208.192.189" # VPS IP
+    WG_SERVER_PORT: int = 51820
+
     
     class Config:
         env_file = ".env"
