@@ -7,3 +7,8 @@ app.netguard.fun {
     reverse_proxy /api/* backend:8000
     reverse_proxy frontend:80
 }
+
+http://74.208.192.189 {
+    reverse_proxy /api/* backend:8000
+    reverse_proxy frontend:80
+}
