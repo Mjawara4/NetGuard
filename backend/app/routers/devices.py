@@ -15,7 +15,8 @@ async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_db), curr
     if not current_user.organization_id:
          raise HTTPException(status_code=403, detail="User does not belong to an organization")
          
-    new_site = Site(**site.dict(), organization_id=current_user.organization_id)
+    site_data = site.dict(exclude={'organization_id'})
+    new_site = Site(**site_data, organization_id=current_user.organization_id)
     db.add(new_site)
     await db.commit()
     await db.refresh(new_site)
