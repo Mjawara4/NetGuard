@@ -14,5 +14,4 @@ venv/
 
 # Deployment scripts
 *.expect
-fix_vps.sh
 install_docker.sh
