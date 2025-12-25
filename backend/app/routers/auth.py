@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.database import get_db
 from app.auth.security import verify_password, create_access_token, get_password_hash
 from app.models import User
@@ -26,7 +26,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         )
     
     access_token = create_access_token(subject=user.id)
-    access_token = create_access_token(subject=user.id)
     return {"access_token": access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserResponse)
@@ -46,11 +45,17 @@ async def signup(user_in: UserRegister, db: AsyncSession = Depends(get_db)):
     await db.flush() # Get the ID
     
     hashed_pw = get_password_hash(user_in.password)
+    # First user is SUPER_ADMIN, others are ORG_ADMIN
+    user_count_res = await db.execute(select(func.count(User.id)))
+    user_count = user_count_res.scalar()
+    
+    role = UserRole.SUPER_ADMIN if user_count == 0 else UserRole.ORG_ADMIN
+
     new_user = User(
         email=user_in.email,
         hashed_password=hashed_pw,
         full_name=user_in.full_name,
-        role=UserRole.ORG_ADMIN,
+        role=role,
         is_active=True,
         organization_id=new_org.id
     )
