@@ -5,13 +5,25 @@ from sqlalchemy import select
 from app.models import Device
 from app.config import settings
 
-WG_CONF_PATH = "/etc/wireguard/wg0.conf"
-WG_SUBNET = "10.13.13."
-WG_SERVER_PUBKEY = "SERVER_PUBLIC_KEY_PLACEHOLDER" # Should be fetched or configured
-# In a real setup, we might read the server's public key from a file or env.
-# For this MVP, we might need to assume it's known or readable.
+WG_CONF_PATH = "/etc/wireguard/wg_confs/wg0.conf" # LinuxServer image uses this path usually, need to check. 
+# Wait, linuxserver image structure: /config/wg0.conf is the main one usually?
+# Let's check where wg0.conf is. ls -R indicated wg_confs dir.
+# But for the public key, we know it is at /etc/wireguard/server/publickey-server (mapped from host)
+
+# We will read the key dynamically.
 
 class WireGuardService:
+    @staticmethod
+    def get_server_public_key():
+        """
+        Reads the server public key from the shared volume.
+        """
+        key_path = "/etc/wireguard/server/publickey-server"
+        if os.path.exists(key_path):
+            with open(key_path, "r") as f:
+                return f.read().strip()
+        return "SERVER_PUBLIC_KEY_NOT_FOUND"
+
     @staticmethod
     def generate_keys():
         """
@@ -45,47 +57,51 @@ class WireGuardService:
         """
         Appends a peer to wg0.conf
         """
-        if not os.path.exists(WG_CONF_PATH):
-            # If running locally without volume mount or valid path, warn but don't crash dev
-            print(f"WARNING: {WG_CONF_PATH} not found. Skipping config write.")
+        # LinuxServer image usually puts active conf in /config/wg_confs/wg0.conf or /config/wg0.conf
+        # Based on ls output: /config/wg_confs/ exists.
+        # Let's target /etc/wireguard/wg_confs/wg0.conf inside the container
+        # (mapped from ./wireguard-config/wg_confs/wg0.conf)
+        
+        conf_path = "/etc/wireguard/wg_confs/wg0.conf"
+        
+        # Fallback if not there (maybe it's in root of config)
+        if not os.path.exists(conf_path):
+             conf_path = "/etc/wireguard/wg0.conf"
+
+        if not os.path.exists(conf_path):
+            print(f"WARNING: {conf_path} not found. Skipping config write.")
             return
 
         peer_block = f"\n[Peer]\nPublicKey = {public_key}\nAllowedIPs = {allowed_ip}/32\n"
         
-        with open(WG_CONF_PATH, "a") as f:
+        with open(conf_path, "a") as f:
             f.write(peer_block)
-            
-        # Reload wireguard if possible?
-        # In docker, we might share a pid namespace or trigger it externally.
-        # For now, we assume simple config append is step 1.
-        # Ideally: subprocess.run(["wg", "syncconf", "wg0", ...]) inside the wg container.
-        # But we are in backend container.
-        # Common pattern: The WG container watches the file or reloads periodically, 
-        # or we just rely on restart. For MVP, we just write the file.
-        pass
 
     @staticmethod
     def generate_mikrotik_script(private_key: str, client_ip: str, server_public_key: str, server_endpoint: str, server_port: int = 51820):
         """
         Generates a MikroTik RouterOS script to configure WireGuard.
+        This script is designed to be copy-pasted directly into the terminal.
         """
-        # Note: MikroTik WireGuard implementation details
-        # Interface name: wireguard1
-        # Peer endpoint: server_endpoint:server_port
-        
+        # If server_public_key was passed as placeholder, try to fetch it
+        if server_public_key == "SERVER_PUBLIC_KEY_PLACEHOLDER":
+             server_public_key = WireGuardService.get_server_public_key()
+
         script = f"""
 # WireGuard Setup for NetGuard
+# Paste this into the Mikrotik Terminal
+
 /interface wireguard
-add listen-port=13231 mtu=1420 name=wireguard-netguard private-key="{private_key}"
+add listen-port=13231 mtu=1420 name=wireguard-netguard private-key="{private_key}" comment="NetGuard VPN"
 
 /ip address
-add address={client_ip}/24 interface=wireguard-netguard network=10.13.13.0
+add address={client_ip}/24 interface=wireguard-netguard network={WG_SUBNET}0
 
 /interface wireguard peers
 add allowed-address=0.0.0.0/0 endpoint-address={server_endpoint} endpoint-port={server_port} \\
-    interface=wireguard-netguard persistent-keepalive=25s public-key="{server_public_key}"
+    interface=wireguard-netguard persistent-keepalive=25s public-key="{server_public_key}" comment="NetGuard Server"
 
 /ip route
-add disabled=no distance=1 dst-address=10.13.13.1/32 gateway=wireguard-netguard routing-table=main scope=30 target-scope=10
+add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguard routing-table=main scope=30 target-scope=10 comment="Route to NetGuard Server"
 """.strip()
         return script
