@@ -33,5 +33,4 @@ echo "🧹 Cleaning up..."
 docker image prune -f
 
 echo "✅ Deployment Complete! NetGuard is running."
-echo "   Frontend: http://localhost (or your domain)"
-echo "   Backend:  http://localhost:8000 (or your domain)"
+echo "   URL: https://app.netguard.fun"
