@@ -3,11 +3,11 @@
     email your-email@example.com
 }
 
-netguard.yourdomain.com {
-    reverse_proxy /api/* netguard-backend:8000
-    reverse_proxy netguard-frontend:80
+netguard.hotfly.net {
+    reverse_proxy /api/* backend:8000
+    reverse_proxy frontend:80
 }
 
-api.netguard.yourdomain.com {
-    reverse_proxy netguard-backend:8000
+api.netguard.hotfly.net {
+    reverse_proxy backend:8000
 }
