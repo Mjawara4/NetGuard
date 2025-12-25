@@ -9,9 +9,8 @@ export default function Sites() {
     const [newSite, setNewSite] = useState({
         name: '',
         location: '',
-        auto_fix_enabled: false,
-        organization_id: '' // Will need to fetch from user or hardcode for MVP
-    });
+        auto_fix_enabled: false
+    }); // Will need to fetch from user or hardcode for MVP
 
     useEffect(() => {
         fetchSites();
@@ -34,13 +33,26 @@ export default function Sites() {
         e.preventDefault();
         try {
             // Backend handles organization_id from current user
-            await api.post('/inventory/sites', { ...newSite });
+            // Ensure we don't send empty strings for optional fields or invalid UUIDs
+            const payload = {
+                name: newSite.name,
+                location: newSite.location,
+                auto_fix_enabled: newSite.auto_fix_enabled
+            };
+
+            await api.post('/inventory/sites', payload);
             setShowModal(false);
-            setNewSite({ name: '', location: '', auto_fix_enabled: false, organization_id: '' });
+            setNewSite({ name: '', location: '', auto_fix_enabled: false });
             fetchSites();
         } catch (err) {
-            alert('Failed to add site. ' + (err.response?.data?.detail || ''));
             console.error(err);
+            let errorMessage = 'Failed to add site.';
+            if (err.response?.data?.detail) {
+                errorMessage += ' ' + (typeof err.response.data.detail === 'object'
+                    ? JSON.stringify(err.response.data.detail)
+                    : err.response.data.detail);
+            }
+            alert(errorMessage);
         }
     };
 
