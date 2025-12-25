@@ -25,8 +25,8 @@ fi
 
 # 3. Build and Start Containers
 echo "🏗️  Building and Starting Containers..."
-docker-compose down
-docker-compose up -d --build
+docker compose down
+docker compose up -d --build
 
 # 4. Prune unused images
 echo "🧹 Cleaning up..."
