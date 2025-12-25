@@ -152,6 +152,32 @@ services:
       - netguard-net
     restart: unless-stopped
 
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: netguard-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=Etc/UTC
+      - SERVERURL=74.208.192.189 # Public IP of VPS
+      - SERVERPORT=51820
+      - PEERS=mikrotik
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+      - ALLOWEDIPS=0.0.0.0/0
+      - LOG_CONFS=true
+    volumes:
+      - ./wireguard-config:/config
+      - /lib/modules:/lib/modules
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
 volumes:
   netguard_data:
   caddy_data:
