@@ -46,7 +46,18 @@ async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db)
     return new_device
 
 @router.get("/devices", response_model=List[DeviceResponse])
-async def get_devices(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_devices(
+    db: AsyncSession = Depends(get_db), 
+    actor = Depends(get_authorized_actor)
+):
+    from app.models import APIKey, User
+    
+    if isinstance(actor, APIKey):
+        # Agents see all devices
+        result = await db.execute(select(Device))
+        return result.scalars().all()
+
+    current_user = actor
     # Filter by user's org via Site
     if current_user.organization_id:
         result = await db.execute(select(Device).join(Site).where(Site.organization_id == current_user.organization_id))
