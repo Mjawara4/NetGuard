@@ -1,0 +1,141 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: netguard
+    volumes:
+      - netguard_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - netguard-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: netguard
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    networks:
+      - netguard-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  monitor-agent:
+    build: ./agents
+    command: python monitor_agent.py
+    volumes:
+      - ./agents:/app
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=agent-secret-key-123
+      - PYTHONUNBUFFERED=1
+      - SSH_USER=${SSH_USER:-admin}
+      - SSH_PASSWORD=${SSH_PASSWORD:-admin}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  diagnoser-agent:
+    build: ./agents
+    command: python diagnoser_agent.py
+    volumes:
+      - ./agents:/app
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=agent-secret-key-123
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  classic-fix-agent:
+    build: ./agents
+    command: python fix_agent.py
+    volumes:
+      - ./agents:/app
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=agent-secret-key-123
+      - PYTHONUNBUFFERED=1
+      - SSH_USER=${SSH_USER:-admin}
+      - SSH_PASSWORD=${SSH_PASSWORD:-admin}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  ai-fix-agent:
+    build: ./agents
+    command: python ai_fix_agent.py
+    volumes:
+      - ./agents:/app
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=agent-secret-key-123
+      - PYTHONUNBUFFERED=1
+      - LLM_PROVIDER=openai
+      - LLM_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SSH_USER=${SSH_USER:-admin}
+      - SSH_PASSWORD=${SSH_PASSWORD:-admin}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+volumes:
+  netguard_data:
+
+networks:
+  netguard-net:
