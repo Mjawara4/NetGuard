@@ -62,6 +62,12 @@ class Device(Base):
     ssh_username = Column(String, nullable=True)
     ssh_password = Column(String, nullable=True) # Store securely in production!
     ssh_port = Column(Integer, default=22)
+    
+    # WireGuard fields
+    wg_public_key = Column(String, nullable=True)
+    wg_ip_address = Column(String, nullable=True)
+    wg_private_key = Column(String, nullable=True)
+
     # Store secrets securely in real world, this is MVP
     created_at = Column(DateTime, default=datetime.utcnow)
     

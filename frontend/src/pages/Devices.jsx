@@ -99,6 +99,21 @@ export default function Devices() {
         return () => clearInterval(interval);
     }, [selectedDevice]);
 
+    const [showProvisionModal, setShowProvisionModal] = useState(false);
+    const [provisionScript, setProvisionScript] = useState('');
+
+    const handleProvision = async () => {
+        if (!selectedDevice) return;
+        try {
+            const res = await api.post(`/inventory/devices/${selectedDevice.id}/provision-wireguard`);
+            setProvisionScript(res.data.mikrotik_script);
+            setShowProvisionModal(true);
+        } catch (e) {
+            console.error(e);
+            alert("Provisioning failed: " + (e.response?.data?.detail || e.message));
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <div className="max-w-7xl mx-auto">
@@ -187,9 +202,16 @@ export default function Devices() {
                                             <h3 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight uppercase leading-tight">{selectedDevice.name}</h3>
                                             <p className="text-gray-400 font-mono text-xs sm:text-sm">{selectedDevice.ip_address}</p>
                                         </div>
-                                        <button onClick={() => setSelectedDevice(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                                            <X size={24} className="text-gray-400" />
-                                        </button>
+                                        <div className="flex gap-2">
+                                            {selectedDevice.device_type === 'router' && (
+                                                <button onClick={handleProvision} className="p-2 hover:bg-blue-50 text-blue-600 rounded-xl transition-colors" title="Setup WireGuard VPN">
+                                                    <Server size={24} />
+                                                </button>
+                                            )}
+                                            <button onClick={() => setSelectedDevice(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
+                                                <X size={24} className="text-gray-400" />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-8">
@@ -294,6 +316,32 @@ export default function Devices() {
                                 <button type="submit" className="order-1 sm:order-2 flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Register</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* WireGuard Provisioning Modal */}
+            {showProvisionModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
+                        <div className="bg-emerald-600 p-6 sm:p-8 text-white relative flex-shrink-0">
+                            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">WireGuard Setup</h3>
+                            <p className="text-emerald-100 mt-1 font-medium text-xs sm:text-sm">Config for {selectedDevice?.name}</p>
+                            <button onClick={() => setShowProvisionModal(false)} className="absolute top-6 right-6 text-emerald-200 hover:text-white transition-colors p-2">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6 sm:p-8 overflow-y-auto">
+                            <p className="text-sm text-gray-600 mb-4 font-bold">Copy and paste this script into your Mikrotik Terminal:</p>
+                            <pre className="bg-gray-900 text-green-400 p-4 rounded-xl text-xs sm:text-sm font-mono overflow-auto whitespace-pre-wrap max-h-[300px] border border-gray-800">
+                                {provisionScript}
+                            </pre>
+                            <div className="mt-6 flex justify-end">
+                                <button onClick={() => { navigator.clipboard.writeText(provisionScript); alert('Copied to clipboard!'); }} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-black text-sm uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-100">
+                                    Copy Script
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

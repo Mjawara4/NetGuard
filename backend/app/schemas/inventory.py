@@ -36,7 +36,16 @@ class DeviceCreate(DeviceBase):
 class DeviceResponse(DeviceBase):
     id: UUID4
     site_id: UUID4
+    wg_ip_address: Optional[str] = None
     created_at: datetime
     
     class Config:
         from_attributes = True
+
+class WireGuardProvisionResponse(BaseModel):
+    device_id: UUID4
+    wg_ip_address: str
+    wg_public_key: str
+    wg_private_key: str
+    mikrotik_script: str
+
