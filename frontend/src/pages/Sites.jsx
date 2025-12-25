@@ -51,6 +51,8 @@ export default function Sites() {
                 errorMessage += ' ' + (typeof err.response.data.detail === 'object'
                     ? JSON.stringify(err.response.data.detail)
                     : err.response.data.detail);
+            } else if (err.message) {
+                errorMessage += ' ' + err.message;
             }
             alert(errorMessage);
         }
@@ -76,8 +78,8 @@ export default function Sites() {
                 </div>
 
                 {showModal && (
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
-                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-300">
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-300 safe-area-padding">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-auto overflow-hidden animate-in zoom-in-95 duration-300">
                             <div className="bg-blue-600 p-6 sm:p-8 text-white relative">
                                 <h3 className="text-xl font-black uppercase tracking-tight">New Site</h3>
                                 <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Define a new operational area.</p>

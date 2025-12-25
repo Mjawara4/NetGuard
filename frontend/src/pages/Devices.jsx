@@ -246,9 +246,9 @@ export default function Devices() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-[60] animate-in fade-in duration-300">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
                         <div className="bg-blue-600 p-6 sm:p-8 text-white relative flex-shrink-0">
-                            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight">Add New Infrastructure</h3>
+                            <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Add New Infrastructure</h3>
                             <p className="text-blue-100 mt-1 font-medium text-xs sm:text-sm">Expand your NetGuard network.</p>
-                            <button onClick={() => setShowAddModal(false)} className="absolute top-6 sm:top-8 right-6 sm:right-8 text-blue-200 hover:text-white transition-colors">
+                            <button onClick={() => setShowAddModal(false)} className="absolute top-6 right-6 text-blue-200 hover:text-white transition-colors p-2">
                                 <X size={24} />
                             </button>
                         </div>
