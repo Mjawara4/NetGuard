@@ -144,10 +144,16 @@ export default function SettingsPage() {
                         <div className="p-6 bg-blue-50/50 border-b border-blue-100">
                             <h2 className="text-lg font-bold text-blue-900 flex items-center gap-2">
                                 <Shield className="w-5 h-5 text-blue-600" />
-                                Integration Guide
+                                API Integration Reference
                             </h2>
                         </div>
                         <div className="p-6 space-y-6 text-sm text-gray-600 leading-relaxed">
+                            <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <h3 className="font-bold text-gray-900 mb-1 uppercase text-[10px] tracking-widest">Base API URL</h3>
+                                <div className="font-mono text-blue-600 select-all">https://app.netguard.fun/api/v1</div>
+                                <p className="text-[10px] text-gray-400 mt-2">All endpoints below are relative to this URL.</p>
+                            </div>
+
                             <div className="space-y-2">
                                 <h3 className="font-bold text-gray-900">1. Generate API Key</h3>
                                 <p>
@@ -157,8 +163,23 @@ export default function SettingsPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">2. Configure Hotfly Integration</h3>
-                                <p>In your Hotfly.net admin panel (or other external system), you will need to configure the Webhook or API endpoint settings to communicate with NetGuard.</p>
+                                <h3 className="font-bold text-gray-900">2. Get your Device IDs</h3>
+                                <p>To interact with a specific router, you need its ID. You can fetch all your devices using your API key:</p>
+                                <div className="mt-2 text-[10px] sm:text-xs">
+                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono overflow-x-auto border border-gray-700">
+                                        GET /api/v1/inventory/devices
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-1 italic">Include the <span className="font-mono">X-API-Key</span> header in this request.</p>
+                                    <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-tighter">ID Format Example:</p>
+                                    <code className="text-[10px] bg-gray-100 p-1 rounded font-mono text-gray-600 block truncate">
+                                        b917349a-eb31-41ea-8f79-5e80d0195201
+                                    </code>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h3 className="font-bold text-gray-900">3. Configure Hotfly Integration</h3>
+                                <p>In your Hotfly.net admin panel, you can now generate vouchers by sending a POST request to NetGuard.</p>
 
                                 <div className="mt-2">
                                     <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1">Target Endpoint:</p>
@@ -181,7 +202,7 @@ export default function SettingsPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">3. Get Connected Users</h3>
+                                <h3 className="font-bold text-gray-900">4. Get Connected Users</h3>
                                 <p>To fetch a list of currently active users on a specific device:</p>
 
                                 <div className="mt-2">
@@ -193,7 +214,7 @@ export default function SettingsPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">4. Get Hotspot Profiles</h3>
+                                <h3 className="font-bold text-gray-900">5. Get Hotspot Profiles</h3>
                                 <p>To fetch a list of available hotspot user profiles (e.g., bandwidth plans) from the device:</p>
 
                                 <div className="mt-2">
@@ -205,7 +226,7 @@ export default function SettingsPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">5. Authenticate Requests</h3>
+                                <h3 className="font-bold text-gray-900">6. Authenticate Requests</h3>
                                 <p>All requests to NetGuard must be authenticated. Include your generated API Key in the HTTP headers.</p>
 
                                 <div className="mt-2">
@@ -214,6 +235,11 @@ export default function SettingsPage() {
                                         X-API-Key: YOUR_GENERATED_KEY
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h3 className="font-bold text-gray-900">7. Advanced Integration</h3>
+                                <p>For full API capabilities including Inventory management and Real-time monitoring, please refer to the <span className="font-mono text-blue-600 font-bold">API_KEYS.md</span> file in the project repository.</p>
                             </div>
 
                             <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">

@@ -53,22 +53,22 @@ class WireGuardService:
     @staticmethod
     def add_peer_to_conf(public_key: str, allowed_ip: str):
         """
-        Appends a peer to wg0.conf
+        Appends a peer to wg0.conf if it does not already exist.
         """
-        # LinuxServer image usually puts active conf in /config/wg_confs/wg0.conf or /config/wg0.conf
-        # Based on ls output: /config/wg_confs/ exists.
-        # Let's target /etc/wireguard/wg_confs/wg0.conf inside the container
-        # (mapped from ./wireguard-config/wg_confs/wg0.conf)
-        
         conf_path = "/etc/wireguard/wg_confs/wg0.conf"
         
-        # Fallback if not there (maybe it's in root of config)
         if not os.path.exists(conf_path):
              conf_path = "/etc/wireguard/wg0.conf"
 
         if not os.path.exists(conf_path):
             print(f"WARNING: {conf_path} not found. Skipping config write.")
             return
+
+        # Check if the public key is already in the file
+        with open(conf_path, "r") as f:
+            if public_key in f.read():
+                # print(f"DEBUG: Peer {public_key} already in {conf_path}. Skipping.")
+                return
 
         peer_block = f"\n[Peer]\nPublicKey = {public_key}\nAllowedIPs = {allowed_ip}/32\n"
         
@@ -101,5 +101,21 @@ add allowed-address=0.0.0.0/0 endpoint-address={server_endpoint} endpoint-port={
 
 /ip route
 add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguard routing-table=main scope=30 target-scope=10 comment="Route to NetGuard Server"
+
+# ---------------------------------------------------
+# SECURITY & ACCESS SETUP (REQUIRED)
+# ---------------------------------------------------
+
+# 1. Enable API Service (Port 8728) and Allow VPN Access
+/ip service
+set api disabled=no port=8728 address=0.0.0.0/0
+
+# 2. Allow Input Traffic from NetGuard VPN (Firewall)
+/ip firewall filter
+add chain=input src-address={WG_SUBNET}0/24 action=accept place-before=0 comment="Allow NetGuard Monitoring"
+
+# 3. Create NetGuard User (Optional but Recommended)
+# Replace 'securepassword' with a strong password!
+# /user add name=netguard group=full password="securepassword" comment="NetGuard Agent"
 """.strip()
         return script

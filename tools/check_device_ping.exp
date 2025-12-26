@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn ssh root@74.208.167.166 "docker exec netguard-wireguard ping -c 3 10.13.13.2; docker exec netguard-wireguard ping -c 3 10.20.1.0"
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof

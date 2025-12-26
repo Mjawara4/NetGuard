@@ -1,0 +1,6 @@
+#!/usr/bin/expect -f
+set timeout 60
+spawn ssh root@74.208.192.189 "cd ~/NetGuard && docker compose logs backend --tail 200 > /tmp/backend_logs.txt && cat /tmp/backend_logs.txt"
+expect "password:"
+send "KFh6gyBj\r"
+expect eof

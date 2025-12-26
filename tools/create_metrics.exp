@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn ssh root@74.208.167.166 "cd ~/NetGuard && docker compose exec db psql -U postgres -d netguard -c \"CREATE TABLE IF NOT EXISTS metrics (time TIMESTAMPTZ NOT NULL, device_id UUID NOT NULL, metric_type TEXT NOT NULL, value DOUBLE PRECISION NOT NULL, unit TEXT, meta_data JSONB, PRIMARY KEY (time, device_id));\""
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof

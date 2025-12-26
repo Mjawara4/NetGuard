@@ -1,0 +1,9 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn ssh root@74.208.167.166 "docker exec netguard-monitor-agent-1 python -c \"import socket; s=socket.socket(); s.settimeout(5); print('Open' if s.connect_ex(('10.13.13.2', 8728)) == 0 else 'Closed'); s.close()\""
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof

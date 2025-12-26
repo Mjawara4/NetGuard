@@ -1,0 +1,6 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn ssh root@74.208.192.189 "cat ~/NetGuard/wireguard-config/peer_mikrotik/peer_mikrotik.conf"
+expect "password:"
+send "KFh6gyBj\r"
+expect eof

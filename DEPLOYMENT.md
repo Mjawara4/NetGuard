@@ -43,6 +43,9 @@ The app is now running! But you need to set your domain and passwords.
    ```
 
 **Done!** Your app should be live at your domain.
+ 
+## API & Hotfly Integration
+If you need to connect external services (like Hotfly.net), please refer to the [API Key Documentation](API_KEYS.md) for full integration steps and endpoint details.
 
 ## Troubleshooting
 **"User sessions running outdated binaries" Screen:**
