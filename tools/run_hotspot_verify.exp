@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn scp /Users/muhammedj/Downloads/netguard/verify_hotspot_remote.py root@74.208.167.166:~/NetGuard/verify_hotspot_remote.py
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof
+
+spawn ssh root@74.208.167.166 "cd ~/NetGuard && docker compose exec -T backend python /app/inputs/verify_hotspot_remote.py"
+# Wait? No, cannot mount into running container easily without volume.
+# Alternative: Run requests from HOST? VPS host has python? Usually.
+# If VPS host doesn't have requests installed, it might fail.
+# Safest: Run inside backend container using `cat` to create file or copy it.
+# Let's copy to container.
+spawn ssh root@74.208.167.166 "docker cp ~/NetGuard/verify_hotspot_remote.py netguard-backend-1:/app/verify.py && docker exec netguard-backend-1 python verify.py"
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof

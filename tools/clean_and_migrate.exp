@@ -1,0 +1,6 @@
+#!/usr/bin/expect -f
+set timeout 120
+spawn ssh root@74.208.192.189 "cd ~/NetGuard && echo '🔥 Dropping corrupted tables...' && docker compose exec db psql -U postgres -d netguard -c 'DROP TABLE IF EXISTS metrics CASCADE; DROP TABLE IF EXISTS alembic_version;' && echo '✨ Re-running migrations...' && docker compose exec backend alembic upgrade head && echo '🌱 Seeding initial data...' && docker compose exec backend python seed_user.py"
+expect "password:"
+send "KFh6gyBj\r"
+expect eof

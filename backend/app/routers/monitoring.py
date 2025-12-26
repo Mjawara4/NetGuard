@@ -25,11 +25,11 @@ async def create_metric(metric: MetricCreate, db: AsyncSession = Depends(get_db)
     return new_metric
 
 @router.get("/metrics/latest", response_model=List[MetricResponse])
-async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, limit: int = 20, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, limit: int = 20, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     from uuid import UUID
     
     # Verify ownership
-    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     if not dev_res.scalars().first():
          raise HTTPException(status_code=404, detail="Device not found")
          
@@ -42,13 +42,13 @@ async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, 
     return result.scalars().all()
 
 @router.get("/metrics/history", response_model=List[MetricResponse])
-async def get_historical_metrics(device_id: str, start_time: str, end_time: str = None, metric_type: Optional[str] = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_historical_metrics(device_id: str, start_time: str, end_time: str = None, metric_type: Optional[str] = None, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     from uuid import UUID
     from datetime import datetime
     import traceback
     
     # Verify ownership
-    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     if not dev_res.scalars().first():
          raise HTTPException(status_code=404, detail="Device not found")
     
@@ -79,8 +79,8 @@ async def get_historical_metrics(device_id: str, start_time: str, end_time: str 
         return []
 
 @router.get("/alerts", response_model=List[AlertResponse])
-async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    result = await db.execute(select(Alert).join(Device).join(Site).where(Site.organization_id == current_user.organization_id).order_by(desc(Alert.created_at)).offset(skip).limit(limit))
+async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    result = await db.execute(select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Alert.created_at)).offset(skip).limit(limit))
     return result.scalars().all()
 
 @router.post("/alerts", response_model=AlertResponse)

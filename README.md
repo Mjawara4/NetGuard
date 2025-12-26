@@ -50,3 +50,7 @@ python monitor_agent.py
 1. Enable 'auto-fix' for a Site.
 2. If an alert with 'Offline' status is detected, the Diagnoser will flag it.
 3. FixAgent will attempt to resolve it.
+## API Integration (Hotfly & Others)
+
+For detailed instructions on authenticating with API Keys, fetching Device IDs, and generating Hotspot vouchers via external services like Hotfly.net, please see the [API Integration Guide](API_KEYS.md).
+

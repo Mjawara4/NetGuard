@@ -75,7 +75,7 @@ def report_metric(device_id, metric_type, value, unit=None, meta_data=None):
     except Exception as e:
         logger.error(f"Failed to report metric: {e}")
 
-def get_mikrotik_stats(device_ip, username, password):
+def get_mikrotik_stats(device_ip, username, password, port=8728):
     """
     Connects to MikroTik Router via API and fetches resources.
     Returns a dict of metrics.
@@ -86,7 +86,8 @@ def get_mikrotik_stats(device_ip, username, password):
         connection = routeros_api.RouterOsApiPool(
             device_ip, 
             username=username, 
-            password=password, 
+            password=password,
+            port=port,
             plaintext_login=True,
             use_ssl=False
         )
@@ -215,9 +216,12 @@ def run_agent():
                         user = device.get('ssh_username') or SSH_USER
                         # Use device specific password if exists, else global
                         pwd = device.get('ssh_password') or SSH_PASSWORD 
+                        db_port = int(device.get('ssh_port', 8728))
+                        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
+                        port = 8728 if db_port == 22 else db_port
                         
-                        logger.info(f"Attempting MikroTik login for {ip} with user {user}")
-                        mt_metrics = get_mikrotik_stats(ip, user, pwd)
+                        logger.info(f"Attempting MikroTik login for {ip} with user {user} on port {port}")
+                        mt_metrics = get_mikrotik_stats(ip, user, pwd, port)
                         
                         for m_type, m_val, m_unit, m_meta in mt_metrics:
                             report_metric(dev_id, m_type, m_val, m_unit, m_meta)

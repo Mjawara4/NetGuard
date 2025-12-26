@@ -1,12 +1,13 @@
-from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from typing import Generator, Optional, Union
+from fastapi import Depends, HTTPException, status, Header, Security
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.auth.security import settings
-from app.models import User
+from app.models import User, APIKey
 from sqlalchemy import select
+from app.models.core import UserRole
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_PREFIX}/auth/login", auto_error=False)
 
@@ -35,13 +36,7 @@ async def get_current_user(
         raise credentials_exception
     return user
 
-    if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
-
-from fastapi import Header, Security
-from fastapi.security import APIKeyHeader
-from app.models import APIKey
+    return user
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -64,8 +59,6 @@ async def get_api_key(
             detail="Invalid API Key",
         )
     return api_key
-
-from typing import Union
 
 async def get_authorized_actor(
     api_key_header: Optional[str] = Security(api_key_header),
@@ -99,7 +92,7 @@ async def get_authorized_actor(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-from app.models.core import UserRole
+
 
 async def get_current_super_admin(
     current_user: User = Depends(get_current_user)

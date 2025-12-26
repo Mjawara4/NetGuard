@@ -8,6 +8,11 @@ from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import Device, User, Site
 import routeros_api
 from uuid import UUID
+import random
+import string
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -42,26 +47,31 @@ class HotspotActive(BaseModel):
     bytes_in: int
     bytes_out: int
 
-def get_api_pool(ip, username, password):
+def get_api_pool(ip, username, password, port=8728):
     connection = routeros_api.RouterOsApiPool(
         ip, 
         username=username, 
-        password=password, 
-        plaintext_login=True
+        password=password,
+        port=port,
+        plaintext_login=True,
+        use_ssl=False
     )
     return connection
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
-async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Fetch device with org check
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
     try:
-        # Use simple SSH or API? Requirements said routeros_api
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
+        db_port = getattr(device, 'ssh_port', 8728) or 8728
+        port = 8728 if int(db_port) == 22 else db_port
+        
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
         users = api.get_resource('/ip/hotspot/user').get()
@@ -77,7 +87,7 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
         ) for u in users]
         
     except Exception as e:
-        print(f"Hotspot API Error: {e}")
+        logger.error(f"Hotspot API Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{device_id}/users")
@@ -88,7 +98,8 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
          raise HTTPException(status_code=404, detail="Device not found")
          
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
         # Check if exists
@@ -105,18 +116,19 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
         return {"status": "success"}
     except Exception as e:
         if "User already exists" in str(e): raise e
-        print(f"Create User Error: {e}")
+        logger.error(f"Create User Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/profiles", response_model=List[dict])
-async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
         profiles = api.get_resource('/ip/hotspot/user/profile').get()
@@ -124,18 +136,19 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         
         return profiles
     except Exception as e:
-        print(f"Hotspot Profiles Error: {e}")
+        logger.error(f"Hotspot Profiles Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{device_id}/profiles")
-async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
          
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
         params = {
@@ -152,14 +165,15 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{device_id}/profiles/{profile_name}")
-async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
         # In RouterOS API, removing by name usually requires finding the .id first or using the name if the library supports it
@@ -176,14 +190,15 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/active", response_model=List[HotspotActive])
-async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         active = api.get_resource('/ip/hotspot/active').get()
         connection.disconnect()
@@ -197,18 +212,19 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), c
             bytes_out=int(a.get('bytes-out', 0))
         ) for a in active]
     except Exception as e:
-        print(f"Active Users Error: {e}")
+        logger.error(f"Active Users Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/{device_id}/active/{active_id}")
-async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         api.get_resource('/ip/hotspot/active').remove(id=active_id)
         connection.disconnect()
@@ -218,8 +234,6 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
 
 @router.post("/{device_id}/users/batch")
 async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    import random
-    import string
     
     res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = res.scalars().first()
@@ -227,7 +241,8 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         raise HTTPException(status_code=404, detail="Device not found")
         
     try:
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin')
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         resource = api.get_resource('/ip/hotspot/user')
         
@@ -270,7 +285,7 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         connection.disconnect()
         return generated
     except Exception as e:
-        print(f"Batch Gen Error: {e}")
+        logger.error(f"Batch Gen Error: {e}")
         # Mock
         return [
             {"username": f"{batch.prefix}123", "password": "123"},

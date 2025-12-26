@@ -8,7 +8,7 @@ app.netguard.fun {
     reverse_proxy frontend:80
 }
 
-74.208.192.189 {
+74.208.167.166 {
     tls internal
     reverse_proxy /api/* backend:8000
     reverse_proxy frontend:80

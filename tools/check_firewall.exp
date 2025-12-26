@@ -1,0 +1,13 @@
+#!/usr/bin/expect -f
+set timeout 20
+spawn ssh root@74.208.167.166 "ufw status verbose"
+expect {
+  "Are you sure you want to continue connecting" {
+    send "yes\r"
+    exp_continue
+  }
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof

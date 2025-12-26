@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from typing import List
+from uuid import UUID
 from app.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
-from app.models import Device, Site, User
+from app.models import Device, Site, User, APIKey, Metric, Alert
 from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse
 from app.services.wireguard import WireGuardService
 from app.config import settings
@@ -13,32 +14,38 @@ from app.config import settings
 router = APIRouter()
 
 @router.post("/sites", response_model=SiteResponse)
-async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Permission check: Ensure user belongs to an org
-    if not current_user.organization_id:
-         raise HTTPException(status_code=403, detail="User does not belong to an organization")
+async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Permission check: Ensure actor belongs to an org
+    if not actor.organization_id:
+         raise HTTPException(status_code=403, detail="Actor does not belong to an organization")
          
     site_data = site.dict(exclude={'organization_id'})
-    new_site = Site(**site_data, organization_id=current_user.organization_id)
+    new_site = Site(**site_data, organization_id=actor.organization_id)
     db.add(new_site)
     await db.commit()
     await db.refresh(new_site)
     return new_site
 
 @router.get("/sites", response_model=List[SiteResponse])
-async def get_sites(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_sites(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    
+    if isinstance(actor, APIKey):
+        result = await db.execute(select(Site).where(Site.organization_id == actor.organization_id))
+        return result.scalars().all()
+        
+    current_user = actor
     # Filter by user's org
     if current_user.organization_id:
         result = await db.execute(select(Site).where(Site.organization_id == current_user.organization_id))
     else:
-        # Super admin sees all? or none? For now all
+        # Super admin sees all
         result = await db.execute(select(Site))
     return result.scalars().all()
 
 @router.post("/devices", response_model=DeviceResponse)
-async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Verify Site belongs to User's Org
-    site_res = await db.execute(select(Site).where(Site.id == device.site_id, Site.organization_id == current_user.organization_id))
+async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Verify Site belongs to Org
+    site_res = await db.execute(select(Site).where(Site.id == device.site_id, Site.organization_id == actor.organization_id))
     if not site_res.scalars().first():
         raise HTTPException(status_code=404, detail="Site not found or access denied")
 
@@ -53,11 +60,10 @@ async def get_devices(
     db: AsyncSession = Depends(get_db), 
     actor = Depends(get_authorized_actor)
 ):
-    from app.models import APIKey, User
     
     if isinstance(actor, APIKey):
-        # Agents see all devices
-        result = await db.execute(select(Device))
+        # Filter by API key's org
+        result = await db.execute(select(Device).join(Site).where(Site.organization_id == actor.organization_id))
         return result.scalars().all()
 
     current_user = actor
@@ -70,14 +76,20 @@ async def get_devices(
         result = await db.execute(select(Device))
         return result.scalars().all()
 
+@router.get("/devices/{device_id}", response_model=DeviceResponse)
+async def get_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Verify ownership
+    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    device = result.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
 @router.delete("/devices/{device_id}", status_code=204)
-async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from uuid import UUID
-    from sqlalchemy import delete
-    from app.models import Metric, Alert
+async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     
     # Check existence and ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -94,10 +106,9 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), curr
     return
 
 @router.put("/devices/{device_id}", response_model=DeviceResponse)
-async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from uuid import UUID
+async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -108,14 +119,12 @@ async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSe
         
     await db.commit()
     await db.refresh(device)
-    await db.refresh(device)
     return device
 
 @router.post("/devices/{device_id}/provision-wireguard", response_model=WireGuardProvisionResponse)
-async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    from uuid import UUID
+async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == current_user.organization_id))
+    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

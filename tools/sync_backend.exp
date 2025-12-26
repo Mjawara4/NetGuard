@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+set timeout 30
+spawn scp /Users/muhammedj/Downloads/netguard/backend/app/services/wireguard.py root@74.208.167.166:~/NetGuard/backend/app/services/wireguard.py
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof
+
+spawn scp /Users/muhammedj/Downloads/netguard/backend/app/routers/hotspot.py root@74.208.167.166:~/NetGuard/backend/app/routers/hotspot.py
+expect {
+  "password:" {
+    send "DCaoY6yl\r"
+  }
+}
+expect eof
