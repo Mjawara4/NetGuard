@@ -44,7 +44,7 @@ def ping_host(host):
     """
     try:
         # Linux/Mac ping
-        cmd = ["ping", "-c", "1", "-W", "2", host]
+        cmd = ["ping", "-c", "3", "-W", "5", host]
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, universal_newlines=True)
         
         if "time=" in output:
