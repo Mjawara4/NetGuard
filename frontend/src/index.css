@@ -5,6 +5,10 @@
 body {
   background-color: #f3f4f6;
   color: #1f2937;
+  touch-action: manipulation;
+  /* Improves touch response */
+  -webkit-tap-highlight-color: transparent;
+  /* Removes gray highlight on tap */
 }
 
 @layer components {
