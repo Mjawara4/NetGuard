@@ -36,6 +36,24 @@ class AlertResponse(AlertBase):
     class Config:
         from_attributes = True
 
+class AlertUpdate(BaseModel):
+    status: AlertStatus
+    resolution_summary: Optional[str] = None
+
+# AutoFixAction
+class AutoFixActionCreate(BaseModel):
+    action_type: str
+    status: str
+    log_output: Optional[str] = None
+
+class AutoFixActionResponse(AutoFixActionCreate):
+    id: UUID4
+    alert_id: UUID4
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 # Incident
 class IncidentResponse(BaseModel):
     id: UUID4

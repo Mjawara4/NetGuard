@@ -3,8 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import List, Optional
 from app.database import get_db
-from app.models import Metric, Alert, Incident
-from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate
+from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus
+from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse
 from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import User, Device, Site
 from uuid import UUID
@@ -104,3 +104,43 @@ async def get_incidents(db: AsyncSession = Depends(get_db), current_user: User =
     # Let's filter by Organization if schema supports it, otherwise return all (risk) or none.
     # Safe default: return empty for now unless we added org to incident.
     return []
+
+@router.patch("/alerts/{alert_id}", response_model=AlertResponse)
+async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Verify ownership via device -> site
+    # This is a bit complex efficiently, so we just fetch alert and check ownership
+    stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+    result = await db.execute(stmt)
+    alert_obj = result.scalars().first()
+    
+    if not alert_obj:
+        raise HTTPException(status_code=404, detail="Alert not found")
+        
+    alert_obj.status = update.status
+    if update.status in [AlertStatus.RESOLVED, AlertStatus.AUTO_FIXED]:
+        alert_obj.resolved_at = datetime.utcnow()
+        
+    await db.commit()
+    await db.refresh(alert_obj)
+    return alert_obj
+
+@router.post("/alerts/{alert_id}/fix-actions", response_model=AutoFixActionResponse)
+async def create_fix_action(alert_id: str, action: AutoFixActionCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Verify alert ownership
+    stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+    result = await db.execute(stmt)
+    alert_obj = result.scalars().first()
+    
+    if not alert_obj:
+        raise HTTPException(status_code=404, detail="Alert not found")
+        
+    new_action = AutoFixAction(
+        alert_id=UUID(alert_id),
+        action_type=action.action_type,
+        status=action.status,
+        log_output=action.log_output
+    )
+    db.add(new_action)
+    await db.commit()
+    await db.refresh(new_action)
+    return new_action

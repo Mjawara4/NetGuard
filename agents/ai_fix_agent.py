@@ -137,22 +137,58 @@ def execute_ssh_command(host, command):
 
 def execute_fix(action, command, device_ip):
     logger.info(f"Executing AI Auto-Fix: {action} on {device_ip}")
+    output = None
     
     if action == "IGNORE":
-        return True
+        return True, "Ignored by AI"
         
     if command and device_ip:
         logger.info(f"Running via SSH: {command}")
         output = execute_ssh_command(device_ip, command)
         if output is not None:
              logger.info(f"Command Output: {output}")
-             return True
+             return True, output
         else:
-             return False
+             return False, "SSH Command Failed"
              
     # fallback simulated success for non-ssh actions if any
     time.sleep(2)
-    return True
+    return True, "Simulated Action Success"
+
+def report_fix_action(alert_id, action, status, output):
+    """
+    Report the action taken to the backend.
+    """
+    try:
+        payload = {
+            "action_type": action,
+            "status": status,
+            "log_output": output
+        }
+        resp = requests.post(f"{API_URL}/monitoring/alerts/{alert_id}/fix-actions", json=payload, headers=get_headers())
+        if resp.status_code == 200:
+            logger.info(f"Action reported for alert {alert_id}")
+        else:
+            logger.error(f"Failed to report action: {resp.text}")
+    except Exception as e:
+        logger.error(f"Error reporting fix action: {e}")
+
+def update_alert_status(alert_id, status, resolution_summary=None):
+    """
+    Update the alert status in the backend.
+    """
+    try:
+        payload = {
+            "status": status,
+            "resolution_summary": resolution_summary
+        }
+        resp = requests.patch(f"{API_URL}/monitoring/alerts/{alert_id}", json=payload, headers=get_headers())
+        if resp.status_code == 200:
+            logger.info(f"Alert {alert_id} marked as {status}")
+        else:
+            logger.error(f"Failed to update alert status: {resp.text}")
+    except Exception as e:
+        logger.error(f"Error updating alert status: {e}")
 
 def run_agent():
     logger.info("Starting AI Fix Agent...")
@@ -178,19 +214,24 @@ def run_agent():
                              logger.info(f"AI Decision: {decision['action']} ({decision['analysis']})")
                              
                              if decision['action'] in ['REBOOT', 'RESTART_SERVICE', 'CLEAR_CACHE', 'IPSLA_RESET']:
-                                 success = execute_fix(decision['action'], decision.get('command'), device.get('ip_address'))
+                                 success, output = execute_fix(decision['action'], decision.get('command'), device.get('ip_address'))
+                                 
+                                 status_code = "success" if success else "failed"
+                                 report_fix_action(alert['id'], decision['action'], status_code, output or decision['analysis'])
+                                 
                                  if success:
                                      logger.info(f"Fix executed. Marking alert resolved.")
-                                     # Resolve alert (mock)
-                                     # requests.patch(...)
+                                     update_alert_status(alert['id'], "auto_fixed", resolution_summary=decision['analysis'])
+                                 
                              elif decision['action'] == 'ESCALATE':
                                  logger.info("AI decided to escalate to human.")
+                                 report_fix_action(alert['id'], "ESCALATE", "pending", decision['analysis'])
+                                 
                              else:
                                  logger.info("AI suggested no action or ignore.")
+                                 report_fix_action(alert['id'], "IGNORE", "skipped", decision['analysis'])
                          else:
                              logger.warning("AI failed to decide. Falling back to Classic rules.")
-                             # This would be where fallback logic triggers or we just let the other agent handle it?
-                             # Ideally, we have one 'FixManager' or we lock the alert.
                              
         except Exception as e:
             logger.exception(f"AI Agent loop error: {e}")

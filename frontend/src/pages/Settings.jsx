@@ -147,112 +147,119 @@ export default function SettingsPage() {
                                 API Integration Reference
                             </h2>
                         </div>
-                        <div className="p-6 space-y-6 text-sm text-gray-600 leading-relaxed">
+                        <div className="p-6 space-y-6 text-sm text-gray-600 leading-relaxed max-h-[calc(100vh-200px)] overflow-y-auto">
+
+                            {/* 1. Authentication */}
+                            <div className="space-y-2">
+                                <h3 className="font-bold text-gray-900">1. Authentication</h3>
+                                <p>All requests must include your API Key in the header.</p>
+                                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs border border-gray-700">
+                                    X-API-Key: ng_sk_...
+                                </div>
+                            </div>
+
+                            {/* 2. Base URL */}
                             <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                                 <h3 className="font-bold text-gray-900 mb-1 uppercase text-[10px] tracking-widest">Base API URL</h3>
-                                <div className="font-mono text-blue-600 select-all">https://app.netguard.fun/api/v1</div>
+                                <div className="font-mono text-blue-600 select-all break-all">https://app.netguard.fun/api/v1</div>
                                 <p className="text-[10px] text-gray-400 mt-2">All endpoints below are relative to this URL.</p>
                             </div>
 
+                            {/* 3. Scope */}
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">1. Generate API Key</h3>
-                                <p>
-                                    Click the <span className="font-bold text-blue-600">"Create New Key"</span> button on the left.
-                                    Give it a descriptive name (e.g., "Production Hotfly Server") so you can identify it later.
-                                </p>
+                                <h3 className="font-bold text-gray-900">3. Scope & Permissions</h3>
+                                <ul className="list-disc list-inside space-y-1 text-xs">
+                                    <li><strong>Org Scoped:</strong> Keys only access your organization's data.</li>
+                                    <li><strong>Full Access:</strong> Manage Devices, Sites, Hotspots, and Monitoring.</li>
+                                </ul>
                             </div>
 
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">2. Get your Device IDs</h3>
-                                <p>To interact with a specific router, you need its ID. You can fetch all your devices using your API key:</p>
-                                <div className="mt-2 text-[10px] sm:text-xs">
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono overflow-x-auto border border-gray-700">
-                                        GET /api/v1/inventory/devices
+                            {/* 4. Endpoints */}
+                            <div className="space-y-4">
+                                <h3 className="font-bold text-gray-900 border-b pb-2">4. Key Endpoints</h3>
+
+                                {/* Inventory */}
+                                <div>
+                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">📦 Inventory</h4>
+                                    <div className="space-y-2">
+                                        <div>
+                                            <p className="text-xs font-mono text-purple-600">GET /inventory/devices</p>
+                                            <p className="text-[10px] text-gray-500">List all devices (UUIDs required for other calls)</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-purple-600">GET /inventory/sites</p>
+                                            <p className="text-[10px] text-gray-500">List all sites</p>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1 italic">Include the <span className="font-mono">X-API-Key</span> header in this request.</p>
-                                    <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-tighter">ID Format Example:</p>
-                                    <code className="text-[10px] bg-gray-100 p-1 rounded font-mono text-gray-600 block truncate">
-                                        b917349a-eb31-41ea-8f79-5e80d0195201
-                                    </code>
                                 </div>
-                            </div>
 
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">3. Configure Hotfly Integration</h3>
-                                <p>In your Hotfly.net admin panel, you can now generate vouchers by sending a POST request to NetGuard.</p>
-
-                                <div className="mt-2">
-                                    <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1">Target Endpoint:</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs overflow-x-auto border border-gray-700">
-                                        POST /api/v1/hotspot/{'{device_id}'}/users/batch
+                                {/* Hotspot */}
+                                <div>
+                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">🎫 Hotspot (Hotfly)</h4>
+                                    <div className="space-y-2">
+                                        <div>
+                                            <p className="text-xs font-mono text-blue-600">POST /hotspot/{'{id}'}/users/batch</p>
+                                            <p className="text-[10px] text-gray-500">Batch generate vouchers</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{id}'}/active</p>
+                                            <p className="text-[10px] text-gray-500">List active users</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{id}'}/profiles</p>
+                                            <p className="text-[10px] text-gray-500">List hotspot profiles</p>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-gray-500 mt-1 italic">Replace <span className="font-mono">{'{device_id}'}</span> with the actual ID of the router.</p>
-
-                                    <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1 mt-3">JSON Body Example:</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs overflow-x-auto border border-gray-700 whitespace-pre">
-                                        {`{
+                                    {/* JSON Example */}
+                                    <div className="mt-2">
+                                        <p className="text-[10px] font-bold text-gray-500 mb-1">Batch JSON Example:</p>
+                                        <div className="bg-gray-900 text-gray-100 p-2 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
+                                            {`{
   "qty": 5,
-  "prefix": "auto", 
+  "prefix": "auto",
   "data_limit": "500M",
   "time_limit": "24h"
 }`}
-                                    </div>
-                                    <p className="text-xs text-gray-500 mt-1 italic">Use <span className="font-mono">"prefix": "auto"</span> to generate random vouchers (e.g., abc1234) where username equals password.</p>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">4. Get Connected Users</h3>
-                                <p>To fetch a list of currently active users on a specific device:</p>
-
-                                <div className="mt-2">
-                                    <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1">Target Endpoint:</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs overflow-x-auto border border-gray-700">
-                                        GET /api/v1/hotspot/{'{device_id}'}/active
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">5. Get Hotspot Profiles</h3>
-                                <p>To fetch a list of available hotspot user profiles (e.g., bandwidth plans) from the device:</p>
-
-                                <div className="mt-2">
-                                    <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1">Target Endpoint:</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs overflow-x-auto border border-gray-700">
-                                        GET /api/v1/hotspot/{'{device_id}'}/profiles
+                                {/* Monitoring */}
+                                <div>
+                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">📈 Monitoring</h4>
+                                    <div className="space-y-2">
+                                        <div>
+                                            <p className="text-xs font-mono text-green-600">GET /monitoring/metrics/latest?device_id=...</p>
+                                            <p className="text-[10px] text-gray-500">Get real-time metrics</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-green-600">GET /monitoring/alerts</p>
+                                            <p className="text-[10px] text-gray-500">Get active alerts</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* 5. Example */}
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">6. Authenticate Requests</h3>
-                                <p>All requests to NetGuard must be authenticated. Include your generated API Key in the HTTP headers.</p>
-
-                                <div className="mt-2">
-                                    <p className="font-semibold text-gray-800 text-xs uppercase tracking-wider mb-1">Required Header:</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs border border-gray-700">
-                                        X-API-Key: YOUR_GENERATED_KEY
-                                    </div>
+                                <h3 className="font-bold text-gray-900">5. cURL Example</h3>
+                                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
+                                    {`curl -X GET "https://app.netguard.fun/api/v1/inventory/devices" \\
+     -H "X-API-Key: ng_sk_..."`}
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">7. Advanced Integration</h3>
-                                <p>For full API capabilities including Inventory management and Real-time monitoring, please refer to the <span className="font-mono text-blue-600 font-bold">API_KEYS.md</span> file in the project repository.</p>
-                            </div>
-
+                            {/* Security */}
                             <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">
                                 <h4 className="font-bold text-yellow-800 text-xs uppercase mb-1 flex items-center gap-2">
                                     <Shield size={12} />
                                     Security Warning
                                 </h4>
                                 <p className="text-yellow-700 text-xs">
-                                    Your API Key carries the same privileges as your admin account for these specific actions.
-                                    <strong>Never share it</strong> or commit it to public code repositories.
-                                    If a key is compromised, revoke it immediately using the trash icon.
+                                    Treat this key like your admin password. Never share it publicly.
                                 </p>
                             </div>
+
                         </div>
                     </div>
                 </div>
