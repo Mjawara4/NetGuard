@@ -253,10 +253,21 @@ export default function Dashboard() {
                                                 </div>
                                             </td>
                                             <td className="px-6 sm:px-8 py-4 text-right whitespace-nowrap">
-                                                {alert.status === 'open' && (
+                                                {alert.status === 'open' ? (
                                                     <button onClick={() => triggerAgent('fix')} className="text-blue-600 font-black text-xs uppercase tracking-widest hover:underline">
                                                         Fix
                                                     </button>
+                                                ) : (
+                                                    <div className="flex flex-col items-end">
+                                                        <span className="text-xs font-bold text-gray-400">
+                                                            {alert.resolved_at ? new Date(alert.resolved_at).toLocaleTimeString() : 'Resolved'}
+                                                        </span>
+                                                        {alert.resolution_summary && (
+                                                            <span className="text-[10px] text-emerald-600 font-medium max-w-[200px] truncate" title={alert.resolution_summary}>
+                                                                {alert.resolution_summary}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </td>
                                         </tr>

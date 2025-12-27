@@ -92,13 +92,19 @@ def run_agent():
                                  if output:
                                      logger.info(f"SSH Success! Uptime: {output.strip()}")
                                      logger.info("Simulating remediation: Restarting high load process...")
-                                     time.sleep(2) # Simulate work
+                                    time.sleep(2) # Simulate work
                                      
-                                     # Resolve Alert
-                                     # requests.patch(...)
-                                     logger.info(f"ALERT FIXED: {alert['message']}")
-                                 else:
-                                     logger.error("Failed to connect via SSH. Cannot fix.")
+                                    # Resolve Alert
+                                    try:
+                                        requests.patch(f"{API_URL}/monitoring/alerts/{alert['id']}", 
+                                            json={"status": "resolved", "resolution_summary": "Auto-fixed by Classic Agent (Uptime Check Passed)"},
+                                            headers=get_headers()
+                                        )
+                                        logger.info(f"ALERT FIXED: {alert['message']}")
+                                    except Exception as ex:
+                                        logger.error(f"Failed to update alert status: {ex}")
+                                else:
+                                    logger.error("Failed to connect via SSH. Cannot fix.")
                              else:
                                  logger.warning("Device not found or no IP address.")
 
