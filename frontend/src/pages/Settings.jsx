@@ -305,75 +305,74 @@ export default function SettingsPage() {
 
                 <PasswordChangeSection />
             </div>
-        </div>
 
-            {/* Create Key Modal */ }
-    <ResponsiveModal
-        isOpen={createModalOpen}
-        onClose={() => {
-            setCreateModalOpen(false);
-            setCreatedKey(null);
-        }}
-        title={createdKey ? "Key Generated!" : "Create API Key"}
-        size="md"
-    >
-        {!createdKey ? (
-            <form onSubmit={handleCreateKey} className="pb-4">
-                <p className="text-gray-500 text-sm mb-6">Enter a description to identify this key.</p>
-                <input
-                    type="text"
-                    placeholder="e.g. Hotfly Production"
-                    required
-                    value={newKeyDescription}
-                    onChange={(e) => setNewKeyDescription(e.target.value)}
-                    className="w-full bg-gray-50 border-none rounded-xl py-4 px-5 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500/20 outline-none mb-6"
-                />
-                <div className="flex gap-3">
-                    <button
-                        type="button"
-                        onClick={() => setCreateModalOpen(false)}
-                        className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="submit"
-                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-100"
-                    >
-                        Generate
-                    </button>
-                </div>
-            </form>
-        ) : (
-            <div className="pb-4">
-                <div className="text-center mb-6">
-                    <p className="text-gray-500 text-sm">Copy this key now. You won't see it again.</p>
-                </div>
+            {/* Create Key Modal */}
+            <ResponsiveModal
+                isOpen={createModalOpen}
+                onClose={() => {
+                    setCreateModalOpen(false);
+                    setCreatedKey(null);
+                }}
+                title={createdKey ? "Key Generated!" : "Create API Key"}
+                size="md"
+            >
+                {!createdKey ? (
+                    <form onSubmit={handleCreateKey} className="pb-4">
+                        <p className="text-gray-500 text-sm mb-6">Enter a description to identify this key.</p>
+                        <input
+                            type="text"
+                            placeholder="e.g. Hotfly Production"
+                            required
+                            value={newKeyDescription}
+                            onChange={(e) => setNewKeyDescription(e.target.value)}
+                            className="w-full bg-gray-50 border-none rounded-xl py-4 px-5 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500/20 outline-none mb-6"
+                        />
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setCreateModalOpen(false)}
+                                className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-100"
+                            >
+                                Generate
+                            </button>
+                        </div>
+                    </form>
+                ) : (
+                    <div className="pb-4">
+                        <div className="text-center mb-6">
+                            <p className="text-gray-500 text-sm">Copy this key now. You won't see it again.</p>
+                        </div>
 
-                <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100 relative group">
-                    <code className="text-sm font-mono text-gray-800 break-all">
-                        {createdKey.key}
-                    </code>
-                    <button
-                        onClick={() => copyToClipboard(createdKey.key)}
-                        className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm border border-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
-                    >
-                        {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                    </button>
-                </div>
+                        <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100 relative group">
+                            <code className="text-sm font-mono text-gray-800 break-all">
+                                {createdKey.key}
+                            </code>
+                            <button
+                                onClick={() => copyToClipboard(createdKey.key)}
+                                className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm border border-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                            >
+                                {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                            </button>
+                        </div>
 
-                <button
-                    onClick={() => {
-                        setCreateModalOpen(false);
-                        setCreatedKey(null);
-                    }}
-                    className="w-full py-4 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors shadow-lg"
-                >
-                    Done
-                </button>
-            </div>
-        )}
-    </ResponsiveModal>
+                        <button
+                            onClick={() => {
+                                setCreateModalOpen(false);
+                                setCreatedKey(null);
+                            }}
+                            className="w-full py-4 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors shadow-lg"
+                        >
+                            Done
+                        </button>
+                    </div>
+                )}
+            </ResponsiveModal>
         </div >
     );
 }
