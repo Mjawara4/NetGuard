@@ -213,14 +213,12 @@ export default function Hotspot() {
 
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
-                    <div className="hidden print:grid print:grid-cols-10 print:gap-1" id="printable-area">
+                    <div className="hidden print:grid print:grid-cols-4 print:gap-4 print:p-4" id="printable-area">
                         {generatedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-1 text-center border border-gray-100 rounded-lg min-h-[60px] flex flex-col justify-center items-center">
-                                <div className="text-[5px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Voucher</div>
-                                <div className="w-full bg-blue-50 border border-blue-100 rounded-md py-0.5 mb-0.5">
-                                    <div className="font-mono font-black text-sm text-blue-600 leading-none tracking-tight">{u.username}</div>
-                                </div>
-                                <div className="text-[5px] font-bold text-gray-400 uppercase leading-none">
+                            <div key={i} className="voucher-card p-4 rounded-xl border border-gray-200 shadow-sm text-center bg-white flex flex-col justify-center aspect-[3/2]">
+                                <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Voucher</div>
+                                <div className="font-mono text-2xl font-black text-blue-600 bg-blue-50 py-2 rounded-lg border border-blue-100 mb-2">{u.username}</div>
+                                <div className="text-[8px] font-bold text-gray-400 uppercase">
                                     LIM: {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>
