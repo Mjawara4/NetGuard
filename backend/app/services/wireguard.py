@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.models import Device
 from app.core.config import settings
 
-WG_CONF_PATH = "/etc/wireguard/wg_confs/wg0.conf"
+WG_CONF_PATH = "/etc/wireguard/wg0.conf"
 WG_SUBNET = "10.13.13."
 
 # We will read the key dynamically.

@@ -29,31 +29,33 @@ fi
 
 # Get VPS connection details
 echo -e "${YELLOW}📋 VPS Connection Details${NC}"
-read -p "VPS Host/IP: " VPS_HOST
+read -p "VPS Host/IP (default: 74.208.167.166): " VPS_HOST
+VPS_HOST=${VPS_HOST:-74.208.167.166}
 read -p "SSH Username (default: root): " SSH_USER
 SSH_USER=${SSH_USER:-root}
-read -p "SSH Port (default: 22): " SSH_PORT
-SSH_PORT=${SSH_PORT:-22}
-read -sp "SSH Password: " SSH_PASSWORD
-echo ""
 
-# Deployment directory on VPS
-DEPLOY_DIR="/opt/netguard"
-REPO_URL="https://github.com/Mjawara4/NetGuard.git"
+# Set up SSH Control Path for Multiplexing
+SSH_SOCKET="/tmp/netguard_deploy_socket"
+SSH_OPTS="-o ControlPath=$SSH_SOCKET -o StrictHostKeyChecking=no"
+
+# Cleanup socket on exit
+trap "ssh -O exit -S $SSH_SOCKET $SSH_USER@$VPS_HOST 2>/dev/null" EXIT
 
 echo ""
-echo -e "${GREEN}📦 Step 1: Testing SSH Connection...${NC}"
-sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" "echo 'SSH connection successful!'" || {
+echo -e "${GREEN}📦 Step 1: Establishing SSH Connection...${NC}"
+echo -e "${YELLOW}🔑 You will be asked for your password once.${NC}"
+
+# Start Master Connection
+ssh -M -f -N -o ControlPath=$SSH_SOCKET "$SSH_USER@$VPS_HOST" || {
     echo -e "${RED}❌ SSH connection failed!${NC}"
-    echo "Please check your credentials and try again."
     exit 1
 }
 
-echo -e "${GREEN}✅ SSH connection successful!${NC}"
+echo -e "${GREEN}✅ SSH connection established!${NC}"
 echo ""
 
 echo -e "${GREEN}📦 Step 2: Installing prerequisites on VPS...${NC}"
-sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << 'ENDSSH'
+ssh $SSH_OPTS "$SSH_USER@$VPS_HOST" "bash -s" << 'ENDSSH'
     # Install Docker if not present
     if ! command -v docker &> /dev/null; then
         echo "Installing Docker..."
@@ -69,23 +71,18 @@ sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << 'ENDSSH'
         chmod +x /usr/local/bin/docker-compose
     fi
     
-    # Install sshpass if not present (for password-based SSH)
-    if ! command -v sshpass &> /dev/null; then
-        if command -v apt-get &> /dev/null; then
-            apt-get update && apt-get install -y sshpass
-        elif command -v yum &> /dev/null; then
-            yum install -y sshpass
-        fi
-    fi
-    
     echo "✅ Prerequisites installed"
 ENDSSH
 
 echo -e "${GREEN}✅ Prerequisites check complete!${NC}"
 echo ""
 
+# Deployment directory on VPS
+DEPLOY_DIR="/opt/netguard"
+REPO_URL="https://github.com/Mjawara4/NetGuard.git"
+
 echo -e "${GREEN}📦 Step 3: Setting up deployment directory...${NC}"
-sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << ENDSSH
+ssh $SSH_OPTS "$SSH_USER@$VPS_HOST" "bash -s" << ENDSSH
     mkdir -p $DEPLOY_DIR
     cd $DEPLOY_DIR
     
@@ -105,13 +102,13 @@ echo -e "${GREEN}✅ Deployment directory ready!${NC}"
 echo ""
 
 echo -e "${GREEN}📦 Step 4: Copying .env.production to VPS...${NC}"
-sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" .env.production "$SSH_USER@$VPS_HOST:$DEPLOY_DIR/.env.production"
-sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" "cd $DEPLOY_DIR && cp .env.production .env && chmod 600 .env"
+scp -o ControlPath=$SSH_SOCKET .env.production "$SSH_USER@$VPS_HOST:$DEPLOY_DIR/.env.production"
+ssh $SSH_OPTS "$SSH_USER@$VPS_HOST" "cd $DEPLOY_DIR && cp .env.production .env && chmod 600 .env"
 echo -e "${GREEN}✅ Environment file copied and secured!${NC}"
 echo ""
 
 echo -e "${GREEN}📦 Step 5: Building and starting containers...${NC}"
-sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << ENDSSH
+ssh $SSH_OPTS "$SSH_USER@$VPS_HOST" "bash -s" << ENDSSH
     cd $DEPLOY_DIR
     
     # Stop existing containers
@@ -126,11 +123,15 @@ sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << ENDSSH
     
     # Check container status
     docker compose ps
+
+    # Apply WireGuard Routing Fix (NAT)
+    echo "Applying routing fix..."
+    docker exec netguard-wireguard sh -c "iptables -t nat -C POSTROUTING -d 10.13.13.0/24 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -d 10.13.13.0/24 -j MASQUERADE"
 ENDSSH
 
 echo ""
 echo -e "${GREEN}📦 Step 6: Verifying deployment...${NC}"
-sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" "$SSH_USER@$VPS_HOST" << 'ENDSSH'
+ssh $SSH_OPTS "$SSH_USER@$VPS_HOST" "bash -s" << 'ENDSSH'
     cd /opt/netguard
     
     # Check if containers are running
@@ -160,9 +161,4 @@ echo "1. Check service status: ssh $SSH_USER@$VPS_HOST 'cd $DEPLOY_DIR && docker
 echo "2. View logs: ssh $SSH_USER@$VPS_HOST 'cd $DEPLOY_DIR && docker compose logs -f'"
 echo "3. Access your app at: https://app.netguard.fun"
 echo ""
-echo "Useful commands:"
-echo "  - View all logs: docker compose logs -f"
-echo "  - Restart services: docker compose restart"
-echo "  - Stop services: docker compose down"
-echo "  - Update and redeploy: git pull && docker compose up -d --build"
-echo ""
+
