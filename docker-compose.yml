@@ -1,10 +1,12 @@
 services:
   db:
     image: timescale/timescaledb:latest-pg14
+    env_file:
+      - .env.production
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: netguard
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-netguard}
     volumes:
       - netguard_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -38,11 +40,13 @@ services:
       - ./wireguard-config:/etc/wireguard
     cap_add:
       - NET_ADMIN
+    env_file:
+      - .env.production
     environment:
-      POSTGRES_SERVER: db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: netguard
+      POSTGRES_SERVER: ${POSTGRES_SERVER:-db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-netguard}
     depends_on:
       db:
         condition: service_healthy
@@ -103,9 +107,11 @@ services:
     command: python diagnoser_agent.py
     volumes:
       - ./agents:/app
+    env_file:
+      - .env.production
     environment:
       - API_URL=http://backend:8000/api/v1
-      - NETGUARD_API_KEY=agent-secret-key-123
+      - NETGUARD_API_KEY=${NETGUARD_API_KEY:-agent-secret-key-123}
       - PYTHONUNBUFFERED=1
     depends_on:
       backend:
@@ -119,9 +125,11 @@ services:
     command: python fix_agent.py
     volumes:
       - ./agents:/app
+    env_file:
+      - .env.production
     environment:
       - API_URL=http://backend:8000/api/v1
-      - NETGUARD_API_KEY=agent-secret-key-123
+      - NETGUARD_API_KEY=${NETGUARD_API_KEY:-agent-secret-key-123}
       - PYTHONUNBUFFERED=1
       - SSH_USER=${SSH_USER:-admin}
       - SSH_PASSWORD=${SSH_PASSWORD:-admin}
@@ -137,11 +145,13 @@ services:
     command: python ai_fix_agent.py
     volumes:
       - ./agents:/app
+    env_file:
+      - .env.production
     environment:
       - API_URL=http://backend:8000/api/v1
-      - NETGUARD_API_KEY=agent-secret-key-123
+      - NETGUARD_API_KEY=${NETGUARD_API_KEY:-agent-secret-key-123}
       - PYTHONUNBUFFERED=1
-      - LLM_PROVIDER=openai
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_API_KEY=${OPENAI_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - SSH_USER=${SSH_USER:-admin}

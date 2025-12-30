@@ -10,6 +10,7 @@ import logging
 import sys
 import redis
 import routeros_api
+from retry_utils import retry_with_backoff
 
 # Configure logging
 logging.basicConfig(
@@ -59,6 +60,7 @@ def ping_host(host):
         logger.error(f"Ping error for {host}: {e}")
         return None, 0.0
 
+@retry_with_backoff(max_retries=3, initial_delay=1.0)
 def report_metric(device_id, metric_type, value, unit=None, meta_data=None):
     payload = {
         "device_id": device_id,
@@ -69,11 +71,16 @@ def report_metric(device_id, metric_type, value, unit=None, meta_data=None):
         "time": datetime.utcnow().isoformat()
     }
     try:
-        resp = requests.post(f"{API_URL}/monitoring/metrics", json=payload, headers=get_headers())
-        if resp.status_code >= 400:
-             logger.error(f"Failed to report metric {metric_type}: {resp.text}")
-    except Exception as e:
-        logger.error(f"Failed to report metric: {e}")
+        resp = requests.post(
+            f"{API_URL}/monitoring/metrics",
+            json=payload,
+            headers=get_headers(),
+            timeout=10  # 10 second timeout
+        )
+        resp.raise_for_status()  # Raise exception for bad status codes
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to report metric {metric_type}: {e}")
+        raise  # Re-raise for retry decorator
 
 def get_mikrotik_stats(device_ip, username, password, port=8728):
     """
@@ -186,8 +193,18 @@ def run_agent():
     
     while True:
         try:
-            # Fetch devices
-            resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers())
+            # Fetch devices with retry and timeout
+            try:
+                resp = requests.get(
+                    f"{API_URL}/inventory/devices",
+                    headers=get_headers(),
+                    timeout=10
+                )
+                resp.raise_for_status()
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Failed to fetch devices: {e}")
+                wait_for_trigger(5)
+                continue
             
             if resp.status_code == 200:
                 devices = resp.json()

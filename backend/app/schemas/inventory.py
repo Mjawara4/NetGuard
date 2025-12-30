@@ -1,11 +1,12 @@
-from pydantic import BaseModel, UUID4
+from pydantic import BaseModel, UUID4, validator, Field
 from typing import Optional, List
 from datetime import datetime
+import ipaddress
 
 # Site Schemas
 class SiteBase(BaseModel):
-    name: str
-    location: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=255, description="Site name")
+    location: Optional[str] = Field(None, max_length=500, description="Site location")
     auto_fix_enabled: bool = False
 
 class SiteCreate(SiteBase):
@@ -21,22 +22,49 @@ class SiteResponse(SiteBase):
 
 # Device Schemas
 class DeviceBase(BaseModel):
-    name: str
-    ip_address: str
-    device_type: Optional[str] = "router"
+    name: str = Field(..., min_length=1, max_length=255, description="Device name")
+    ip_address: str = Field(..., description="Device IP address")
+    device_type: Optional[str] = Field("router", max_length=50)
     is_active: bool = True
-    snmp_community: Optional[str] = "public"
-    ssh_username: Optional[str] = None
-    ssh_password: Optional[str] = None
-    ssh_port: int = 22
+    snmp_community: Optional[str] = Field(None, max_length=100)
+    ssh_username: Optional[str] = Field(None, max_length=100)
+    ssh_password: Optional[str] = Field(None, max_length=500)
+    ssh_port: int = Field(22, ge=1, le=65535, description="SSH port number")
+    
+    @validator('ip_address')
+    def validate_ip_address(cls, v):
+        """Validate IP address format."""
+        try:
+            ipaddress.ip_address(v)
+            return v
+        except ValueError:
+            raise ValueError(f"Invalid IP address format: {v}")
+    
+    @validator('name', 'ssh_username')
+    def validate_string_length(cls, v):
+        """Validate string fields are not too long."""
+        if v and len(v) > 255:
+            raise ValueError(f"Field too long (max 255 characters)")
+        return v
 
 class DeviceCreate(DeviceBase):
     site_id: UUID4
 
-class DeviceResponse(DeviceBase):
+class DeviceResponse(BaseModel):
+    """Device response - excludes sensitive fields."""
     id: UUID4
+    name: str
+    ip_address: str
+    device_type: Optional[str] = "router"
+    is_active: bool = True
+    snmp_community: Optional[str] = None
+    ssh_username: Optional[str] = None
+    # ssh_password excluded - sensitive
+    ssh_port: int = 22
     site_id: UUID4
     wg_ip_address: Optional[str] = None
+    wg_public_key: Optional[str] = None
+    # wg_private_key excluded - sensitive
     created_at: datetime
     
     class Config:

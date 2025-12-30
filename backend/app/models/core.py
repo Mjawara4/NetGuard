@@ -1,10 +1,11 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
 import enum
 from datetime import datetime
 from app.database import Base
+from app.utils.encryption import encrypt_value, decrypt_value
 
 class UserRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
@@ -74,3 +75,28 @@ class Device(Base):
     site = relationship("Site", back_populates="devices")
     metrics = relationship("Metric", back_populates="device")
     alerts = relationship("Alert", back_populates="device")
+
+# SQLAlchemy events for encryption/decryption
+@event.listens_for(Device, "before_insert", propagate=True)
+@event.listens_for(Device, "before_update", propagate=True)
+def encrypt_device_secrets(mapper, connection, target):
+    """Encrypt sensitive fields before insert/update."""
+    if target.ssh_password:
+        # Only encrypt if not already encrypted (dual-write mode)
+        # Check if it looks encrypted (heuristic)
+        if not target.ssh_password.startswith("gAAAAAB"):  # Fernet encrypted values start with this
+            target.ssh_password = encrypt_value(target.ssh_password)
+    
+    if target.wg_private_key:
+        # Only encrypt if not already encrypted
+        if not target.wg_private_key.startswith("gAAAAAB"):
+            target.wg_private_key = encrypt_value(target.wg_private_key)
+
+@event.listens_for(Device, "load", propagate=True)
+def decrypt_device_secrets(target, context):
+    """Decrypt sensitive fields after load (dual-read mode for backward compatibility)."""
+    if target.ssh_password:
+        target.ssh_password = decrypt_value(target.ssh_password)
+    
+    if target.wg_private_key:
+        target.wg_private_key = decrypt_value(target.wg_private_key)

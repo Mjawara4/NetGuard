@@ -2,6 +2,7 @@ import time
 import requests
 import os
 import json
+from retry_utils import retry_with_backoff
 
 API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
 
@@ -38,9 +39,17 @@ def analyze_metrics():
     # For MVP: I will just Create Alerts for devices that I know exist.
     
     try:
-        # Get devices
-        resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers())
-        if resp.status_code != 200: return
+        # Get devices with retry
+        try:
+            resp = requests.get(
+                f"{API_URL}/inventory/devices",
+                headers=get_headers(),
+                timeout=10
+            )
+            resp.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch devices: {e}")
+            return
         devices = resp.json()
         
         for device in devices:
@@ -48,7 +57,8 @@ def analyze_metrics():
             try:
                 m_resp = requests.get(
                     f"{API_URL}/monitoring/metrics/latest?device_id={device['id']}&metric_type=uptime_status&limit=1",
-                    headers=get_headers()
+                    headers=get_headers(),
+                    timeout=10
                 )
                 if m_resp.status_code == 200:
                     metrics = m_resp.json()
@@ -58,7 +68,11 @@ def analyze_metrics():
                         # Check if offline
                         if latest_status == 0.0:
                              # CHECK IF ALERT ALREADY EXISTS
-                             existing = requests.get(f"{API_URL}/monitoring/alerts?device_id={device['id']}", headers=get_headers())
+                             existing = requests.get(
+                                 f"{API_URL}/monitoring/alerts?device_id={device['id']}",
+                                 headers=get_headers(),
+                                 timeout=10
+                             )
                              already_alerted = False
                              if existing.status_code == 200:
                                  for a in existing.json():
@@ -74,7 +88,12 @@ def analyze_metrics():
                                      "message": f"Device {device['name']} is not responding to ping.",
                                      "status": "open"
                                  }
-                                 requests.post(f"{API_URL}/monitoring/alerts", json=alert_payload, headers=get_headers())
+                                 requests.post(
+                                     f"{API_URL}/monitoring/alerts",
+                                     json=alert_payload,
+                                     headers=get_headers(),
+                                     timeout=10
+                                 )
                                  logger.warning(f"Created alert (OFFLINE) for {device['name']}")
                              
             except Exception as e_status:
@@ -84,7 +103,8 @@ def analyze_metrics():
             try:
                 c_resp = requests.get(
                     f"{API_URL}/monitoring/metrics/latest?device_id={device['id']}&metric_type=cpu_usage&limit=1",
-                    headers=get_headers()
+                    headers=get_headers(),
+                    timeout=10
                 )
                 if c_resp.status_code == 200:
                     metrics = c_resp.json()

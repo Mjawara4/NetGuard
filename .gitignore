@@ -6,6 +6,8 @@ __pycache__/
 env/
 venv/
 .env
+.env*
+!.env.example
 .DS_Store
 .idea/
 .vscode/
@@ -15,3 +17,4 @@ venv/
 # Deployment scripts
 *.expect
 install_docker.sh
+.env.production

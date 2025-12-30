@@ -67,7 +67,11 @@ def run_agent():
     while True:
         try:
              # fetch open alerts
-             resp = requests.get(f"{API_URL}/monitoring/alerts", headers=get_headers())
+             resp = requests.get(
+                 f"{API_URL}/monitoring/alerts",
+                 headers=get_headers(),
+                 timeout=10
+             )
              if resp.status_code == 200:
                  alerts = resp.json()
                  for alert in alerts:
@@ -78,7 +82,11 @@ def run_agent():
                              logger.info(f"Processing High CPU Alert {alert['id']}...")
                              
                              # Fetch device info to get IP
-                             dev_resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers())
+                             dev_resp = requests.get(
+                                 f"{API_URL}/inventory/devices",
+                                 headers=get_headers(),
+                                 timeout=10
+                             )
                              devices = dev_resp.json() if dev_resp.status_code == 200 else []
                              device = next((d for d in devices if d['id'] == alert['device_id']), None)
                              
@@ -92,17 +100,19 @@ def run_agent():
                                  if output:
                                      logger.info(f"SSH Success! Uptime: {output.strip()}")
                                      logger.info("Simulating remediation: Restarting high load process...")
-                                    time.sleep(2) # Simulate work
+                                     time.sleep(2) # Simulate work
                                      
-                                    # Resolve Alert
-                                    try:
-                                        requests.patch(f"{API_URL}/monitoring/alerts/{alert['id']}", 
-                                            json={"status": "resolved", "resolution_summary": "Auto-fixed by Classic Agent (Uptime Check Passed)"},
-                                            headers=get_headers()
-                                        )
-                                        logger.info(f"ALERT FIXED: {alert['message']}")
-                                    except Exception as ex:
-                                        logger.error(f"Failed to update alert status: {ex}")
+                                     # Resolve Alert
+                                     try:
+                                         requests.patch(
+                                             f"{API_URL}/monitoring/alerts/{alert['id']}",
+                                             json={"status": "resolved", "resolution_summary": "Auto-fixed by Classic Agent (Uptime Check Passed)"},
+                                             headers=get_headers(),
+                                             timeout=10
+                                         )
+                                         logger.info(f"ALERT FIXED: {alert['message']}")
+                                     except Exception as ex:
+                                         logger.error(f"Failed to update alert status: {ex}")
                                 else:
                                     logger.error("Failed to connect via SSH. Cannot fix.")
                              else:

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Watcher script to reload WireGuard when config changes
 
-WG_CONF="/root/NetGuard/wireguard-config/wg_confs/wg0.conf"
+WG_CONF="/root/NetGuard/wireguard-config/wg0.conf"
 LAST_HASH_FILE="/root/NetGuard/.wg_last_hash"
 LOG_FILE="/root/NetGuard/wg_watcher.log"
 

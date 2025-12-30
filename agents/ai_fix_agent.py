@@ -165,7 +165,12 @@ def report_fix_action(alert_id, action, status, output):
             "status": status,
             "log_output": output
         }
-        resp = requests.post(f"{API_URL}/monitoring/alerts/{alert_id}/fix-actions", json=payload, headers=get_headers())
+        resp = requests.post(
+            f"{API_URL}/monitoring/alerts/{alert_id}/fix-actions",
+            json=payload,
+            headers=get_headers(),
+            timeout=10
+        )
         if resp.status_code == 200:
             logger.info(f"Action reported for alert {alert_id}")
         else:
@@ -182,7 +187,12 @@ def update_alert_status(alert_id, status, resolution_summary=None):
             "status": status,
             "resolution_summary": resolution_summary
         }
-        resp = requests.patch(f"{API_URL}/monitoring/alerts/{alert_id}", json=payload, headers=get_headers())
+        resp = requests.patch(
+            f"{API_URL}/monitoring/alerts/{alert_id}",
+            json=payload,
+            headers=get_headers(),
+            timeout=10
+        )
         if resp.status_code == 200:
             logger.info(f"Alert {alert_id} marked as {status}")
         else:
@@ -195,7 +205,11 @@ def run_agent():
     
     while True:
         try:
-             resp = requests.get(f"{API_URL}/monitoring/alerts", headers=get_headers())
+             resp = requests.get(
+                 f"{API_URL}/monitoring/alerts",
+                 headers=get_headers(),
+                 timeout=10
+             )
              if resp.status_code == 200:
                  alerts = resp.json()
                  for alert in alerts:
@@ -203,7 +217,11 @@ def run_agent():
                          logger.info(f"Processing critical alert {alert['id']}")
                          
                          # Fetch detailed device info
-                         dev_resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers())
+                         dev_resp = requests.get(
+                             f"{API_URL}/inventory/devices",
+                             headers=get_headers(),
+                             timeout=10
+                         )
                          devices = dev_resp.json() if dev_resp.status_code == 200 else []
                          device = next((d for d in devices if d['id'] == alert['device_id']), {})
                          

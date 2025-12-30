@@ -36,8 +36,6 @@ async def get_current_user(
         raise credentials_exception
     return user
 
-    return user
-
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 async def get_api_key(
@@ -70,6 +68,10 @@ async def get_authorized_actor(
         result = await db.execute(select(APIKey).where(APIKey.key == api_key_header, APIKey.is_active == True))
         api_key = result.scalars().first()
         if api_key:
+            # Update last_used_at
+            from datetime import datetime
+            api_key.last_used_at = datetime.utcnow()
+            await db.commit()
             return api_key
     
     # 2. Try User Token

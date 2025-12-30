@@ -16,13 +16,32 @@ router = APIRouter()
 async def create_metric(metric: MetricCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # This endpoint is for Agents to push metrics
     # In real world, use a faster ingestion path (Kafka or direct DB insert)
-    # Check if Device ID exists? Omitted for speed
+    import logging
+    logger = logging.getLogger(__name__)
     
-    new_metric = Metric(**metric.dict())
-    db.add(new_metric)
-    await db.commit()
-    await db.refresh(new_metric)
-    return new_metric
+    try:
+        # Verify device exists and belongs to actor's organization
+        from app.models import Device, Site
+        dev_result = await db.execute(
+            select(Device).join(Site).where(
+                Device.id == metric.device_id,
+                Site.organization_id == actor.organization_id
+            )
+        )
+        device = dev_result.scalars().first()
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found or access denied")
+        
+        new_metric = Metric(**metric.dict())
+        db.add(new_metric)
+        await db.commit()
+        await db.refresh(new_metric)
+        return new_metric
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating metric: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create metric")
 
 @router.get("/metrics/latest", response_model=List[MetricResponse])
 async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, limit: int = 20, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

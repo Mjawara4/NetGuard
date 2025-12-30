@@ -14,13 +14,43 @@ class WireGuardService:
     @staticmethod
     def get_server_public_key():
         """
-        Reads the server public key from the shared volume.
+        Reads the server public key from the shared volume or settings.
+        Always returns a valid key, never a placeholder.
         """
+        # First try to read from volume
         key_path = "/etc/wireguard/server/publickey-server"
         if os.path.exists(key_path):
-            with open(key_path, "r") as f:
-                return f.read().strip()
-        return "SERVER_PUBLIC_KEY_NOT_FOUND"
+            try:
+                with open(key_path, "r") as f:
+                    key = f.read().strip()
+                    if key and key != "SERVER_PUBLIC_KEY_NOT_FOUND":
+                        return key
+            except Exception:
+                pass
+        
+        # Fallback to settings (from env var)
+        from app.config import settings
+        if settings.WG_SERVER_PUBLIC_KEY and settings.WG_SERVER_PUBLIC_KEY != "SERVER_PUBLIC_KEY_PLACEHOLDER":
+            return settings.WG_SERVER_PUBLIC_KEY
+        
+        # Last resort: try alternative paths
+        alt_paths = [
+            "/etc/wireguard/publickey-server",
+            "/config/server/publickey-server",
+            "./wireguard-config/server/publickey-server"
+        ]
+        for alt_path in alt_paths:
+            if os.path.exists(alt_path):
+                try:
+                    with open(alt_path, "r") as f:
+                        key = f.read().strip()
+                        if key:
+                            return key
+                except Exception:
+                    continue
+        
+        # If still not found, raise error (don't return placeholder)
+        raise ValueError("WireGuard server public key not found. Please set WG_SERVER_PUBLIC_KEY in .env or ensure key file exists.")
 
     @staticmethod
     def generate_keys():
@@ -55,20 +85,22 @@ class WireGuardService:
         """
         Appends a peer to wg0.conf if it does not already exist.
         """
-        conf_path = "/etc/wireguard/wg_confs/wg0.conf"
-        
-        if not os.path.exists(conf_path):
-             conf_path = "/etc/wireguard/wg0.conf"
+        conf_path = "/etc/wireguard/wg0.conf"
+
+        # Ensure directory exists (should be mounted, but safe to check)
+        os.makedirs(os.path.dirname(conf_path), exist_ok=True)
 
         if not os.path.exists(conf_path):
-            print(f"WARNING: {conf_path} not found. Skipping config write.")
-            return
+            # Create empty file if it doesn't exist
+            with open(conf_path, "w") as f:
+                f.write("# WireGuard Config\n")
 
         # Check if the public key is already in the file
         with open(conf_path, "r") as f:
             if public_key in f.read():
                 # print(f"DEBUG: Peer {public_key} already in {conf_path}. Skipping.")
                 return
+
 
         peer_block = f"\n[Peer]\nPublicKey = {public_key}\nAllowedIPs = {allowed_ip}/32\n"
         
@@ -80,10 +112,27 @@ class WireGuardService:
         """
         Generates a MikroTik RouterOS script to configure WireGuard.
         This script is designed to be copy-pasted directly into the terminal.
+        All values are validated and populated before script generation.
         """
-        # If server_public_key was passed as placeholder, try to fetch it
-        if server_public_key == "SERVER_PUBLIC_KEY_PLACEHOLDER":
-             server_public_key = WireGuardService.get_server_public_key()
+        # Validate all required inputs
+        if not private_key:
+            raise ValueError("Private key is required for WireGuard script generation")
+        if not client_ip:
+            raise ValueError("Client IP is required for WireGuard script generation")
+        if not server_endpoint:
+            raise ValueError("Server endpoint is required for WireGuard script generation")
+        
+        # If server_public_key was passed as placeholder or invalid, fetch it
+        if not server_public_key or server_public_key == "SERVER_PUBLIC_KEY_PLACEHOLDER" or server_public_key == "SERVER_PUBLIC_KEY_NOT_FOUND":
+            server_public_key = WireGuardService.get_server_public_key()
+        
+        # Validate server_public_key is a valid WireGuard key format
+        if not server_public_key or len(server_public_key) < 40:
+            raise ValueError(f"Invalid server public key format: {server_public_key}")
+        
+        # Ensure server_port is valid
+        if not server_port or server_port < 1 or server_port > 65535:
+            server_port = 51820  # Default
 
         script = f"""
 # WireGuard Setup for NetGuard

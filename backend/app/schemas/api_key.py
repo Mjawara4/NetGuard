@@ -12,7 +12,8 @@ class APIKeyResponse(BaseModel):
     description: Optional[str]
     is_active: bool
     created_at: datetime
+    last_used_at: Optional[datetime] = None
     organization_id: Optional[UUID]
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated from orm_mode (Pydantic v2)

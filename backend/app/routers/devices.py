@@ -3,12 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List
 from uuid import UUID
+import logging
 from app.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
 from app.models import Device, Site, User, APIKey, Metric, Alert
 from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse
 from app.services.wireguard import WireGuardService
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -158,11 +161,22 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
     
     WireGuardService.add_peer_to_conf(device.wg_public_key, device.wg_ip_address)
     
-    # Generate Script
+    # Generate Script - ensure server public key is fetched if needed
+    server_pub_key = settings.WG_SERVER_PUBLIC_KEY
+    if not server_pub_key or server_pub_key == "SERVER_PUBLIC_KEY_PLACEHOLDER":
+        try:
+            server_pub_key = WireGuardService.get_server_public_key()
+        except Exception as e:
+            logger.error(f"Failed to get server public key: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="WireGuard server configuration error. Please ensure WG_SERVER_PUBLIC_KEY is set in .env"
+            )
+    
     script = WireGuardService.generate_mikrotik_script(
         private_key=device.wg_private_key,
         client_ip=device.wg_ip_address,
-        server_public_key=settings.WG_SERVER_PUBLIC_KEY,
+        server_public_key=server_pub_key,
         server_endpoint=settings.WG_SERVER_ENDPOINT,
         server_port=settings.WG_SERVER_PORT
     )

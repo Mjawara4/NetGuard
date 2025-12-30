@@ -1,24 +1,70 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from contextlib import asynccontextmanager
 from app.database import engine, Base
+from sqlalchemy import text
+import logging
 
-# We will import routers here later
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Run Alembic migrations
     import subprocess
+    
     try:
-        # Run alembic upgrade head
-        # We need to run this command. In docker container it should work.
-        subprocess.run(["alembic", "upgrade", "head"], check=True)
-        print("Database migrations applied.")
+        logger.info("Running database migrations...")
+        result = subprocess.run(
+            ["alembic", "upgrade", "head"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        logger.info("Database migrations applied successfully.")
+        if result.stdout:
+            logger.debug(f"Migration output: {result.stdout}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Migration failed with exit code {e.returncode}")
+        logger.error(f"Migration error: {e.stderr}")
+        # In production, we might want to crash or continue
+        # For now, log error but continue (existing data should still work)
     except Exception as e:
-        print(f"Error applying migrations: {e}")
-        # In production often we don't want to crash, or maybe we do?
-        # For now, print error.
+        logger.error(f"Unexpected error during migrations: {e}", exc_info=True)
+    
+    # Verify TimescaleDB hypertable exists
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("SELECT * FROM timescaledb_information.hypertables WHERE hypertable_name = 'metrics'")
+            )
+            hypertable = result.first()
+            if hypertable:
+                logger.info("TimescaleDB hypertable 'metrics' verified.")
+            else:
+                logger.warning("TimescaleDB hypertable 'metrics' not found. Attempting to create...")
+                try:
+                    await conn.execute(
+                        text("SELECT create_hypertable('metrics', 'time', if_not_exists => TRUE)")
+                    )
+                    logger.info("TimescaleDB hypertable 'metrics' created.")
+                except Exception as ht_error:
+                    logger.warning(f"Could not create hypertable (may already exist or table not ready): {ht_error}")
+    except Exception as e:
+        logger.warning(f"Could not verify TimescaleDB hypertable: {e}")
+        # Non-critical, continue startup
+    
     yield
     # Shutdown
 
@@ -28,9 +74,29 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Security Headers Middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Add security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if not settings.DEBUG:
+            # Only add HSTS in production
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS_LIST,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,8 +107,35 @@ def read_root():
     return {"message": "Welcome to NetGuard AI API"}
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy"}
+async def health_check():
+    """Basic health check endpoint with database connectivity check."""
+    try:
+        # Check database connectivity
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        logger.warning(f"Health check database connection failed: {e}")
+        return {"status": "degraded", "database": "disconnected"}
+
+@app.get("/ready")
+async def readiness_check():
+    """Kubernetes readiness probe - checks database connectivity."""
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        return {"status": "ready", "database": "connected"}
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "not ready", "database": "disconnected"}
+        )
+
+@app.get("/live")
+async def liveness_check():
+    """Kubernetes liveness probe - basic alive check."""
+    return {"status": "alive"}
 
 from app.routers import auth, devices, monitoring, api_keys
 app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["auth"])
@@ -55,3 +148,56 @@ app.include_router(agents.router, prefix=f"{settings.API_PREFIX}/agents", tags=[
 app.include_router(hotspot.router, prefix=f"{settings.API_PREFIX}/hotspot", tags=["hotspot"])
 app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["admin"])
 
+# Global Exception Handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with user-friendly messages."""
+    logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Validation error",
+            "errors": exc.errors()
+        }
+    )
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    """Handle 404 errors."""
+    logger.info(f"404 on {request.url.path}")
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": "Resource not found"}
+    )
+
+@app.exception_handler(500)
+async def internal_server_error_handler(request: Request, exc):
+    """Handle 500 errors - hide internal details in production."""
+    logger.error(f"Internal server error on {request.url.path}: {exc}", exc_info=True)
+    if settings.DEBUG:
+        # In debug mode, show full error
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": str(exc)}
+        )
+    else:
+        # In production, hide internal details
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"}
+        )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler."""
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+    if settings.DEBUG:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": str(exc)}
+        )
+    else:
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "An error occurred"}
+        )

@@ -88,7 +88,13 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
         
     except Exception as e:
         logger.error(f"Hotspot API Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if "Authentication failed" in error_msg:
+             raise HTTPException(status_code=401, detail="Router Authentication Failed. Check username/password.")
+        if "timed out" in error_msg or "time out" in error_msg:
+             raise HTTPException(status_code=504, detail="Router Connection Timed Out. Check VPN status and IP.")
+        raise HTTPException(status_code=500, detail=f"Router Error: {error_msg}")
+
 
 @router.post("/{device_id}/users")
 async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
