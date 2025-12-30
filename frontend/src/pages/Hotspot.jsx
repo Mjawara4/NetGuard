@@ -213,13 +213,13 @@ export default function Hotspot() {
 
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
-                    <div className="hidden print:grid print:grid-cols-10 print:gap-1 print:p-0.5" id="printable-area">
+                    <div className="hidden print:grid print:grid-cols-10 print:gap-[2px] print:p-0" id="printable-area">
                         {generatedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-0.5 rounded-md border border-gray-200 text-center bg-white flex flex-col justify-between min-h-[50px] overflow-hidden">
-                                <div className="text-[6px] font-black text-gray-300 uppercase tracking-widest leading-none mt-0.5">VOUCHER</div>
-                                <div className="font-mono text-sm sm:text-base font-black text-blue-600 leading-none my-0.5 truncate px-0.5">{u.username}</div>
-                                <div className="text-[5px] font-bold text-gray-400 uppercase leading-none mb-0.5">
-                                    LIM: {batchForm.time_limit || 'UNLIM'}
+                            <div key={i} className="voucher-card p-[1px] rounded border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[40px] overflow-hidden break-inside-avoid">
+                                <div className="text-[5px] font-black text-gray-300 uppercase tracking-widest leading-none mb-[1px]">VOUCHER</div>
+                                <div className="font-mono text-[9px] font-black text-blue-600 leading-none my-[1px] tracking-tighter break-all px-[1px]">{u.username}</div>
+                                <div className="text-[4px] font-bold text-gray-400 uppercase leading-none mt-[1px]">
+                                    {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>
                         ))}
