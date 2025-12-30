@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { Link } from 'react-router-dom';
 import { Plus, MapPin, Activity } from 'lucide-react';
+import ResponsiveModal from '../components/ResponsiveModal';
 
 export default function Sites() {
     const [sites, setSites] = useState([]);
@@ -77,34 +78,34 @@ export default function Sites() {
                     </button>
                 </div>
 
-                {showModal && (
-                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60] animate-in fade-in duration-300 safe-area-padding">
-                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm mx-auto overflow-hidden animate-in zoom-in-95 duration-300">
-                            <div className="bg-blue-600 p-6 sm:p-8 text-white relative">
-                                <h3 className="text-xl font-black uppercase tracking-tight">New Site</h3>
-                                <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Define a new operational area.</p>
+                <ResponsiveModal
+                    isOpen={showModal}
+                    onClose={() => setShowModal(false)}
+                    title="New Site"
+                    size="md"
+                >
+                    <div className="pb-4">
+                        <p className="text-blue-600 text-xs sm:text-sm mb-6 font-medium">Define a new operational area.</p>
+                        <form onSubmit={handleAdd} className="space-y-6">
+                            <div>
+                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Site Name</label>
+                                <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} required />
                             </div>
-                            <form onSubmit={handleAdd} className="p-6 sm:p-8 space-y-6">
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Site Name</label>
-                                    <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} required />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Physical Location</label>
-                                    <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.location} onChange={e => setNewSite({ ...newSite, location: e.target.value })} />
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <input type="checkbox" className="w-5 h-5 rounded-lg border-gray-200 text-blue-600 focus:ring-blue-500" checked={newSite.auto_fix_enabled} onChange={e => setNewSite({ ...newSite, auto_fix_enabled: e.target.checked })} />
-                                    <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Enable Auto-Fix</label>
-                                </div>
-                                <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                                    <button type="button" onClick={() => setShowModal(false)} className="order-2 sm:order-1 flex-1 px-4 py-3 rounded-xl font-black text-xs uppercase text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
-                                    <button type="submit" className="order-1 sm:order-2 flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-blue-100">Save Site</button>
-                                </div>
-                            </form>
-                        </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Physical Location</label>
+                                <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.location} onChange={e => setNewSite({ ...newSite, location: e.target.value })} />
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <input type="checkbox" className="w-5 h-5 rounded-lg border-gray-200 text-blue-600 focus:ring-blue-500" checked={newSite.auto_fix_enabled} onChange={e => setNewSite({ ...newSite, auto_fix_enabled: e.target.checked })} />
+                                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Enable Auto-Fix</label>
+                            </div>
+                            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                                <button type="button" onClick={() => setShowModal(false)} className="order-2 sm:order-1 flex-1 px-4 py-3 rounded-xl font-black text-xs uppercase text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
+                                <button type="submit" className="order-1 sm:order-2 flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-blue-100">Save Site</button>
+                            </div>
+                        </form>
                     </div>
-                )}
+                </ResponsiveModal>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                     {sites.map((site) => (

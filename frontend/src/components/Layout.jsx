@@ -36,8 +36,8 @@ export default function Layout({ children }) {
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
             {/* Mobile Header */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b shadow-sm z-40 flex items-center justify-between px-6">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <div className="lg:hidden fixed top-0 left-0 right-0 min-h-16 bg-white border-b shadow-sm z-40 flex items-center justify-between px-6 pt-safe-top">
+                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent my-4">
                     NetGuard AI
                 </h1>
                 <button
@@ -104,7 +104,7 @@ export default function Layout({ children }) {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 overflow-auto pt-16 lg:pt-0">
+            <div className="flex-1 overflow-auto pt-[calc(4rem+env(safe-area-inset-top))] lg:pt-0">
                 {children}
             </div>
         </div>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
 import { Settings, Key, Trash2, Copy, Check, Plus, Shield, Lock } from 'lucide-react';
+import ResponsiveTable from '../components/ResponsiveTable';
+import ResponsiveModal from '../components/ResponsiveModal';
 
 export default function SettingsPage() {
     const [apiKeys, setApiKeys] = useState([]);
@@ -90,50 +92,73 @@ export default function SettingsPage() {
                             </button>
                         </div>
 
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-100">
-                                    <tr>
-                                        <th className="px-6 py-4">Description</th>
-                                        <th className="px-6 py-4">Key Preview</th>
-                                        <th className="px-6 py-4">Created</th>
-                                        <th className="px-6 py-4">Status</th>
-                                        <th className="px-6 py-4 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <tr><td colSpan="5" className="p-6 text-center text-gray-400">Loading keys...</td></tr>
-                                    ) : apiKeys.length === 0 ? (
-                                        <tr><td colSpan="5" className="p-6 text-center text-gray-400">No API keys found. Create one to get started.</td></tr>
-                                    ) : (
-                                        apiKeys.map((key) => (
-                                            <tr key={key.id} className="group hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4 font-bold text-gray-900">{key.description || 'Untitled Key'}</td>
-                                                <td className="px-6 py-4 font-mono text-gray-500 text-xs">
-                                                    {key.key.substring(0, 10)}...****************
-                                                </td>
-                                                <td className="px-6 py-4 text-gray-500">
-                                                    {new Date(key.created_at).toLocaleDateString()}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-bold ${key.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                                                        {key.is_active ? 'Active' : 'Revoked'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <button
-                                                        onClick={() => handleRevokeKey(key.id)}
-                                                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
+                        <div className="overflow-hidden">
+                            <ResponsiveTable
+                                data={apiKeys}
+                                columns={[
+                                    {
+                                        header: 'Description',
+                                        accessor: 'description',
+                                        render: (key) => <span className="font-bold text-gray-900">{key.description || 'Untitled Key'}</span>
+                                    },
+                                    {
+                                        header: 'Key Preview',
+                                        accessor: 'key',
+                                        render: (key) => <span className="font-mono text-gray-500 text-xs">{key.key.substring(0, 10)}...****************</span>
+                                    },
+                                    {
+                                        header: 'Created',
+                                        accessor: 'created_at',
+                                        render: (key) => <span className="text-gray-500">{new Date(key.created_at).toLocaleDateString()}</span>
+                                    },
+                                    {
+                                        header: 'Status',
+                                        accessor: 'is_active',
+                                        render: (key) => (
+                                            <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-bold ${key.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                                {key.is_active ? 'Active' : 'Revoked'}
+                                            </span>
+                                        )
+                                    },
+                                    {
+                                        header: 'Actions',
+                                        accessor: 'actions',
+                                        render: (key) => (
+                                            <div className="text-right">
+                                                <button
+                                                    onClick={() => handleRevokeKey(key.id)}
+                                                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        )
+                                    }
+                                ]}
+                                renderCard={(key) => (
+                                    <div className="flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Key size={16} className="text-blue-500" />
+                                                <span className="font-bold text-gray-900 text-sm">{key.description || 'Untitled Key'}</span>
+                                            </div>
+                                            <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase ${key.is_active ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                                {key.is_active ? 'Active' : 'Revoked'}
+                                            </span>
+                                        </div>
+                                        <div className="bg-gray-50 p-2 rounded-lg text-[10px] font-mono text-gray-500 break-all">
+                                            {key.key.substring(0, 10)}...****************
+                                        </div>
+                                        <div className="flex justify-between items-center text-xs text-gray-400">
+                                            <span>Created: {new Date(key.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="flex justify-end border-t pt-3 mt-1">
+                                            <button onClick={() => handleRevokeKey(key.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Revoke Key</button>
+                                        </div>
+                                    </div>
+                                )}
+                                emptyMessage="No API keys found. Create one to get started."
+                            />
                         </div>
                     </div>
                 </div>
@@ -252,102 +277,104 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* 5. Example */}
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">5. cURL Example</h3>
-                                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
-                                    {`curl -X GET "https://app.netguard.fun/api/v1/inventory/devices" \\
-     -H "X-API-Key: ng_sk_..."`}
-                                </div>
-                            </div>
-
-                            {/* Security */}
-                            <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">
-                                <h4 className="font-bold text-yellow-800 text-xs uppercase mb-1 flex items-center gap-2">
-                                    <Shield size={12} />
-                                    Security Warning
-                                </h4>
-                                <p className="text-yellow-700 text-xs">
-                                    Treat this key like your admin password. Never share it publicly.
-                                </p>
-                            </div>
 
                         </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Create Key Modal */}
-            {createModalOpen && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        {!createdKey ? (
-                            <form onSubmit={handleCreateKey} className="p-8">
-                                <h3 className="text-xl font-bold mb-2">Create API Key</h3>
-                                <p className="text-gray-500 text-sm mb-6">Enter a description to identify this key.</p>
-
-                                <input
-                                    type="text"
-                                    placeholder="e.g. Hotfly Production"
-                                    required
-                                    value={newKeyDescription}
-                                    onChange={(e) => setNewKeyDescription(e.target.value)}
-                                    className="w-full bg-gray-50 border-none rounded-xl py-3 px-4 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500/20 outline-none mb-6"
-                                />
-
-                                <div className="flex gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setCreateModalOpen(false)}
-                                        className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-100"
-                                    >
-                                        Generate
-                                    </button>
-                                </div>
-                            </form>
-                        ) : (
-                            <div className="p-8">
-                                <div className="text-center mb-6">
-                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <Shield className="w-8 h-8 text-green-600" />
-                                    </div>
-                                    <h3 className="text-xl font-bold mb-2">Key Generated!</h3>
-                                    <p className="text-gray-500 text-sm">Copy this key now. You won't see it again.</p>
-                                </div>
-
-                                <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100 relative group">
-                                    <code className="text-sm font-mono text-gray-800 break-all">
-                                        {createdKey.key}
-                                    </code>
-                                    <button
-                                        onClick={() => copyToClipboard(createdKey.key)}
-                                        className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm border border-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
-                                    >
-                                        {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                                    </button>
-                                </div>
-
-                                <button
-                                    onClick={() => {
-                                        setCreateModalOpen(false);
-                                        setCreatedKey(null);
-                                    }}
-                                    className="w-full py-3 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors shadow-lg"
-                                >
-                                    Done
-                                </button>
+                        {/* 5. Example */}
+                        <div className="space-y-2">
+                            <h3 className="font-bold text-gray-900">5. cURL Example</h3>
+                            <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
+                                {`curl -X GET "https://app.netguard.fun/api/v1/inventory/devices" \\
+     -H "X-API-Key: ng_sk_..."`}
                             </div>
-                        )}
+                        </div>
+
+                        {/* Security */}
+                        <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">
+                            <h4 className="font-bold text-yellow-800 text-xs uppercase mb-1 flex items-center gap-2">
+                                <Shield size={12} />
+                                Security Warning
+                            </h4>
+                            <p className="text-yellow-700 text-xs">
+                                Treat this key like your admin password. Never share it publicly.
+                            </p>
+                        </div>
+
                     </div>
                 </div>
-            )}
+
+                <PasswordChangeSection />
+            </div>
         </div>
+
+            {/* Create Key Modal */ }
+    <ResponsiveModal
+        isOpen={createModalOpen}
+        onClose={() => {
+            setCreateModalOpen(false);
+            setCreatedKey(null);
+        }}
+        title={createdKey ? "Key Generated!" : "Create API Key"}
+        size="md"
+    >
+        {!createdKey ? (
+            <form onSubmit={handleCreateKey} className="pb-4">
+                <p className="text-gray-500 text-sm mb-6">Enter a description to identify this key.</p>
+                <input
+                    type="text"
+                    placeholder="e.g. Hotfly Production"
+                    required
+                    value={newKeyDescription}
+                    onChange={(e) => setNewKeyDescription(e.target.value)}
+                    className="w-full bg-gray-50 border-none rounded-xl py-4 px-5 text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500/20 outline-none mb-6"
+                />
+                <div className="flex gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setCreateModalOpen(false)}
+                        className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-100"
+                    >
+                        Generate
+                    </button>
+                </div>
+            </form>
+        ) : (
+            <div className="pb-4">
+                <div className="text-center mb-6">
+                    <p className="text-gray-500 text-sm">Copy this key now. You won't see it again.</p>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100 relative group">
+                    <code className="text-sm font-mono text-gray-800 break-all">
+                        {createdKey.key}
+                    </code>
+                    <button
+                        onClick={() => copyToClipboard(createdKey.key)}
+                        className="absolute top-2 right-2 p-2 bg-white rounded-lg shadow-sm border border-gray-100 text-gray-500 hover:text-blue-600 transition-colors"
+                    >
+                        {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                    </button>
+                </div>
+
+                <button
+                    onClick={() => {
+                        setCreateModalOpen(false);
+                        setCreatedKey(null);
+                    }}
+                    className="w-full py-4 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors shadow-lg"
+                >
+                    Done
+                </button>
+            </div>
+        )}
+    </ResponsiveModal>
+        </div >
     );
 }
 

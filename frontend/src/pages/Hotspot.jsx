@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2 } from 'lucide-react';
+import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import ResponsiveTable from '../components/ResponsiveTable';
+import ResponsiveModal from '../components/ResponsiveModal';
 
 export default function Hotspot() {
     const [activeTab, setActiveTab] = useState('active');
@@ -233,36 +235,59 @@ export default function Hotspot() {
                                     {activeSessions.length} Connected
                                 </span>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full">
-                                    <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest text-left">
-                                        <tr>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Identity</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Network Address</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Time Online</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap text-right">Interrupt</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {activeSessions.map((u, i) => (
-                                            <tr key={i} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 sm:px-8 py-5 font-bold text-gray-900 text-sm">{u.user}</td>
-                                                <td className="px-6 sm:px-8 py-5 text-xs text-gray-500 font-mono whitespace-nowrap">{u.address}</td>
-                                                <td className="px-6 sm:px-8 py-5 text-xs text-gray-500 whitespace-nowrap">{u.uptime}</td>
-                                                <td className="px-6 sm:px-8 py-5 text-right">
+                            <div className="overflow-hidden">
+                                <ResponsiveTable
+                                    data={activeSessions}
+                                    columns={[
+                                        {
+                                            header: 'Identity',
+                                            accessor: 'user',
+                                            render: (u) => <div className="font-bold text-gray-900 text-sm">{u.user}</div>
+                                        },
+                                        {
+                                            header: 'Network Address',
+                                            accessor: 'address',
+                                            render: (u) => <div className="text-xs text-gray-500 font-mono whitespace-nowrap">{u.address}</div>
+                                        },
+                                        {
+                                            header: 'Time Online',
+                                            accessor: 'uptime',
+                                            render: (u) => <div className="text-xs text-gray-500 whitespace-nowrap">{u.uptime}</div>
+                                        },
+                                        {
+                                            header: 'Interrupt',
+                                            accessor: 'actions',
+                                            render: (u) => (
+                                                <div className="text-right">
                                                     <button onClick={() => handleKick(u.id)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 rounded-lg whitespace-nowrap">
                                                         Kick
                                                     </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {activeSessions.length === 0 && (
-                                            <tr>
-                                                <td colSpan="4" className="px-8 py-20 text-center text-gray-400 font-medium italic text-sm">No active hotspot sessions detected.</td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
+                                                </div>
+                                            )
+                                        }
+                                    ]}
+                                    renderCard={(u) => (
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Wifi size={16} className="text-emerald-500" />
+                                                    <span className="font-bold text-gray-900 text-sm">{u.user}</span>
+                                                </div>
+                                                <span className="text-[10px] font-mono text-gray-400">{u.address}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-gray-500">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Clock size={12} />
+                                                    <span>{u.uptime}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end border-t pt-3 mt-1">
+                                                <button onClick={() => handleKick(u.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Interrupt Session</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    emptyMessage="No active hotspot sessions detected."
+                                />
                             </div>
                         </div>
                     )}
@@ -273,44 +298,73 @@ export default function Hotspot() {
                             <div className="p-6 sm:p-8 border-b border-gray-50">
                                 <h2 className="text-xl font-black text-gray-900">Voucher Database</h2>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full">
-                                    <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest text-left">
-                                        <tr>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Identity</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Profile</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap">Usage</th>
-                                            <th className="px-6 sm:px-8 py-4 whitespace-nowrap text-right">Interrupt</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {users.map((u, i) => (
-                                            <tr key={i} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 sm:px-8 py-5">
+                            <div className="overflow-hidden">
+                                <ResponsiveTable
+                                    data={users}
+                                    columns={[
+                                        {
+                                            header: 'Identity',
+                                            accessor: 'name',
+                                            render: (u) => (
+                                                <div>
                                                     <div className="font-bold text-gray-900 text-sm">{u.name}</div>
                                                     <div className="text-[10px] text-gray-400 font-mono tracking-tighter">PWD: {u.password}</div>
-                                                </td>
-                                                <td className="px-6 sm:px-8 py-5">
-                                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
-                                                </td>
-                                                <td className="px-6 sm:px-8 py-5">
+                                                </div>
+                                            )
+                                        },
+                                        {
+                                            header: 'Profile',
+                                            accessor: 'profile',
+                                            render: (u) => <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
+                                        },
+                                        {
+                                            header: 'Usage',
+                                            accessor: 'bytes_in',
+                                            render: (u) => (
+                                                <div>
                                                     <div className="text-xs font-bold text-gray-700 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
                                                     <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{u.uptime || '0s'}</div>
-                                                </td>
-                                                <td className="px-6 sm:px-8 py-5 text-right">
+                                                </div>
+                                            )
+                                        },
+                                        {
+                                            header: 'Interrupt',
+                                            accessor: 'actions',
+                                            render: (u) => (
+                                                <div className="text-right">
                                                     <button onClick={() => removeUser(u.id)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 rounded-lg whitespace-nowrap">
                                                         Del
                                                     </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {users.length === 0 && (
-                                            <tr>
-                                                <td colSpan="4" className="px-8 py-20 text-center text-gray-400 font-medium italic text-sm">Voucher database is empty.</td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
+                                                </div>
+                                            )
+                                        }
+                                    ]}
+                                    renderCard={(u) => (
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Users size={16} className="text-blue-500" />
+                                                    <span className="font-bold text-gray-900 text-sm">{u.name}</span>
+                                                </div>
+                                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-black uppercase">{u.profile}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                                <div className="bg-gray-50 p-2 rounded-lg">
+                                                    <div className="text-[8px] uppercase font-bold text-gray-400">Password</div>
+                                                    <div className="font-mono font-bold text-gray-700">{u.password}</div>
+                                                </div>
+                                                <div className="bg-gray-50 p-2 rounded-lg">
+                                                    <div className="text-[8px] uppercase font-bold text-gray-400">Usage</div>
+                                                    <div className="font-mono font-bold text-gray-700">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end border-t pt-3 mt-1">
+                                                <button onClick={() => removeUser(u.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Delete Voucher</button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    emptyMessage="Voucher database is empty."
+                                />
                             </div>
                         </div>
                     )}
@@ -332,31 +386,34 @@ export default function Hotspot() {
                             </div>
 
                             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full">
-                                        <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest text-left">
-                                            <tr>
-                                                <th className="px-6 sm:px-8 py-4">Profile Name</th>
-                                                <th className="px-6 sm:px-8 py-4">Bandwidth</th>
-                                                <th className="px-6 sm:px-8 py-4 text-center">Devices</th>
-                                                <th className="px-6 sm:px-8 py-4 text-right">Delete</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-50">
-                                            {profiles.map((p, i) => (
-                                                <tr key={i} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-6 sm:px-8 py-5">
-                                                        <div className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm">{p.name}</div>
-                                                    </td>
-                                                    <td className="px-6 sm:px-8 py-5">
-                                                        <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-xl text-[10px] font-black tracking-widest font-mono">
-                                                            {p['rate-limit'] || 'UNLIMITED'}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 sm:px-8 py-5 text-center">
-                                                        <div className="text-gray-900 font-black text-sm">{p['shared-users'] || '1'}</div>
-                                                    </td>
-                                                    <td className="px-6 sm:px-8 py-5 text-right">
+                                <div className="overflow-hidden">
+                                    <ResponsiveTable
+                                        data={profiles}
+                                        columns={[
+                                            {
+                                                header: 'Profile Name',
+                                                accessor: 'name',
+                                                render: (p) => <div className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm">{p.name}</div>
+                                            },
+                                            {
+                                                header: 'Bandwidth',
+                                                accessor: 'rate-limit',
+                                                render: (p) => (
+                                                    <div className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-xl text-[10px] font-black tracking-widest font-mono">
+                                                        {p['rate-limit'] || 'UNLIMITED'}
+                                                    </div>
+                                                )
+                                            },
+                                            {
+                                                header: 'Devices',
+                                                accessor: 'shared-users',
+                                                render: (p) => <div className="text-gray-900 font-black text-sm text-center">{p['shared-users'] || '1'}</div>
+                                            },
+                                            {
+                                                header: 'Delete',
+                                                accessor: 'actions',
+                                                render: (p) => (
+                                                    <div className="text-right">
                                                         <button
                                                             onClick={() => handleProfileDelete(p.name)}
                                                             className="text-red-500 hover:text-red-700 p-2 bg-red-50 rounded-xl transition-all active:scale-90"
@@ -364,16 +421,32 @@ export default function Hotspot() {
                                                         >
                                                             <Trash2 size={18} />
                                                         </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            {profiles.length === 0 && (
-                                                <tr>
-                                                    <td colSpan="4" className="px-8 py-20 text-center text-gray-400 font-medium italic">No profiles found on this router.</td>
-                                                </tr>
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                    </div>
+                                                )
+                                            }
+                                        ]}
+                                        renderCard={(p) => (
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <Shield size={16} className="text-purple-500" />
+                                                        <span className="font-bold text-gray-900 uppercase text-sm">{p.name}</span>
+                                                    </div>
+                                                    <div className="text-xs font-black bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-mono">
+                                                        {p['rate-limit'] || 'UNLIM'}
+                                                    </div>
+                                                </div>
+                                                <div className="flex justify-between items-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
+                                                    <span className="uppercase font-bold text-[10px]">Shared Devices</span>
+                                                    <span className="font-black text-gray-900">{p['shared-users'] || '1'}</span>
+                                                </div>
+                                                <div className="flex justify-end border-t pt-3 mt-1">
+                                                    <button onClick={() => handleProfileDelete(p.name)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Delete Profile</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        emptyMessage="No profiles found on this router."
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -447,59 +520,56 @@ export default function Hotspot() {
             </div>
 
             {/* Profile Creation Modal */}
-            {showProfileModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-[100] animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-300">
-                        <div className="bg-blue-600 p-10 text-white relative">
-                            <h3 className="text-3xl font-black uppercase tracking-tight">New Hotspot Profile</h3>
-                            <p className="text-blue-100 mt-2 font-medium">Configure network limitations for this profile.</p>
-                            <button onClick={() => setShowProfileModal(false)} className="absolute top-10 right-10 text-blue-200 hover:text-white transition-colors">
-                                <X size={28} />
-                            </button>
+            <ResponsiveModal
+                isOpen={showProfileModal}
+                onClose={() => setShowProfileModal(false)}
+                title="New Hotspot Profile"
+                size="lg"
+            >
+                <div className="pb-4">
+                    <p className="text-blue-600 text-xs sm:text-sm mb-6 font-medium">Configure network limitations for this profile.</p>
+                    <form onSubmit={handleProfileAdd} className="space-y-8">
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Profile Name</label>
+                            <input
+                                type="text"
+                                className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black"
+                                value={profileForm.name}
+                                onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                                placeholder="e.g. ULTRA_FAST_MONTHLY"
+                                required
+                            />
                         </div>
-                        <form onSubmit={handleProfileAdd} className="p-10 space-y-8">
+                        <div className="grid grid-cols-2 gap-8">
                             <div>
-                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Profile Name</label>
+                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Rate Limit (Up/Down)</label>
                                 <input
                                     type="text"
+                                    className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold font-mono"
+                                    value={profileForm.rateLimit}
+                                    onChange={e => setProfileForm({ ...profileForm, rateLimit: e.target.value })}
+                                    placeholder="5M/5M"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Shared Device Count</label>
+                                <input
+                                    type="number"
                                     className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black"
-                                    value={profileForm.name}
-                                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
-                                    placeholder="e.g. ULTRA_FAST_MONTHLY"
+                                    value={profileForm.sharedUsers}
+                                    onChange={e => setProfileForm({ ...profileForm, sharedUsers: parseInt(e.target.value) })}
+                                    min="1"
                                     required
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-8">
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Rate Limit (Up/Down)</label>
-                                    <input
-                                        type="text"
-                                        className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold font-mono"
-                                        value={profileForm.rateLimit}
-                                        onChange={e => setProfileForm({ ...profileForm, rateLimit: e.target.value })}
-                                        placeholder="5M/5M"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Shared Device Count</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black"
-                                        value={profileForm.sharedUsers}
-                                        onChange={e => setProfileForm({ ...profileForm, sharedUsers: parseInt(e.target.value) })}
-                                        min="1"
-                                        required
-                                    />
-                                </div>
-                            </div>
-                            <div className="pt-6 flex gap-4">
-                                <button type="button" onClick={() => setShowProfileModal(false)} className="flex-1 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Abort</button>
-                                <button type="submit" className="flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Create Profile</button>
-                            </div>
-                        </form>
-                    </div>
+                        </div>
+                        <div className="pt-6 flex gap-4">
+                            <button type="button" onClick={() => setShowProfileModal(false)} className="flex-1 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Abort</button>
+                            <button type="submit" className="flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Create Profile</button>
+                        </div>
+                    </form>
                 </div>
-            )}
+            </ResponsiveModal>
         </div>
     );
 }

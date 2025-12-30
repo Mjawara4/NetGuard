@@ -3,6 +3,7 @@ import api from '../api';
 import { Link } from 'react-router-dom';
 import { AlertCircle, CheckCircle, Server, Activity } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import ResponsiveTable from '../components/ResponsiveTable';
 
 export default function Dashboard() {
     const [alerts, setAlerts] = useState([]);
@@ -214,33 +215,39 @@ export default function Dashboard() {
                             <h2 className="text-xl font-black text-gray-900">Security & System Events</h2>
                             <button onClick={() => setAlerts([])} className="text-[10px] font-bold text-gray-400 uppercase hover:text-blue-600 transition-colors">Clear All</button>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full">
-                                <thead className="bg-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-widest text-left">
-                                    <tr>
-                                        <th className="px-6 sm:px-8 py-4">Level</th>
-                                        <th className="px-6 sm:px-8 py-4">Message</th>
-                                        <th className="px-6 sm:px-8 py-4">Status</th>
-                                        <th className="px-6 sm:px-8 py-4 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-50">
-                                    {alerts.map((alert) => (
-                                        <tr key={alert.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-6 sm:px-8 py-4 whitespace-nowrap">
-                                                <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg ${alert.severity === 'critical' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'
-                                                    }`}>
-                                                    {alert.severity}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 sm:px-8 py-4 text-sm font-bold text-gray-700 min-w-[200px]">{alert.message}</td>
-                                            <td className="px-6 sm:px-8 py-4 whitespace-nowrap">
-                                                <div className="flex items-center gap-2">
-                                                    <div className={`w-2 h-2 rounded-full ${alert.status === 'open' ? 'bg-orange-500' : 'bg-emerald-500'}`}></div>
-                                                    <span className="text-xs font-bold text-gray-500 capitalize">{alert.status}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 sm:px-8 py-4 text-right whitespace-nowrap">
+                        <div className="overflow-hidden">
+                            <ResponsiveTable
+                                data={alerts}
+                                columns={[
+                                    {
+                                        header: 'Level',
+                                        accessor: 'severity',
+                                        render: (alert) => (
+                                            <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg ${alert.severity === 'critical' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                                                {alert.severity}
+                                            </span>
+                                        )
+                                    },
+                                    {
+                                        header: 'Message',
+                                        accessor: 'message',
+                                        render: (alert) => <span className="font-bold text-gray-700">{alert.message}</span>
+                                    },
+                                    {
+                                        header: 'Status',
+                                        accessor: 'status',
+                                        render: (alert) => (
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-2 h-2 rounded-full ${alert.status === 'open' ? 'bg-orange-500' : 'bg-emerald-500'}`}></div>
+                                                <span className="text-xs font-bold text-gray-500 capitalize">{alert.status}</span>
+                                            </div>
+                                        )
+                                    },
+                                    {
+                                        header: 'Actions',
+                                        accessor: 'actions',
+                                        render: (alert) => (
+                                            <div className="text-right">
                                                 {alert.status === 'open' ? (
                                                     <button onClick={() => triggerAgent('fix')} className="text-blue-600 font-black text-xs uppercase tracking-widest hover:underline">
                                                         Fix
@@ -257,16 +264,38 @@ export default function Dashboard() {
                                                         )}
                                                     </div>
                                                 )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {alerts.length === 0 && (
-                                        <tr>
-                                            <td colSpan="4" className="px-6 sm:px-8 py-12 text-center text-gray-400 font-medium italic">All quiet on the network front.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                            </div>
+                                        )
+                                    }
+                                ]}
+                                renderCard={(alert) => (
+                                    <div className="flex flex-col gap-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg ${alert.severity === 'critical' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                                                {alert.severity}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-2 h-2 rounded-full ${alert.status === 'open' ? 'bg-orange-500' : 'bg-emerald-500'}`}></div>
+                                                <span className="text-xs font-bold text-gray-500 capitalize">{alert.status}</span>
+                                            </div>
+                                        </div>
+                                        <p className="font-bold text-gray-700 text-sm">{alert.message}</p>
+                                        <div className="flex items-center justify-between border-t pt-3 mt-1">
+                                            <span className="text-xs text-gray-400 font-medium">Action Required</span>
+                                            {alert.status === 'open' ? (
+                                                <button onClick={() => triggerAgent('fix')} className="text-blue-600 font-black text-xs uppercase tracking-widest hover:underline">
+                                                    Fix Issue
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs font-bold text-gray-400">
+                                                    {alert.resolved_at ? new Date(alert.resolved_at).toLocaleTimeString() : 'Resolved'}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                                emptyMessage="All quiet on the network front."
+                            />
                         </div>
                     </div>
                 </div>
