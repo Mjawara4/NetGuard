@@ -48,12 +48,12 @@ def main():
         vps_host = sys.argv[1]
         ssh_user = sys.argv[2] if len(sys.argv) >= 3 else "root"
         ssh_port = sys.argv[3] if len(sys.argv) >= 4 else "22"
+        ssh_password = sys.argv[4] if len(sys.argv) >= 5 else getpass.getpass(f"SSH Password for {ssh_user}@{vps_host}: ")
     else:
         vps_host = input("VPS Host/IP: ").strip()
         ssh_user = input("SSH Username (default: root): ").strip() or "root"
         ssh_port = input("SSH Port (default: 22): ").strip() or "22"
-    
-    ssh_password = getpass.getpass(f"SSH Password for {ssh_user}@{vps_host}: ")
+        ssh_password = getpass.getpass(f"SSH Password for {ssh_user}@{vps_host}: ")
     
     env_file = Path(".env.production")
     if not env_file.exists():

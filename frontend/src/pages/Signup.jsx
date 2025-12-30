@@ -10,7 +10,7 @@ export default function Signup() {
         password: '',
         organization_name: ''
     });
-    const [error, setError] = useState('');
+    const [errors, setErrors] = useState([]);
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
@@ -20,7 +20,7 @@ export default function Signup() {
 
     const handleSignup = async (e) => {
         e.preventDefault();
-        setError('');
+        setErrors([]);
         setLoading(true);
         try {
             await api.post('/auth/signup', formData);
@@ -34,7 +34,17 @@ export default function Signup() {
             localStorage.setItem('token', response.data.access_token);
             navigate('/');
         } catch (err) {
-            setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+            console.error(err);
+            const data = err.response?.data;
+            if (data?.errors) {
+                // Handle Pydantic validation errors
+                setErrors(data.errors.map(e => e.msg));
+            } else if (data?.detail) {
+                // Handle standard HTTP errors
+                setErrors([data.detail]);
+            } else {
+                setErrors(['Registration failed. Please try again.']);
+            }
         } finally {
             setLoading(false);
         }
@@ -56,10 +66,20 @@ export default function Signup() {
 
                 {/* Card */}
                 <div className="bg-white rounded-[32px] shadow-2xl shadow-blue-50 border border-gray-100 p-8 sm:p-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
-                    {error && (
-                        <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-xs font-bold uppercase tracking-wider flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
-                            {error}
+                    {errors.length > 0 && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-xs font-bold uppercase tracking-wider flex items-start gap-3">
+                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mt-1.5 shrink-0"></div>
+                            <div className="flex-1">
+                                {errors.length === 1 ? (
+                                    errors[0]
+                                ) : (
+                                    <ul className="list-disc pl-2 space-y-1">
+                                        {errors.map((err, i) => (
+                                            <li key={i}>{err}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
                         </div>
                     )}
 

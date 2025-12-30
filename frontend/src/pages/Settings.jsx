@@ -187,8 +187,16 @@ export default function SettingsPage() {
                                             <p className="text-[10px] text-gray-500">List all devices (UUIDs required for other calls)</p>
                                         </div>
                                         <div>
+                                            <p className="text-xs font-mono text-purple-600">GET /inventory/devices/{'{device_id}'}</p>
+                                            <p className="text-[10px] text-gray-500">Get details for a specific device</p>
+                                        </div>
+                                        <div>
                                             <p className="text-xs font-mono text-purple-600">GET /inventory/sites</p>
                                             <p className="text-[10px] text-gray-500">List all sites</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-purple-600">POST /inventory/devices/{'{device_id}'}/provision-wireguard</p>
+                                            <p className="text-[10px] text-gray-500">Provision VPN (Returns Mikrotik script)</p>
                                         </div>
                                     </div>
                                 </div>
@@ -198,15 +206,15 @@ export default function SettingsPage() {
                                     <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">🎫 Hotspot (Hotfly)</h4>
                                     <div className="space-y-2">
                                         <div>
-                                            <p className="text-xs font-mono text-blue-600">POST /hotspot/{'{id}'}/users/batch</p>
+                                            <p className="text-xs font-mono text-blue-600">POST /hotspot/{'{device_id}'}/users/batch</p>
                                             <p className="text-[10px] text-gray-500">Batch generate vouchers</p>
                                         </div>
                                         <div>
-                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{id}'}/active</p>
+                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{device_id}'}/active</p>
                                             <p className="text-[10px] text-gray-500">List active users</p>
                                         </div>
                                         <div>
-                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{id}'}/profiles</p>
+                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{device_id}'}/profiles</p>
                                             <p className="text-[10px] text-gray-500">List hotspot profiles</p>
                                         </div>
                                     </div>
@@ -231,6 +239,10 @@ export default function SettingsPage() {
                                         <div>
                                             <p className="text-xs font-mono text-green-600">GET /monitoring/metrics/latest?device_id=...</p>
                                             <p className="text-[10px] text-gray-500">Get real-time metrics</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-mono text-green-600">GET /monitoring/metrics/history?device_id=...&start_time=...</p>
+                                            <p className="text-[10px] text-gray-500">Get historical data</p>
                                         </div>
                                         <div>
                                             <p className="text-xs font-mono text-green-600">GET /monitoring/alerts</p>

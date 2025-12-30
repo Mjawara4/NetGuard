@@ -2,7 +2,12 @@
 
 # Deployment Script for NetGuard
 
-echo "🚀 Starting Deployment..."
+# Resolve Project Root
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$DIR/.."
+cd "$PROJECT_ROOT"
+
+echo "🚀 Starting Deployment from $PROJECT_ROOT..."
 
 # 1. Pull latest changes
 echo "📥 Pulling latest code..."

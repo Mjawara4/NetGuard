@@ -6,9 +6,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from app.config import settings
+from app.core.config import settings
 from contextlib import asynccontextmanager
-from app.database import engine, Base
+from app.core.database import engine, Base
 from sqlalchemy import text
 import logging
 
@@ -74,26 +74,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from app.core.limiter import limiter
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
 # Security Headers Middleware
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        # Add security headers
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        if not settings.DEBUG:
-            # Only add HSTS in production
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        return response
+from app.core.middleware import SecurityHeadersMiddleware
 
 app.add_middleware(SecurityHeadersMiddleware)
+from slowapi.middleware import SlowAPIMiddleware
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS_LIST,
@@ -149,55 +141,14 @@ app.include_router(hotspot.router, prefix=f"{settings.API_PREFIX}/hotspot", tags
 app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["admin"])
 
 # Global Exception Handlers
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors with user-friendly messages."""
-    logger.warning(f"Validation error on {request.url.path}: {exc.errors()}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Validation error",
-            "errors": exc.errors()
-        }
-    )
+from app.core.exceptions import (
+    validation_exception_handler,
+    not_found_handler,
+    internal_server_error_handler,
+    general_exception_handler
+)
 
-@app.exception_handler(404)
-async def not_found_handler(request: Request, exc):
-    """Handle 404 errors."""
-    logger.info(f"404 on {request.url.path}")
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={"detail": "Resource not found"}
-    )
-
-@app.exception_handler(500)
-async def internal_server_error_handler(request: Request, exc):
-    """Handle 500 errors - hide internal details in production."""
-    logger.error(f"Internal server error on {request.url.path}: {exc}", exc_info=True)
-    if settings.DEBUG:
-        # In debug mode, show full error
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": str(exc)}
-        )
-    else:
-        # In production, hide internal details
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal server error"}
-        )
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Catch-all exception handler."""
-    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
-    if settings.DEBUG:
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": str(exc)}
-        )
-    else:
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "An error occurred"}
-        )
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(404, not_found_handler)
+app.add_exception_handler(500, internal_server_error_handler)
+app.add_exception_handler(Exception, general_exception_handler)

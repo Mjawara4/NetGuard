@@ -195,7 +195,6 @@ services:
       - SERVERURL=74.208.167.166 # Public IP of VPS
       - SERVERPORT=51820
       - SERVERPORT=51820
-      - PEERS=mikrotik
       - PEERDNS=auto
       - INTERNAL_SUBNET=10.13.13.0
       - ALLOWEDIPS=0.0.0.0/0

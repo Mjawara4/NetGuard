@@ -3,9 +3,10 @@ from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import Device, User, Site
+from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
 import random
@@ -65,6 +66,9 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
         
     try:
         # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
@@ -102,6 +106,9 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
          
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -131,6 +138,9 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
         
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -151,6 +161,9 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
          
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -176,6 +189,9 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
         
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -202,6 +218,9 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
+    
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
@@ -227,6 +246,9 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
         
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -245,6 +267,9 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+    
+    # Decrypt device secrets (required for async SQLAlchemy)
+    decrypt_device_secrets(device)
         
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728

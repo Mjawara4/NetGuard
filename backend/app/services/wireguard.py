@@ -3,7 +3,7 @@ import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models import Device
-from app.config import settings
+from app.core.config import settings
 
 WG_CONF_PATH = "/etc/wireguard/wg_confs/wg0.conf"
 WG_SUBNET = "10.13.13."
@@ -29,7 +29,7 @@ class WireGuardService:
                 pass
         
         # Fallback to settings (from env var)
-        from app.config import settings
+        from app.core.config import settings
         if settings.WG_SERVER_PUBLIC_KEY and settings.WG_SERVER_PUBLIC_KEY != "SERVER_PUBLIC_KEY_PLACEHOLDER":
             return settings.WG_SERVER_PUBLIC_KEY
         
@@ -123,7 +123,13 @@ class WireGuardService:
             raise ValueError("Server endpoint is required for WireGuard script generation")
         
         # If server_public_key was passed as placeholder or invalid, fetch it
-        if not server_public_key or server_public_key == "SERVER_PUBLIC_KEY_PLACEHOLDER" or server_public_key == "SERVER_PUBLIC_KEY_NOT_FOUND":
+        invalid_values = [
+            "SERVER_PUBLIC_KEY_PLACEHOLDER",
+            "SERVER_PUBLIC_KEY_NOT_FOUND",
+            "auto-read-from-volume-or-manual"
+        ]
+        
+        if not server_public_key or server_public_key in invalid_values or len(server_public_key) < 40:
             server_public_key = WireGuardService.get_server_public_key()
         
         # Validate server_public_key is a valid WireGuard key format

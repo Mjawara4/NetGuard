@@ -29,13 +29,15 @@ class DeviceBase(BaseModel):
     snmp_community: Optional[str] = Field(None, max_length=100)
     ssh_username: Optional[str] = Field(None, max_length=100)
     ssh_password: Optional[str] = Field(None, max_length=500)
-    ssh_port: int = Field(22, ge=1, le=65535, description="SSH port number")
+    ssh_port: int = Field(22, ge=1, le=65535, description="SSH port number (1-65535)")
     
     @validator('ip_address')
     def validate_ip_address(cls, v):
-        """Validate IP address format."""
+        """Validate IP address format (IPv4 or IPv6)."""
         try:
-            ipaddress.ip_address(v)
+            # version=4/6 is inferred, strict=False allows some leniency, 
+            # but we want standard validation.
+            ipaddress.ip_address(v) 
             return v
         except ValueError:
             raise ValueError(f"Invalid IP address format: {v}")

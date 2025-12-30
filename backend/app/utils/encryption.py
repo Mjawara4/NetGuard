@@ -3,7 +3,7 @@ Encryption utilities for sensitive database fields.
 Uses Fernet symmetric encryption for encrypting/decrypting sensitive data.
 """
 from cryptography.fernet import Fernet
-from app.config import settings
+from app.core.config import settings
 import base64
 import logging
 

@@ -5,6 +5,11 @@
 
 set -e  # Exit on error
 
+# Resolve Project Root
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$DIR/.."
+cd "$PROJECT_ROOT"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,7 +22,7 @@ echo ""
 
 # Check if .env.production exists
 if [ ! -f .env.production ]; then
-    echo -e "${RED}❌ Error: .env.production file not found!${NC}"
+    echo -e "${RED}❌ Error: .env.production file not found in $PROJECT_ROOT!${NC}"
     echo "Please create .env.production first."
     exit 1
 fi

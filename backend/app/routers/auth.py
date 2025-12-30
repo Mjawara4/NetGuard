@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from app.core.config import settings
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.security import verify_password, create_access_token, get_password_hash
 from app.models import User
 from app.schemas.user import UserCreate, UserRegister, UserResponse, Token
@@ -12,7 +13,10 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+from app.core.limiter import limiter
+
 @router.post("/login", response_model=Token)
+@limiter.limit("5/15minute")
 async def login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),

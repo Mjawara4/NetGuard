@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 import uuid
 import enum
 from datetime import datetime
-from app.database import Base
+from app.core.database import Base
 from app.utils.encryption import encrypt_value, decrypt_value
 
 class UserRole(str, enum.Enum):
@@ -92,11 +92,26 @@ def encrypt_device_secrets(mapper, connection, target):
         if not target.wg_private_key.startswith("gAAAAAB"):
             target.wg_private_key = encrypt_value(target.wg_private_key)
 
-@event.listens_for(Device, "load", propagate=True)
-def decrypt_device_secrets(target, context):
-    """Decrypt sensitive fields after load (dual-read mode for backward compatibility)."""
-    if target.ssh_password:
-        target.ssh_password = decrypt_value(target.ssh_password)
+# Note: SQLAlchemy's "load" event doesn't work reliably with async sessions.
+# Instead, we use a helper function decrypt_device_secrets() that must be called
+# manually after loading a device from the database.
+
+def decrypt_device_secrets(device: "Device") -> "Device":
+    """
+    Decrypt sensitive fields on a Device instance.
+    This must be called manually after loading a device from the database
+    because SQLAlchemy's load event doesn't work with async sessions.
     
-    if target.wg_private_key:
-        target.wg_private_key = decrypt_value(target.wg_private_key)
+    Args:
+        device: Device instance with potentially encrypted fields
+        
+    Returns:
+        Device instance with decrypted fields (same instance, modified in place)
+    """
+    if device.ssh_password:
+        device.ssh_password = decrypt_value(device.ssh_password)
+    
+    if device.wg_private_key:
+        device.wg_private_key = decrypt_value(device.wg_private_key)
+    
+    return device

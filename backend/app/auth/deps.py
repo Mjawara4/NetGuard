@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException, status, Header, Security
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.security import settings
 from app.models import User, APIKey
 from sqlalchemy import select
@@ -56,6 +56,12 @@ async def get_api_key(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API Key",
         )
+        
+    # Update last_used_at
+    from datetime import datetime
+    api_key.last_used_at = datetime.utcnow()
+    await db.commit()
+    
     return api_key
 
 async def get_authorized_actor(

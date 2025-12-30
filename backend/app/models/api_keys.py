@@ -3,7 +3,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
-from app.database import Base
+from app.core.database import Base
 
 class APIKey(Base):
     __tablename__ = "api_keys"
@@ -13,6 +13,7 @@ class APIKey(Base):
     description = Column(String)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True) # Track usage timestamp
     
     # Link to Organization for multi-tenancy
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True) # Nullable for migration, but logic should enforce it

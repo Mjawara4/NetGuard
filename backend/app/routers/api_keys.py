@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.deps import get_current_user
 from app.models import User, APIKey
 from app.schemas.api_key import APIKeyCreate, APIKeyResponse
@@ -74,3 +74,23 @@ async def revoke_api_key(
     await db.delete(key_obj)
     await db.commit()
     return
+
+@router.get("/usage", response_model=List[APIKeyResponse])
+async def get_usage_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get API key usage statistics.
+    Returns list of API keys with their last_used_at timestamps.
+    """
+    if not current_user.organization_id:
+        return []
+        
+    result = await db.execute(
+        select(APIKey).where(
+            APIKey.organization_id == current_user.organization_id,
+            APIKey.is_active == True
+        ).order_by(APIKey.last_used_at.desc().nulls_last())
+    )
+    return result.scalars().all()

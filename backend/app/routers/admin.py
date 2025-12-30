@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.deps import get_current_super_admin
 from app.models import User, APIKey, Device, Organization
 from app.schemas.user import UserResponse

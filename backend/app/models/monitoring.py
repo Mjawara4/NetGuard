@@ -4,7 +4,7 @@ from sqlalchemy.orm import relationship
 import uuid
 import enum
 from datetime import datetime
-from app.database import Base
+from app.core.database import Base
 
 # Enums
 class AlertSeverity(str, enum.Enum):

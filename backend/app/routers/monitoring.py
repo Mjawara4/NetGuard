@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import List, Optional
-from app.database import get_db
+from app.core.database import get_db
 from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus
-from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse
+from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse, DashboardStatsResponse
 from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import User, Device, Site
 from uuid import UUID
 from datetime import datetime
 
 router = APIRouter()
+from app.core.limiter import limiter
 
 @router.post("/metrics", response_model=MetricResponse)
 async def create_metric(metric: MetricCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -44,7 +46,8 @@ async def create_metric(metric: MetricCreate, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=500, detail="Failed to create metric")
 
 @router.get("/metrics/latest", response_model=List[MetricResponse])
-async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, limit: int = 20, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+@limiter.limit("100/minute")
+async def get_latest_metrics(request: Request, device_id: str, metric_type: Optional[str] = None, limit: int = 20, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     from uuid import UUID
     
     # Verify ownership
@@ -61,7 +64,8 @@ async def get_latest_metrics(device_id: str, metric_type: Optional[str] = None, 
     return result.scalars().all()
 
 @router.get("/metrics/history", response_model=List[MetricResponse])
-async def get_historical_metrics(device_id: str, start_time: str, end_time: str = None, metric_type: Optional[str] = None, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+@limiter.limit("50/minute")
+async def get_historical_metrics(request: Request, device_id: str, start_time: str, end_time: str = None, metric_type: Optional[str] = None, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     from uuid import UUID
     from datetime import datetime
     import traceback
@@ -163,3 +167,90 @@ async def create_fix_action(alert_id: str, action: AutoFixActionCreate, db: Asyn
     await db.commit()
     await db.refresh(new_action)
     return new_action
+
+@router.get("/dashboard-stats", response_model=DashboardStatsResponse)
+@limiter.limit("60/minute")
+async def get_dashboard_stats(request: Request, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    from sqlalchemy import func
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # 1. System Health (Online Routers %)
+    # Logic: Get all active routers for org.
+    # Get latest 'status' metric for each.
+    # Calculate % of routers where status == 1.0
+    
+    # Get all active routers
+    routers_res = await db.execute(select(Device).join(Site).where(
+        Device.device_type == 'router',
+        Device.is_active == True,
+        Site.organization_id == actor.organization_id
+    ))
+    routers = routers_res.scalars().all()
+    
+    total_routers = len(routers)
+    online_routers = 0
+    
+    active_users_count = 0
+    all_hotspot_users = []
+    
+    for router in routers:
+        # Check Up Status
+        # Get latest uptime_status or status
+        status_res = await db.execute(
+            select(Metric).where(
+                Metric.device_id == router.id,
+                Metric.metric_type == 'status' 
+            ).order_by(desc(Metric.time)).limit(1)
+        )
+        status_metric = status_res.scalars().first()
+        if status_metric and status_metric.value == 1.0:
+            online_routers += 1
+            
+        # 2. Active Users (Sum of 'hotspot_users')
+        users_res = await db.execute(
+            select(Metric).where(
+                Metric.device_id == router.id,
+                Metric.metric_type == 'hotspot_users'
+            ).order_by(desc(Metric.time)).limit(1)
+        )
+        users_metric = users_res.scalars().first()
+        if users_metric:
+            active_users_count += int(users_metric.value)
+            
+        # 3. Top Consumption (Aggregate from 'hotspot_traffic')
+        traffic_res = await db.execute(
+            select(Metric).where(
+                Metric.device_id == router.id,
+                Metric.metric_type == 'hotspot_traffic'
+            ).order_by(desc(Metric.time)).limit(1)
+        )
+        traffic_metric = traffic_res.scalars().first()
+        if traffic_metric and traffic_metric.meta_data and 'users' in traffic_metric.meta_data:
+            # Parse users from metadata
+            raw_users = traffic_metric.meta_data['users']
+            for u in raw_users:
+                # Convert to schema format
+                total = u.get('bytes_in', 0) + u.get('bytes_out', 0)
+                all_hotspot_users.append({
+                    'user': u.get('user'),
+                    'ip': u.get('ip'),
+                    'mac': u.get('mac'),
+                    'bytes_in': u.get('bytes_in', 0),
+                    'bytes_out': u.get('bytes_out', 0),
+                    'total_bytes': total
+                })
+
+    # Sort all users by total bytes desc
+    all_hotspot_users.sort(key=lambda x: x['total_bytes'], reverse=True)
+    top_consumption = all_hotspot_users[:50] # Return top 50 global
+
+    health_percentage = 100.0
+    if total_routers > 0:
+        health_percentage = (online_routers / total_routers) * 100.0
+    
+    return {
+        "system_health": round(health_percentage, 1),
+        "active_users": active_users_count,
+        "top_consumption": top_consumption
+    }

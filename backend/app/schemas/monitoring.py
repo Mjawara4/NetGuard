@@ -1,4 +1,4 @@
-from pydantic import BaseModel, UUID4, Field
+from pydantic import BaseModel, UUID4, Field, validator
 from typing import Optional, Any, Dict, List
 from datetime import datetime
 from app.models.monitoring import AlertSeverity, AlertStatus
@@ -11,6 +11,15 @@ class MetricCreate(BaseModel):
     unit: Optional[str] = None
     meta_data: Optional[Dict[str, Any]] = None
     time: Optional[datetime] = None # Optional, defaults to now
+
+    @validator('value')
+    def validate_metric_value(cls, v, values):
+        """Validate metric values for known types."""
+        metric_type = values.get('metric_type')
+        if metric_type in ['cpu_usage', 'memory_usage']:
+            if not (0 <= v <= 100):
+                raise ValueError(f"{metric_type} must be between 0 and 100")
+        return v
 
 class MetricResponse(MetricCreate):
     time: datetime
@@ -64,3 +73,17 @@ class IncidentResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+# Dashboard Stats
+class HotspotUser(BaseModel):
+    user: Optional[str] = None
+    ip: Optional[str] = None
+    mac: Optional[str] = None
+    bytes_in: int = 0
+    bytes_out: int = 0
+    total_bytes: int = 0
+
+class DashboardStatsResponse(BaseModel):
+    system_health: float # Percentage
+    active_users: int
+    top_consumption: List[HotspotUser]

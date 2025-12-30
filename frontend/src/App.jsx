@@ -6,23 +6,12 @@ import Devices from './pages/Devices';
 import Sites from './pages/Sites';
 import NetworkMap from './pages/NetworkMap';
 import Reports from './pages/Reports';
-import Layout from './components/Layout';
 import Hotspot from './pages/Hotspot';
 import Signup from './pages/Signup';
 import SettingsPage from './pages/Settings';
 import AdminDashboard from './pages/AdminDashboard';
 
-const ProtectedRoute = ({ children }) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        return <Navigate to="/login" replace />;
-    }
-    return (
-        <Layout>
-            {children}
-        </Layout>
-    );
-};
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
     return (

@@ -4,12 +4,12 @@ from sqlalchemy import select, delete
 from typing import List
 from uuid import UUID
 import logging
-from app.database import get_db
+from app.core.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
 from app.models import Device, Site, User, APIKey, Metric, Alert
 from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse
 from app.services.wireguard import WireGuardService
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +132,10 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
+    # Decrypt device secrets (required for async SQLAlchemy)
+    from app.models.core import decrypt_device_secrets
+    decrypt_device_secrets(device)
+
     # If already provisioned, return existing info (idempotency)
     # But if keys are missing from DB, regenerate.
     
@@ -148,6 +152,9 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(device)
     
+    # Decrypt again after refresh (since refresh loads from DB)
+    decrypt_device_secrets(device)
+    
     # Update Server Config
     # We call this every time to ensure it's in the config file, 
     # though ideally we check if it's already there to avoid duplicates.
@@ -163,14 +170,22 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
     
     # Generate Script - ensure server public key is fetched if needed
     server_pub_key = settings.WG_SERVER_PUBLIC_KEY
-    if not server_pub_key or server_pub_key == "SERVER_PUBLIC_KEY_PLACEHOLDER":
+    # Check if the value is a valid WireGuard key (base64, ~44 chars) or a placeholder
+    is_valid_key = server_pub_key and len(server_pub_key) >= 40 and server_pub_key not in [
+        "SERVER_PUBLIC_KEY_PLACEHOLDER", 
+        "SERVER_PUBLIC_KEY_NOT_FOUND",
+        "auto-read-from-volume-or-manual"
+    ]
+    
+    if not is_valid_key:
         try:
             server_pub_key = WireGuardService.get_server_public_key()
+            logger.info(f"Successfully read server public key from volume")
         except Exception as e:
             logger.error(f"Failed to get server public key: {e}")
             raise HTTPException(
                 status_code=500,
-                detail="WireGuard server configuration error. Please ensure WG_SERVER_PUBLIC_KEY is set in .env"
+                detail="WireGuard server configuration error. Please ensure WG_SERVER_PUBLIC_KEY is set in .env or key file exists"
             )
     
     script = WireGuardService.generate_mikrotik_script(

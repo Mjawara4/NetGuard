@@ -8,7 +8,7 @@ export default function Dashboard() {
     const [alerts, setAlerts] = useState([]);
     const [devices, setDevices] = useState([]);
     const [metrics, setMetrics] = useState([]);
-    const [hotspotData, setHotspotData] = useState({ count: 0, topUsers: [] });
+    const [hotspotData, setHotspotData] = useState({ count: 0, topUsers: [], health: 0 });
 
     useEffect(() => {
         fetchData();
@@ -18,16 +18,27 @@ export default function Dashboard() {
 
     const fetchData = async () => {
         try {
+            // 1. Aggregated Dashboard Stats (Health, Users, Top Consumption)
+            try {
+                const statsRes = await api.get('/monitoring/dashboard-stats');
+                setHotspotData({
+                    count: statsRes.data.active_users,
+                    topUsers: statsRes.data.top_consumption,
+                    health: statsRes.data.system_health
+                });
+            } catch (e) {
+                console.error("Failed to fetch dashboard stats", e);
+            }
+
             const alertsRes = await api.get('/monitoring/alerts');
             const devicesRes = await api.get('/inventory/devices');
             setAlerts(alertsRes.data);
             setDevices(devicesRes.data);
 
-            // Fetch real metrics for the first active router
+            // 2. CPU Metrics for Graph (First Active Router)
             const routers = devicesRes.data.filter(d => d.device_type === 'router' && d.is_active);
             if (routers.length > 0) {
                 const routerId = routers[0].id;
-                // 1. CPU Metrics for Graph
                 const metricsRes = await api.get(`/monitoring/metrics/latest?device_id=${routerId}&limit=20&metric_type=cpu_usage`);
 
                 // Sort by time ascending for graph
@@ -40,29 +51,6 @@ export default function Dashboard() {
                     setMetrics(realMetrics);
                 } else {
                     useMockMetrics();
-                }
-
-                // 2. Hotspot Metrics
-                try {
-                    const hsUsersRes = await api.get(`/monitoring/metrics/latest?device_id=${routerId}&limit=1&metric_type=hotspot_users`);
-                    const hsTrafficRes = await api.get(`/monitoring/metrics/latest?device_id=${routerId}&limit=1&metric_type=hotspot_traffic`);
-
-                    let count = 0;
-                    let users = [];
-
-                    if (hsUsersRes.data.length > 0) {
-                        count = parseInt(hsUsersRes.data[0].value);
-                    }
-
-                    if (hsTrafficRes.data.length > 0 && hsTrafficRes.data[0].meta_data && hsTrafficRes.data[0].meta_data.users) {
-                        users = hsTrafficRes.data[0].meta_data.users;
-                        // Sort by total data descending
-                        users.sort((a, b) => (b.bytes_in + b.bytes_out) - (a.bytes_in + a.bytes_out));
-                    }
-
-                    setHotspotData({ count, topUsers: users });
-                } catch (e) {
-                    console.error("Hotspot fetch error", e);
                 }
             } else {
                 useMockMetrics();
@@ -120,7 +108,7 @@ export default function Dashboard() {
                             </div>
                             <div>
                                 <div className="text-[10px] uppercase text-gray-400 font-bold tracking-widest">System Health</div>
-                                <div className="text-xl font-black text-emerald-600">98%</div>
+                                <div className="text-xl font-black text-emerald-600">{hotspotData.health}%</div>
                             </div>
                         </div>
                     </div>
