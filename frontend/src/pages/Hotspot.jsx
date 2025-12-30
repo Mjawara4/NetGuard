@@ -215,11 +215,13 @@ export default function Hotspot() {
                     {/* Hidden Print Area (Physical Print) */}
                     <div className="hidden print:grid print:grid-cols-10 print:gap-[2px] print:p-0" id="printable-area">
                         {generatedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-[1px] rounded border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[40px] overflow-hidden break-inside-avoid">
-                                <div className="text-[5px] font-black text-gray-300 uppercase tracking-widest leading-none mb-[1px]">VOUCHER</div>
-                                <div className="font-mono text-[9px] font-black text-blue-600 leading-none my-[1px] tracking-tighter break-all px-[1px]">{u.username}</div>
-                                <div className="text-[4px] font-bold text-gray-400 uppercase leading-none mt-[1px]">
-                                    {batchForm.time_limit || 'UNLIM'}
+                            <div key={i} className="voucher-card p-[2px] rounded border border-gray-100 text-center bg-white flex flex-col justify-center min-h-[45px] overflow-hidden break-inside-avoid shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
+                                <div className="text-[5px] font-black text-gray-400 uppercase tracking-widest leading-none mb-[2px]">VOUCHER</div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-[3px] py-[2px] mb-[2px] w-full flex justify-center items-center">
+                                    <div className="font-mono text-[9px] font-black text-blue-600 leading-none tracking-tighter break-all">{u.username}</div>
+                                </div>
+                                <div className="text-[4px] font-bold text-gray-400 uppercase leading-none">
+                                    LIM: {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>
                         ))}
