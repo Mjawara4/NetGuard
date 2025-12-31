@@ -317,11 +317,16 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         generated = []
         for _ in range(batch.qty):
             if batch.random_mode:
-                # 4 random lowercase letters + 4 random numbers
-                letters = ''.join(random.choices(string.ascii_lowercase, k=4))
-                numbers = ''.join(random.choices(string.digits, k=4))
-                username = f"{letters}{numbers}"
-                password = username # Same as username
+                if batch.format == "numeric":
+                    # 8 random numbers
+                    username = ''.join(random.choices(string.digits, k=8))
+                    password = username
+                else:
+                    # Default: 4 random lowercase letters + 4 random numbers
+                    letters = ''.join(random.choices(string.ascii_lowercase, k=4))
+                    numbers = ''.join(random.choices(string.digits, k=4))
+                    username = f"{letters}{numbers}"
+                    password = username # Same as username
             else:
                 suffix = ''.join(random.choices(string.digits, k=batch.length))
                 username = f"{batch.prefix}{suffix}"

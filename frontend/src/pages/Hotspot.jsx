@@ -16,7 +16,7 @@ export default function Hotspot() {
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
 
     // Generation State
-    const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false });
+    const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
     const [generatedBatch, setGeneratedBatch] = useState([]);
     const [showPrintView, setShowPrintView] = useState(false);
 
@@ -543,13 +543,36 @@ export default function Hotspot() {
                                             </div>
                                             <div>
                                                 <div className="flex justify-between items-center mb-3">
-                                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Prefix</label>
-                                                    <div className="flex items-center gap-2">
-                                                        <input type="checkbox" id="random_mode" checked={batchForm.random_mode} onChange={e => setBatchForm({ ...batchForm, random_mode: e.target.checked })} className="w-4 h-4 rounded border-gray-200 text-blue-600 focus:ring-blue-500" />
-                                                        <label htmlFor="random_mode" className="text-[8px] sm:text-[10px] text-blue-600 font-black uppercase cursor-pointer">Auto</label>
-                                                    </div>
+                                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Generation Mode</label>
                                                 </div>
-                                                <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold disabled:opacity-50" value={batchForm.prefix} onChange={e => setBatchForm({ ...batchForm, prefix: e.target.value })} disabled={batchForm.random_mode} required={!batchForm.random_mode} placeholder={batchForm.random_mode ? 'RAND_SEQ' : 'user'} />
+                                                <div className="flex gap-2">
+                                                    <select
+                                                        className="w-5/12 bg-gray-50 border-none rounded-2xl px-3 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-xs"
+                                                        value={batchForm.random_mode ? (batchForm.format === 'numeric' ? 'numeric' : 'auto') : 'prefix'}
+                                                        onChange={e => {
+                                                            const mode = e.target.value;
+                                                            if (mode === 'prefix') {
+                                                                setBatchForm({ ...batchForm, random_mode: false, prefix: '', format: 'alphanumeric' });
+                                                            } else if (mode === 'auto') {
+                                                                setBatchForm({ ...batchForm, random_mode: true, prefix: 'RAND_SEQ', format: 'alphanumeric' });
+                                                            } else if (mode === 'numeric') {
+                                                                setBatchForm({ ...batchForm, random_mode: true, prefix: 'RAND_NUM', format: 'numeric' });
+                                                            }
+                                                        }}
+                                                    >
+                                                        <option value="prefix">Prefix</option>
+                                                        <option value="auto">Auto (A-Z, 0-9)</option>
+                                                        <option value="numeric">Auto (0-9 Only)</option>
+                                                    </select>
+                                                    <input
+                                                        type="text"
+                                                        className="w-7/12 bg-gray-50 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold disabled:opacity-50"
+                                                        value={batchForm.prefix}
+                                                        onChange={e => setBatchForm({ ...batchForm, prefix: e.target.value })}
+                                                        disabled={batchForm.random_mode}
+                                                        placeholder="Prefix..."
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
