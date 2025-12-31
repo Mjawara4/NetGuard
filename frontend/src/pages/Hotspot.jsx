@@ -95,7 +95,6 @@ export default function Hotspot() {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
                 setActiveSessions(res.data);
             } else if (activeTab === 'profiles') {
-            } else if (activeTab === 'profiles') {
                 await fetchProfiles(selectedDevice);
             } else if (activeTab === 'templates') {
                 await fetchTemplate(selectedDevice);
@@ -213,8 +212,6 @@ export default function Hotspot() {
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
-                        <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
-                        <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
                     </div>
@@ -267,8 +264,11 @@ export default function Hotspot() {
                                 <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center print-bg print-border" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
                                     <div className="font-mono text-xl font-black leading-none tracking-tight print-header" style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
-                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none">
+                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
+                                </div>
+                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none">
+                                    LIM: {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>
                         ))}
