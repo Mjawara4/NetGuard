@@ -162,7 +162,7 @@ export default function Hotspot() {
         <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <style>{`
                 @media print {
-                    @page { margin: 1cm; size: auto; }
+                    @page { margin: 5mm; size: auto; }
                     body * { visibility: hidden; }
                     #printable-area, #printable-area * { visibility: visible; }
                     #printable-area { 
@@ -170,15 +170,15 @@ export default function Hotspot() {
                         left: 0; 
                         top: 0; 
                         width: 100%; 
-                        display: block !important; /* Use block for better flow control */
+                        display: block !important;
                     }
                     .no-print { display: none !important; }
                     
                     /* Grid simulation using inline-block for better print support */
                     .voucher-card { 
                         display: inline-block !important;
-                        width: 18% !important; /* ~5 per row allowing for margins */
-                        margin: 1% !important;
+                        width: 19% !important; /* Slightly wider */
+                        margin: 0.5% !important; /* Tighter margins */
                         vertical-align: top;
                         
                         page-break-inside: avoid !important; 
@@ -279,8 +279,8 @@ export default function Hotspot() {
                                 <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
 
                                 <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center print-bg print-border" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                    <div className="font-mono text-xl font-black leading-none tracking-tight print-header" style={{ color: template.color_primary }}>{u.username}</div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                    <div className="font-mono text-lg font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
                                 <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
