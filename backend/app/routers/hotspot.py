@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
-from app.models import Device, User, Site
+from app.models import Device, User, Site, APIKey, UserRole
 from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
