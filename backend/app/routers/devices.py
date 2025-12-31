@@ -33,17 +33,24 @@ async def create_site(site: SiteCreate, db: AsyncSession = Depends(get_db), acto
 async def get_sites(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     
     if isinstance(actor, APIKey):
-        result = await db.execute(select(Site).where(Site.organization_id == actor.organization_id))
+        if actor.organization_id:
+            result = await db.execute(select(Site).where(Site.organization_id == actor.organization_id))
+        else:
+            result = await db.execute(select(Site))
         return result.scalars().all()
         
     current_user = actor
+    # Super Admin sees all
+    if current_user.role == UserRole.SUPER_ADMIN:
+        result = await db.execute(select(Site))
+        return result.scalars().all()
+
     # Filter by user's org
     if current_user.organization_id:
         result = await db.execute(select(Site).where(Site.organization_id == current_user.organization_id))
-    else:
-        # Super admin sees all
-        result = await db.execute(select(Site))
-    return result.scalars().all()
+        return result.scalars().all()
+    
+    return []
 
 @router.post("/devices", response_model=DeviceResponse)
 async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -65,24 +72,38 @@ async def get_devices(
 ):
     
     if isinstance(actor, APIKey):
-        # Filter by API key's org
-        result = await db.execute(select(Device).join(Site).where(Site.organization_id == actor.organization_id))
+        if actor.organization_id:
+            # Filter by API key's org
+            result = await db.execute(select(Device).join(Site).where(Site.organization_id == actor.organization_id))
+        else:
+            # Global API key sees all
+            result = await db.execute(select(Device))
         return result.scalars().all()
 
     current_user = actor
+    # Super Admin sees all
+    if current_user.role == UserRole.SUPER_ADMIN:
+        result = await db.execute(select(Device))
+        return result.scalars().all()
+
     # Filter by user's org via Site
     if current_user.organization_id:
         result = await db.execute(select(Device).join(Site).where(Site.organization_id == current_user.organization_id))
         return result.scalars().all()
-    else:
-        # Fallback or Super Admin
-        result = await db.execute(select(Device))
-        return result.scalars().all()
+    
+    return []
 
 @router.get("/devices/{device_id}", response_model=DeviceResponse)
 async def get_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    result = await db.execute(query)
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -92,7 +113,14 @@ async def get_device(device_id: str, db: AsyncSession = Depends(get_db), actor =
 async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     
     # Check existence and ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    result = await db.execute(query)
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -111,7 +139,14 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), acto
 @router.put("/devices/{device_id}", response_model=DeviceResponse)
 async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+         
+    result = await db.execute(query)
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -127,7 +162,14 @@ async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSe
 @router.post("/devices/{device_id}/provision-wireguard", response_model=WireGuardProvisionResponse)
 async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership
-    result = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+         
+    result = await db.execute(query)
     device = result.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

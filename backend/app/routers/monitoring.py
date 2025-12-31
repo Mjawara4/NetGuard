@@ -22,14 +22,19 @@ async def create_metric(metric: MetricCreate, db: AsyncSession = Depends(get_db)
     logger = logging.getLogger(__name__)
     
     try:
-        # Verify device exists and belongs to actor's organization
+        # Verify device exists and belongs to actor's organization (if restricted)
         from app.models import Device, Site
-        dev_result = await db.execute(
-            select(Device).join(Site).where(
+        if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+            dev_query = select(Device).where(Device.id == metric.device_id)
+        elif isinstance(actor, APIKey) and not actor.organization_id:
+            dev_query = select(Device).where(Device.id == metric.device_id)
+        else:
+            dev_query = select(Device).join(Site).where(
                 Device.id == metric.device_id,
                 Site.organization_id == actor.organization_id
             )
-        )
+        
+        dev_result = await db.execute(dev_query)
         device = dev_result.scalars().first()
         if not device:
             raise HTTPException(status_code=404, detail="Device not found or access denied")
@@ -51,7 +56,14 @@ async def get_latest_metrics(request: Request, device_id: str, metric_type: Opti
     from uuid import UUID
     
     # Verify ownership
-    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         dev_query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         dev_query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         dev_query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    dev_res = await db.execute(dev_query)
     if not dev_res.scalars().first():
          raise HTTPException(status_code=404, detail="Device not found")
          
@@ -71,7 +83,14 @@ async def get_historical_metrics(request: Request, device_id: str, start_time: s
     import traceback
     
     # Verify ownership
-    dev_res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+         dev_query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+         dev_query = select(Device).where(Device.id == UUID(device_id))
+    else:
+         dev_query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    dev_res = await db.execute(dev_query)
     if not dev_res.scalars().first():
          raise HTTPException(status_code=404, detail="Device not found")
     
@@ -103,7 +122,14 @@ async def get_historical_metrics(request: Request, device_id: str, start_time: s
 
 @router.get("/alerts", response_model=List[AlertResponse])
 async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    result = await db.execute(select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Alert.created_at)).offset(skip).limit(limit))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        stmt = select(Alert).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        stmt = select(Alert).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+    else:
+        stmt = select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+    
+    result = await db.execute(stmt)
     return result.scalars().all()
 
 @router.post("/alerts", response_model=AlertResponse)
@@ -116,16 +142,26 @@ async def create_alert(alert: AlertCreate, db: AsyncSession = Depends(get_db), a
 
 @router.get("/incidents", response_model=List[IncidentResponse])
 async def get_incidents(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    # Join Incident -> Alert -> Device -> Site to filter by organization
-    stmt = select(Incident).join(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Incident.created_at))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        stmt = select(Incident).order_by(desc(Incident.created_at))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        stmt = select(Incident).order_by(desc(Incident.created_at))
+    else:
+        stmt = select(Incident).join(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Incident.created_at))
+    
     result = await db.execute(stmt)
     return result.scalars().all()
 
 @router.patch("/alerts/{alert_id}", response_model=AlertResponse)
 async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership via device -> site
-    # This is a bit complex efficiently, so we just fetch alert and check ownership
-    stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        stmt = select(Alert).where(Alert.id == UUID(alert_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        stmt = select(Alert).where(Alert.id == UUID(alert_id))
+    else:
+        stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+    
     result = await db.execute(stmt)
     alert_obj = result.scalars().first()
     
@@ -143,7 +179,13 @@ async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = De
 @router.post("/alerts/{alert_id}/fix-actions", response_model=AutoFixActionResponse)
 async def create_fix_action(alert_id: str, action: AutoFixActionCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify alert ownership
-    stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        stmt = select(Alert).where(Alert.id == UUID(alert_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        stmt = select(Alert).where(Alert.id == UUID(alert_id))
+    else:
+        stmt = select(Alert).join(Device).join(Site).where(Alert.id == UUID(alert_id), Site.organization_id == actor.organization_id)
+        
     result = await db.execute(stmt)
     alert_obj = result.scalars().first()
     
@@ -173,12 +215,19 @@ async def get_dashboard_stats(request: Request, db: AsyncSession = Depends(get_d
     # Get latest 'status' metric for each.
     # Calculate % of routers where status == 1.0
     
-    # Get all active routers
-    routers_res = await db.execute(select(Device).join(Site).where(
-        Device.device_type == 'router',
-        Device.is_active == True,
-        Site.organization_id == actor.organization_id
-    ))
+    # Get all active routers for org.
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        base_query = select(Device).where(Device.device_type == 'router', Device.is_active == True)
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        base_query = select(Device).where(Device.device_type == 'router', Device.is_active == True)
+    else:
+        base_query = select(Device).join(Site).where(
+            Device.device_type == 'router',
+            Device.is_active == True,
+            Site.organization_id == actor.organization_id
+        )
+    
+    routers_res = await db.execute(base_query)
     routers = routers_res.scalars().all()
     
     total_routers = len(routers)
