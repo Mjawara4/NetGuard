@@ -62,8 +62,15 @@ def get_api_pool(ip, username, password, port=8728):
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
 async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    # Fetch device with org check
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    # Fetch device with visibility check
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -103,7 +110,14 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
 
 @router.post("/{device_id}/users")
 async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
@@ -135,7 +149,14 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
 
 @router.get("/{device_id}/profiles", response_model=List[dict])
 async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -158,7 +179,14 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
 
 @router.post("/{device_id}/profiles")
 async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
@@ -186,7 +214,14 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
 
 @router.delete("/{device_id}/profiles/{profile_name}")
 async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -214,7 +249,14 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
 
 @router.get("/{device_id}/active", response_model=List[HotspotActive])
 async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -243,7 +285,14 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
 
 @router.delete("/{device_id}/active/{active_id}")
 async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -271,7 +320,14 @@ class VoucherTemplate(BaseModel):
 
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -283,7 +339,14 @@ async def update_voucher_template(device_id: str, template: VoucherTemplate, db:
 
 @router.get("/{device_id}/voucher-template", response_model=VoucherTemplate)
 async def get_voucher_template(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -297,7 +360,14 @@ async def get_voucher_template(device_id: str, db: AsyncSession = Depends(get_db
 @router.post("/{device_id}/users/batch")
 async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     
-    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+        
+    res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
