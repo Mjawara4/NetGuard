@@ -11,6 +11,11 @@ from contextlib import asynccontextmanager
 from app.core.database import engine, Base
 from sqlalchemy import text
 import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 
 # Configure logging
 logging.basicConfig(
@@ -74,17 +79,27 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-from app.core.limiter import limiter
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-
 # Security Headers Middleware
-from app.core.middleware import SecurityHeadersMiddleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Add security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if not settings.DEBUG:
+            # Only add HSTS in production
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
 app.add_middleware(SecurityHeadersMiddleware)
-from slowapi.middleware import SlowAPIMiddleware
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,

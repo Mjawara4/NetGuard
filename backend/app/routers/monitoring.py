@@ -115,18 +115,11 @@ async def create_alert(alert: AlertCreate, db: AsyncSession = Depends(get_db), a
     return new_alert
 
 @router.get("/incidents", response_model=List[IncidentResponse])
-async def get_incidents(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Incidents don't have direct device link in current model (mock), but alerts do. 
-    # For MVP, let's assume incidents are global or rework model.
-    # Current Incident model likely needs organization_id or device connection.
-    # Let's check Incident model first.
-    # Assuming Incident -> Device relation exists or needed.
-    # If not, we might filter by checking alerts associated? 
-    # For now, let's just return empty list or filter if possible.
-    # If Incident has no relation, we can't filter easily without schema change.
-    # Let's filter by Organization if schema supports it, otherwise return all (risk) or none.
-    # Safe default: return empty for now unless we added org to incident.
-    return []
+async def get_incidents(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Join Incident -> Alert -> Device -> Site to filter by organization
+    stmt = select(Incident).join(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Incident.created_at))
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
 @router.patch("/alerts/{alert_id}", response_model=AlertResponse)
 async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
