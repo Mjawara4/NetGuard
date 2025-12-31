@@ -4,10 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import List, Optional
 from app.core.database import get_db
-from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus
+from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus, User, Device, Site, APIKey, UserRole
 from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse, DashboardStatsResponse
 from app.auth.deps import get_authorized_actor, get_current_user
-from app.models import User, Device, Site
 from uuid import UUID
 from datetime import datetime
 

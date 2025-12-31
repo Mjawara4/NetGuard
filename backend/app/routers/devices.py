@@ -6,7 +6,7 @@ from uuid import UUID
 import logging
 from app.core.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
-from app.models import Device, Site, User, APIKey, Metric, Alert
+from app.models import Device, Site, User, APIKey, Metric, Alert, UserRole
 from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse
 from app.services.wireguard import WireGuardService
 from app.core.config import settings
