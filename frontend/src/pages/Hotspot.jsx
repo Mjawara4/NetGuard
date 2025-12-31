@@ -214,20 +214,20 @@ export default function Hotspot() {
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
-                    <div className="hidden print:grid print:grid-cols-6 print:gap-2 print:p-2" id="printable-area">
+                    <div className="hidden print:grid print:grid-cols-5 print:gap-3 print:p-4" id="printable-area">
                         {generatedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-1 rounded-md border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[60px] overflow-hidden break-inside-avoid shadow-sm relative">
+                            <div key={i} className="voucher-card p-2 rounded-lg border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[70px] overflow-hidden break-inside-avoid shadow-sm relative">
                                 {/* Cut Guides */}
-                                <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-gray-200"></div>
-                                <div className="absolute top-0 right-0 w-1 h-1 border-t border-r border-gray-200"></div>
-                                <div className="absolute bottom-0 left-0 w-1 h-1 border-b border-l border-gray-200"></div>
-                                <div className="absolute bottom-0 right-0 w-1 h-1 border-b border-r border-gray-200"></div>
+                                <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-gray-300"></div>
+                                <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r border-gray-300"></div>
+                                <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l border-gray-300"></div>
+                                <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
 
-                                <div className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">VOUCHER</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded py-1 mb-1 w-full flex justify-center items-center">
-                                    <div className="font-mono text-lg font-black text-blue-600 leading-none tracking-tight">{u.username}</div>
+                                <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1.5">VOUCHER</div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center">
+                                    <div className="font-mono text-xl font-black text-blue-600 leading-none tracking-tight">{u.username}</div>
                                 </div>
-                                <div className="text-[6px] font-bold text-gray-400 uppercase leading-none">
+                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none">
                                     LIM: {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>
