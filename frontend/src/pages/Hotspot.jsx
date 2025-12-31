@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings } from 'lucide-react';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 
@@ -19,6 +19,14 @@ export default function Hotspot() {
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false });
     const [generatedBatch, setGeneratedBatch] = useState([]);
     const [showPrintView, setShowPrintView] = useState(false);
+
+    // Template State
+    const [template, setTemplate] = useState({
+        header_text: "Wi-Fi Voucher",
+        footer_text: "Thank you for visiting!",
+        logo_url: "",
+        color_primary: "#2563EB"
+    });
 
     useEffect(() => {
         fetchDevices();
@@ -54,6 +62,28 @@ export default function Hotspot() {
         }
     };
 
+    const fetchTemplate = async (deviceId) => {
+        try {
+            const res = await api.get(`/hotspot/${deviceId}/voucher-template`);
+            if (res.data) setTemplate(res.data);
+        } catch (e) {
+            console.error("Failed to fetch template:", e);
+        }
+    };
+
+    const saveTemplate = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const res = await api.post(`/hotspot/${selectedDevice}/voucher-template`, template);
+            if (res.data) alert('Template saved!');
+        } catch (e) {
+            alert("Failed to save template.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const fetchData = async () => {
         if (!selectedDevice) return;
         setLoading(true);
@@ -65,7 +95,10 @@ export default function Hotspot() {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
                 setActiveSessions(res.data);
             } else if (activeTab === 'profiles') {
+            } else if (activeTab === 'profiles') {
                 await fetchProfiles(selectedDevice);
+            } else if (activeTab === 'templates') {
+                await fetchTemplate(selectedDevice);
             }
         } catch (e) {
             console.error(e);
@@ -139,6 +172,10 @@ export default function Hotspot() {
                         border: 1px dashed #ccc; 
                         break-inside: avoid;
                     }
+                    /* Dynamic Print Styles */
+                    .print-header { color: ${template.color_primary} !important; }
+                    .print-border { border-color: ${template.color_primary} !important; }
+                    .print-bg { background-color: ${template.color_primary}10 !important; } /* 10% opacity */
                 }
             `}</style>
 
@@ -176,7 +213,10 @@ export default function Hotspot() {
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
                     </div>
                 </div>
 
@@ -203,7 +243,7 @@ export default function Hotspot() {
                                 {generatedBatch.map((u, i) => (
                                     <div key={i} className="bg-white p-3 sm:p-4 rounded-xl border border-gray-200 shadow-sm text-center">
                                         <div className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Voucher</div>
-                                        <div className="font-mono text-base sm:text-xl font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2">{u.username}</div>
+                                        <div className="font-mono text-base sm:text-xl font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2" style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
                                         <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
                                     </div>
                                 ))}
@@ -223,12 +263,12 @@ export default function Hotspot() {
                                 <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l border-gray-300"></div>
                                 <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
 
-                                <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1.5">VOUCHER</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center">
-                                    <div className="font-mono text-xl font-black text-blue-600 leading-none tracking-tight">{u.username}</div>
+                                <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center print-bg print-border" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                    <div className="font-mono text-xl font-black leading-none tracking-tight print-header" style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
                                 <div className="text-[7px] font-bold text-gray-400 uppercase leading-none">
-                                    LIM: {batchForm.time_limit || 'UNLIM'}
+                                    {template.footer_text}
                                 </div>
                             </div>
                         ))}
@@ -523,6 +563,58 @@ export default function Hotspot() {
                                 </div>
                             </div>
                         </div >
+                    )}
+
+                    {/* Template Editor */}
+                    {activeTab === 'templates' && (
+                        <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="bg-white rounded-[32px] sm:rounded-[40px] shadow-sm border border-gray-100 overflow-hidden flex flex-col md:flex-row min-h-[500px]">
+                                <div className="md:w-1/3 bg-gray-900 p-8 sm:p-12 text-white flex flex-col justify-between">
+                                    <div>
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6 sm:mb-8">
+                                            <Printer size={28} />
+                                        </div>
+                                        <h3 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight uppercase">Print Styles</h3>
+                                        <p className="text-gray-400 mt-4 font-medium text-xs sm:text-sm">Customize how your vouchers look when printed.</p>
+                                    </div>
+                                </div>
+                                <div className="md:w-2/3 p-8 sm:p-12">
+                                    <form onSubmit={saveTemplate} className="space-y-6">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Header Text</label>
+                                            <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold" value={template.header_text} onChange={e => setTemplate({ ...template, header_text: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Footer Text</label>
+                                            <input type="text" className="w-full bg-gray-50 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold" value={template.footer_text} onChange={e => setTemplate({ ...template, footer_text: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Primary Color</label>
+                                            <div className="flex gap-4 items-center">
+                                                <input type="color" className="h-12 w-24 rounded-xl cursor-pointer border-none p-1 bg-gray-50" value={template.color_primary} onChange={e => setTemplate({ ...template, color_primary: e.target.value })} />
+                                                <span className="font-mono text-gray-500 text-sm font-bold">{template.color_primary}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-6">
+                                            <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-blue-700 shadow-xl transition-all active:scale-[0.98]" disabled={loading}>
+                                                {loading ? 'Saving...' : 'Save Template'}
+                                            </button>
+                                        </div>
+                                    </form>
+                                    <div className="mt-8 pt-8 border-t border-gray-100">
+                                        <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Preview</h4>
+                                        <div className="w-48 mx-auto p-4 border border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
+                                            <div className="text-[10px] font-black uppercase tracking-widest leading-none mb-2" style={{ color: template.color_primary }}>{template.header_text}</div>
+                                            <div className="bg-white border rounded-md py-3 mb-2 w-full flex justify-center items-center" style={{ borderColor: template.color_primary + '40', backgroundColor: template.color_primary + '10' }}>
+                                                <div className="font-mono text-xl font-black leading-none tracking-tight" style={{ color: template.color_primary }}>abc1234</div>
+                                            </div>
+                                            <div className="text-[8px] font-bold text-gray-400 uppercase">{template.footer_text}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>

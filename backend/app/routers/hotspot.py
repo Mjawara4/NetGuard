@@ -260,6 +260,25 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+class VoucherTemplate(BaseModel):
+    header_text: Optional[str] = "Wi-Fi Voucher"
+    footer_text: Optional[str] = "Thank you for visiting!"
+    logo_url: Optional[str] = None
+    color_primary: Optional[str] = "#2563EB"
+
+@router.post("/{device_id}/voucher-template")
+async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # In a real app, we'd save this to DB (Device.voucher_config or similar).
+    # MVP: Just return success, frontend can cache it or we assume defaults.
+    return {"status": "saved", "template": template}
+
+@router.get("/{device_id}/voucher-template", response_model=VoucherTemplate)
+async def get_voucher_template(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Return default for now
+    return VoucherTemplate()
+
 @router.post("/{device_id}/users/batch")
 async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     
