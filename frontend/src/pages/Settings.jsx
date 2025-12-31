@@ -172,132 +172,200 @@ export default function SettingsPage() {
                                 API Integration Reference
                             </h2>
                         </div>
-                        <div className="p-6 space-y-6 text-sm text-gray-600 leading-relaxed max-h-[calc(100vh-200px)] overflow-y-auto">
-
+                        <div className="p-6 space-y-6 text-sm text-gray-600 leading-relaxed max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar">
                             {/* 1. Authentication */}
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">1. Authentication</h3>
-                                <p>All requests must include your API Key in the header.</p>
-                                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-xs border border-gray-700">
+                                <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                    <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-[10px]">1</span>
+                                    Authentication
+                                </h3>
+                                <p className="text-xs text-gray-500">Include your API Key in the <code className="font-bold text-blue-600">X-API-Key</code> header.</p>
+                                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] border border-gray-700 shadow-inner">
                                     X-API-Key: ng_sk_...
                                 </div>
                             </div>
 
                             {/* 2. Base URL */}
                             <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                <h3 className="font-bold text-gray-900 mb-1 uppercase text-[10px] tracking-widest">Base API URL</h3>
-                                <div className="font-mono text-blue-600 select-all break-all">https://app.netguard.fun/api/v1</div>
-                                <p className="text-[10px] text-gray-400 mt-2">All endpoints below are relative to this URL.</p>
+                                <h3 className="font-black text-gray-900 mb-2 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                    <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-[10px]">2</span>
+                                    Base API URL
+                                </h3>
+                                <div className="font-mono text-blue-600 select-all break-all text-xs font-bold">https://app.netguard.fun/api/v1</div>
+                                <p className="text-[10px] text-gray-400 mt-2 font-medium">All endpoints below are relative to this base URL.</p>
                             </div>
 
                             {/* 3. Scope */}
                             <div className="space-y-2">
-                                <h3 className="font-bold text-gray-900">3. Scope & Permissions</h3>
-                                <ul className="list-disc list-inside space-y-1 text-xs">
-                                    <li><strong>Org Scoped:</strong> Keys only access your organization's data.</li>
-                                    <li><strong>Full Access:</strong> Manage Devices, Sites, Hotspots, and Monitoring.</li>
-                                </ul>
+                                <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                    <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-[10px]">3</span>
+                                    Scope & Permissions
+                                </h3>
+                                <div className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <div className="w-1 h-auto bg-blue-500 rounded-full"></div>
+                                        <div className="flex-1">
+                                            <p className="text-xs font-bold text-gray-800">Organization Scoped</p>
+                                            <p className="text-[10px] text-gray-500 leading-tight">Keys only access data within your specific organization.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <div className="w-1 h-auto bg-green-500 rounded-full"></div>
+                                        <div className="flex-1">
+                                            <p className="text-xs font-bold text-gray-800">Full Programmatic Access</p>
+                                            <p className="text-[10px] text-gray-500 leading-tight">Manage Inventory, Hotspot users, and view real-time metrics.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* 4. Endpoints */}
-                            <div className="space-y-4">
-                                <h3 className="font-bold text-gray-900 border-b pb-2">4. Key Endpoints</h3>
+                            <div className="space-y-6 pt-4 border-t border-gray-100">
+                                <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                    <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-[10px]">4</span>
+                                    Key Endpoints
+                                </h3>
 
                                 {/* Inventory */}
-                                <div>
-                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">📦 Inventory</h4>
-                                    <div className="space-y-2">
-                                        <div>
-                                            <p className="text-xs font-mono text-purple-600">GET /inventory/devices</p>
-                                            <p className="text-[10px] text-gray-500">List all devices (UUIDs required for other calls)</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-purple-600">GET /inventory/devices/{'{device_id}'}</p>
-                                            <p className="text-[10px] text-gray-500">Get details for a specific device</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-purple-600">GET /inventory/sites</p>
-                                            <p className="text-[10px] text-gray-500">List all sites</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-purple-600">POST /inventory/devices/{'{device_id}'}/provision-wireguard</p>
-                                            <p className="text-[10px] text-gray-500">Provision VPN (Returns Mikrotik script)</p>
-                                        </div>
+                                <div className="space-y-3">
+                                    <h4 className="font-black text-gray-400 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
+                                        <span className="p-1 bg-gray-100 rounded">📦</span> Inventory Management
+                                    </h4>
+                                    <div className="grid gap-2">
+                                        {[
+                                            { method: 'GET', path: '/inventory/devices', desc: 'List all devices and UUIDs' },
+                                            { method: 'GET', path: '/inventory/devices/{id}', desc: 'Get specific device details' },
+                                            { method: 'GET', path: '/inventory/sites', desc: 'List all organization sites' },
+                                            { method: 'POST', path: '/inventory/devices/{id}/provision-wireguard', desc: 'Get MikroTik VPN script' }
+                                        ].map((ep, i) => (
+                                            <div key={i} className="group p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ep.method === 'GET' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{ep.method}</span>
+                                                    <code className="text-xs font-bold text-gray-700">{ep.path}</code>
+                                                </div>
+                                                <p className="text-[10px] text-gray-400 mt-1 pl-1">{ep.desc}</p>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
 
                                 {/* Hotspot */}
-                                <div>
-                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">🎫 Hotspot (Hotfly)</h4>
-                                    <div className="space-y-2">
-                                        <div>
-                                            <p className="text-xs font-mono text-blue-600">POST /hotspot/{'{device_id}'}/users/batch</p>
-                                            <p className="text-[10px] text-gray-500">Batch generate vouchers</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{device_id}'}/active</p>
-                                            <p className="text-[10px] text-gray-500">List active users</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-blue-600">GET /hotspot/{'{device_id}'}/profiles</p>
-                                            <p className="text-[10px] text-gray-500">List hotspot profiles</p>
-                                        </div>
+                                <div className="space-y-3">
+                                    <h4 className="font-black text-gray-400 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
+                                        <span className="p-1 bg-gray-100 rounded">🎫</span> Hotspot Integration
+                                    </h4>
+                                    <div className="grid gap-2">
+                                        {[
+                                            { method: 'POST', path: '/hotspot/{id}/users/batch', desc: 'Generate unique vouchers' },
+                                            { method: 'GET', path: '/hotspot/{id}/active', desc: 'List active hotspot sessions' },
+                                            { method: 'GET', path: '/hotspot/{id}/profiles', desc: 'List MikroTik user profiles' }
+                                        ].map((ep, i) => (
+                                            <div key={i} className="group p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ep.method === 'GET' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{ep.method}</span>
+                                                    <code className="text-xs font-bold text-gray-700">{ep.path}</code>
+                                                </div>
+                                                <p className="text-[10px] text-gray-400 mt-1 pl-1">{ep.desc}</p>
+                                            </div>
+                                        ))}
                                     </div>
-                                    {/* JSON Example */}
-                                    <div className="mt-2">
-                                        <p className="text-[10px] font-bold text-gray-500 mb-1">Batch JSON Example:</p>
-                                        <div className="bg-gray-900 text-gray-100 p-2 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
-                                            {`{
+
+                                    {/* JSON Example Card */}
+                                    <div className="mt-4 bg-gray-900 rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                                        <div className="px-3 py-2 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Example Batch Payload (JSON)</span>
+                                            <button onClick={() => copyToClipboard(`{
   "qty": 5,
+  "prefix": "wifi",
+  "random_mode": true,
+  "format": "numeric",
+  "time_limit": "1h"
+}`)} className="text-gray-500 hover:text-white transition-colors">
+                                                <Copy size={12} />
+                                            </button>
+                                        </div>
+                                        <div className="p-3 font-mono text-[10px] text-blue-300 overflow-x-auto">
+                                            {`{
+  "qty": 10,
   "prefix": "auto",
-  "data_limit": "500M",
-  "time_limit": "24h"
+  "random_mode": true,
+  "format": "numeric",
+  "time_limit": "1h",
+  "data_limit": "500M"
 }`}
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* Monitoring */}
-                                <div>
-                                    <h4 className="font-semibold text-gray-800 text-xs uppercase mb-2">📈 Monitoring</h4>
-                                    <div className="space-y-2">
-                                        <div>
-                                            <p className="text-xs font-mono text-green-600">GET /monitoring/metrics/latest?device_id=...</p>
-                                            <p className="text-[10px] text-gray-500">Get real-time metrics</p>
+                                <div className="space-y-3">
+                                    <h4 className="font-black text-gray-400 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
+                                        <span className="p-1 bg-gray-100 rounded">📈</span> Monitoring & Health
+                                    </h4>
+                                    <div className="grid gap-2">
+                                        {[
+                                            { method: 'GET', path: '/monitoring/metrics/latest', desc: 'Get current CPU, clients, etc.' },
+                                            { method: 'GET', path: '/monitoring/metrics/history', desc: 'Query historical time-series' },
+                                            { method: 'GET', path: '/monitoring/alerts', desc: 'List active system alerts' }
+                                        ].map((ep, i) => (
+                                            <div key={i} className="group p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-700`}>GET</span>
+                                                    <code className="text-xs font-bold text-gray-700">{ep.path}</code>
+                                                </div>
+                                                <p className="text-[10px] text-gray-400 mt-1 pl-1">{ep.desc}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Agents Trigger */}
+                                <div className="space-y-3">
+                                    <h4 className="font-black text-gray-400 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
+                                        <span className="p-1 bg-gray-100 rounded">🤖</span> Manual Control
+                                    </h4>
+                                    <div className="grid gap-2">
+                                        <div className="group p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-700`}>POST</span>
+                                                <code className="text-xs font-bold text-gray-700">/agents/trigger</code>
+                                            </div>
+                                            <p className="text-[10px] text-gray-400 mt-1 pl-1">Manually run agents via Redis signal.</p>
                                         </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-green-600">GET /monitoring/metrics/history?device_id=...&start_time=...</p>
-                                            <p className="text-[10px] text-gray-500">Get historical data</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-mono text-green-600">GET /monitoring/alerts</p>
-                                            <p className="text-[10px] text-gray-500">Get active alerts</p>
+                                    </div>
+                                    <div className="mt-2 bg-gray-900 rounded-xl overflow-hidden border border-gray-800">
+                                        <div className="px-3 py-1.5 bg-gray-800/30 border-b border-gray-700 text-[8px] font-black text-gray-500 uppercase tracking-widest">Trigger Body</div>
+                                        <div className="p-2 font-mono text-[10px] text-green-400 whitespace-pre">
+                                            {`{ "agent_name": "monitor" }`}
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-
-                        </div>
-
-                        {/* 5. Example */}
-                        <div className="space-y-2">
-                            <h3 className="font-bold text-gray-900">5. cURL Example</h3>
-                            <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] overflow-x-auto border border-gray-700 whitespace-pre">
-                                {`curl -X GET "https://app.netguard.fun/api/v1/inventory/devices" \\
-     -H "X-API-Key: ng_sk_..."`}
+                            {/* 5. CURL */}
+                            <div className="pt-6 border-t border-gray-100">
+                                <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-2">
+                                    <span className="w-5 h-5 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-[10px]">5</span>
+                                    CURL Example
+                                </h3>
+                                <div className="bg-gray-900 text-gray-400 p-3 rounded-lg font-mono text-[9px] overflow-x-auto border border-gray-700 leading-normal">
+                                    <span className="text-blue-400">curl</span> -X GET <span className="text-green-400">"https://app.netguard.fun/api/v1/inventory/devices"</span> \<br />
+                                    &nbsp;&nbsp;&nbsp;&nbsp; -H <span className="text-orange-400">"X-API-Key: YOUR_KEY"</span>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Security */}
-                        <div className="p-4 bg-yellow-50 rounded-xl border border-yellow-100">
-                            <h4 className="font-bold text-yellow-800 text-xs uppercase mb-1 flex items-center gap-2">
-                                <Shield size={12} />
-                                Security Warning
-                            </h4>
-                            <p className="text-yellow-700 text-xs">
-                                Treat this key like your admin password. Never share it publicly.
-                            </p>
+                            {/* Security Warning */}
+                            <div className="p-4 bg-red-50 rounded-xl border border-red-100 mt-6 group hover:bg-red-100/50 transition-colors">
+                                <h4 className="font-black text-red-900 text-[10px] uppercase mb-2 flex items-center gap-2">
+                                    <Shield size={14} className="text-red-600 animate-pulse" />
+                                    Security Protocol
+                                </h4>
+                                <ul className="text-[10px] text-red-700 space-y-1.5 font-medium leading-tight">
+                                    <li>• Treat keys as sensitive as your main password.</li>
+                                    <li>• Never commit keys to version control.</li>
+                                    <li>• Revoke immediately if compromised.</li>
+                                </ul>
+                            </div>
                         </div>
 
                     </div>

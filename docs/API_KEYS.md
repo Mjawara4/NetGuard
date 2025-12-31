@@ -47,6 +47,8 @@ The production API base URL is:
 {
   "qty": 5,
   "prefix": "auto",
+  "random_mode": true,
+  "format": "numeric",
   "data_limit": "500M",
   "time_limit": "24h"
 }
@@ -56,6 +58,11 @@ The production API base URL is:
 - **Latest Metrics**: `GET /monitoring/metrics/latest?device_id={device_id}`
 - **Historical Data**: `GET /monitoring/metrics/history?device_id={device_id}&start_time=2025-12-25T00:00:00Z`
 - **Active Alerts**: `GET /monitoring/alerts`
+
+### 🤖 Agent Control
+- **Trigger Agent**: `POST /agents/trigger`
+  - Body: `{ "agent_name": "monitor" | "diagnoser" | "fix" }`
+  - Desc: Manually triggers an agent run via Redis.
 
 ---
 
