@@ -39,6 +39,7 @@ class BatchUserCreate(BaseModel):
     data_limit: Optional[str] = None
     length: Optional[int] = 4
     random_mode: Optional[bool] = False
+    format: Optional[str] = "alphanumeric" # alphanumeric, numeric
 
 class HotspotActive(BaseModel):
     id: Optional[str] = None
@@ -310,12 +311,14 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         api = connection.get_api()
         resource = api.get_resource('/ip/hotspot/user')
         
-        # Handle 'auto' prefix - map to existing random_mode logic
-        if batch.prefix == "auto":
-             batch.random_mode = True
-        
         generated = []
-        for _ in range(batch.qty):
+        max_attempts = batch.qty * 3 # Allow for more collisions
+        attempts = 0
+        
+        logger.info(f"Starting batch generation: qty={batch.qty}, random={batch.random_mode}, format={batch.format}")
+        
+        while len(generated) < batch.qty and attempts < max_attempts:
+            attempts += 1
             if batch.random_mode:
                 if batch.format == "numeric":
                     # 8 random numbers
@@ -332,13 +335,12 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                 username = f"{batch.prefix}{suffix}"
                 password = ''.join(random.choices(string.digits, k=4)) # Simple 4 digit password
             
-            # Simple retry if exists (imperfect but works for MVP)
             try:
                 params = {
                     'name': username,
                     'password': password,
-                    'profile': batch.profile,
-                    'comment': f"Batch-{batch.prefix}"
+                    'profile': batch.profile or 'default',
+                    'comment': f"Batch-{batch.prefix or 'auto'}"
                 }
                 if batch.time_limit:
                     params['limit-uptime'] = batch.time_limit
@@ -348,15 +350,16 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                 resource.add(**params)
                 generated.append({"username": username, "password": password})
             except Exception as e:
-                # print(f"Batch Item Error: {e}") 
+                # Likely "user already exists", continue to next attempt
+                if "already exists" not in str(e).lower():
+                    logger.warning(f"Batch item error (Attempt {attempts}/{max_attempts}): {e}")
                 continue
                 
+        logger.info(f"Batch generation complete: {len(generated)}/{batch.qty} created in {attempts} attempts")
         connection.disconnect()
         return generated
     except Exception as e:
-        logger.error(f"Batch Gen Error: {e}")
-        # Mock
-        return [
-            {"username": f"{batch.prefix}123", "password": "123"},
-            {"username": f"{batch.prefix}456", "password": "456"}
-        ]
+        logger.error(f"Batch Gen Error: {e}", exc_info=True)
+        if 'connection' in locals() and connection:
+            connection.disconnect()
+        raise HTTPException(status_code=500, detail=f"Failed to generate vouchers: {str(e)}")
