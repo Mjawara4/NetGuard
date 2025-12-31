@@ -270,13 +270,27 @@ class VoucherTemplate(BaseModel):
 
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    # In a real app, we'd save this to DB (Device.voucher_config or similar).
-    # MVP: Just return success, frontend can cache it or we assume defaults.
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    device.voucher_template = template.dict()
+    await db.commit()
+    
     return {"status": "saved", "template": template}
 
 @router.get("/{device_id}/voucher-template", response_model=VoucherTemplate)
 async def get_voucher_template(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    # Return default for now
+    res = await db.execute(select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id))
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+        
+    if device.voucher_template:
+        return VoucherTemplate(**device.voucher_template)
+        
+    # Return default if not set
     return VoucherTemplate()
 
 @router.post("/{device_id}/users/batch")

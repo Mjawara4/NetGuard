@@ -69,6 +69,10 @@ class Device(Base):
     wg_ip_address = Column(String, nullable=True)
     wg_private_key = Column(String, nullable=True)
 
+    # Hotspot Configuration
+    from sqlalchemy.dialects.postgresql import JSON
+    voucher_template = Column(JSON, nullable=True)
+
     # Store secrets securely in real world, this is MVP
     created_at = Column(DateTime, default=datetime.utcnow)
     
