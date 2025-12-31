@@ -162,15 +162,33 @@ export default function Hotspot() {
         <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <style>{`
                 @media print {
+                    @page { margin: 1cm; size: auto; }
                     body * { visibility: hidden; }
                     #printable-area, #printable-area * { visibility: visible; }
-                    #printable-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
-                    .no-print { display: none !important; }
-                    .voucher-card { 
-                        page-break-inside: avoid; 
-                        border: 1px dashed #ccc; 
-                        break-inside: avoid;
+                    #printable-area { 
+                        position: absolute; 
+                        left: 0; 
+                        top: 0; 
+                        width: 100%; 
+                        display: block !important; /* Use block for better flow control */
                     }
+                    .no-print { display: none !important; }
+                    
+                    /* Grid simulation using inline-block for better print support */
+                    .voucher-card { 
+                        display: inline-block !important;
+                        width: 18% !important; /* ~5 per row allowing for margins */
+                        margin: 1% !important;
+                        vertical-align: top;
+                        
+                        page-break-inside: avoid !important; 
+                        break-inside: avoid !important;
+                        page-break-after: auto;
+                        
+                        border: 1px dashed #ccc; 
+                        box-sizing: border-box;
+                    }
+                    
                     /* Dynamic Print Styles */
                     .print-header { color: ${template.color_primary} !important; }
                     .print-border { border-color: ${template.color_primary} !important; }
