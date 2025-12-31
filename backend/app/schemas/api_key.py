@@ -6,6 +6,14 @@ from uuid import UUID
 class APIKeyCreate(BaseModel):
     description: Optional[str] = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "description": "API Key for External Monitoring Service"
+            }
+        }
+    }
+
 class APIKeyResponse(BaseModel):
     id: UUID
     key: str

@@ -12,6 +12,16 @@ class SiteBase(BaseModel):
 class SiteCreate(SiteBase):
     organization_id: Optional[UUID4] = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "Headquarters",
+                "location": "New York, NY",
+                "auto_fix_enabled": True
+            }
+        }
+    }
+
 class SiteResponse(SiteBase):
     id: UUID4
     organization_id: UUID4
@@ -51,6 +61,19 @@ class DeviceBase(BaseModel):
 
 class DeviceCreate(DeviceBase):
     site_id: UUID4
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "name": "Core Router 1",
+                "ip_address": "192.168.1.1",
+                "device_type": "router",
+                "site_id": "123e4567-e89b-12d3-a456-426614174000",
+                "ssh_username": "admin",
+                "ssh_port": 22
+            }
+        }
+    }
 
 class DeviceResponse(BaseModel):
     """Device response - excludes sensitive fields."""

@@ -21,6 +21,18 @@ class MetricCreate(BaseModel):
                 raise ValueError(f"{metric_type} must be between 0 and 100")
         return v
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "device_id": "123e4567-e89b-12d3-a456-426614174000",
+                "metric_type": "cpu_usage",
+                "value": 45.5,
+                "unit": "%",
+                "meta_data": {"core_count": 4}
+            }
+        }
+    }
+
 class MetricResponse(MetricCreate):
     time: datetime
     class Config:
@@ -34,6 +46,17 @@ class AlertBase(BaseModel):
 
 class AlertCreate(AlertBase):
     device_id: UUID4
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "device_id": "123e4567-e89b-12d3-a456-426614174000",
+                "rule_name": "High CPU Usage",
+                "severity": "warning",
+                "message": "CPU usage exceeded 90% for 5 minutes"
+            }
+        }
+    }
 
 class AlertResponse(AlertBase):
     id: UUID4
@@ -49,11 +72,29 @@ class AlertUpdate(BaseModel):
     status: AlertStatus
     resolution_summary: Optional[str] = None
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "status": "resolved",
+                "resolution_summary": "Issue fixed by restarting the service"
+            }
+        }
+    }
+
 # AutoFixAction
 class AutoFixActionCreate(BaseModel):
     action_type: str
     status: str
     log_output: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "action_type": "restart_service",
+                "status": "pending"
+            }
+        }
+    }
 
 class AutoFixActionResponse(AutoFixActionCreate):
     id: UUID4
