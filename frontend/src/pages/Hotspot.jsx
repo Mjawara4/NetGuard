@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText, Globe, AlertCircle } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 
 export default function Hotspot() {
-    const [activeTab, setActiveTab] = useState('active');
+    const [activeTab, setActiveTab] = useState('dashboard');
     const [devices, setDevices] = useState([]);
     const [selectedDevice, setSelectedDevice] = useState(null);
     const [users, setUsers] = useState([]);
     const [activeSessions, setActiveSessions] = useState([]);
     const [profiles, setProfiles] = useState([]);
+    const [dashboardData, setDashboardData] = useState(null);
+    const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
@@ -89,19 +92,27 @@ export default function Hotspot() {
         if (!selectedDevice) return;
         setLoading(true);
         try {
-            if (activeTab === 'users') {
+            if (activeTab === 'dashboard') {
+                const res = await api.get(`/hotspot/${selectedDevice}/summary`);
+                setDashboardData(res.data);
+                setHealthStatus('online');
+            } else if (activeTab === 'users') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users`);
                 setUsers(res.data);
+                setHealthStatus('online');
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
                 setActiveSessions(res.data);
+                setHealthStatus('online');
             } else if (activeTab === 'profiles') {
                 await fetchProfiles(selectedDevice);
+                setHealthStatus('online');
             } else if (activeTab === 'templates') {
                 await fetchTemplate(selectedDevice);
             }
         } catch (e) {
             console.error(e);
+            if (activeTab !== 'templates') setHealthStatus('offline');
         } finally {
             setLoading(false);
         }
@@ -263,6 +274,14 @@ export default function Hotspot() {
                         <p className="text-gray-500 mt-2 font-medium text-sm sm:text-base">Enterprise voucher management and hotspot profile orchestration.</p>
                     </div>
                     <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-end gap-1 px-3">
+                            <div className="flex items-center gap-1.5">
+                                <div className={`w-2 h-2 rounded-full ${healthStatus === 'online' ? 'bg-emerald-500 animate-pulse' : healthStatus === 'offline' ? 'bg-red-500' : 'bg-gray-300'}`}></div>
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${healthStatus === 'online' ? 'text-emerald-600' : healthStatus === 'offline' ? 'text-red-600' : 'text-gray-400'}`}>
+                                    {healthStatus === 'online' ? 'Sync Active' : healthStatus === 'offline' ? 'Sync Failed' : 'Checking...'}
+                                </span>
+                            </div>
+                        </div>
                         <select
                             className="bg-white border border-gray-100 rounded-2xl px-4 sm:px-5 py-3 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-gray-700 flex-1 lg:min-w-[240px] text-sm sm:text-base"
                             value={selectedDevice || ''}
@@ -284,6 +303,7 @@ export default function Hotspot() {
                 {/* Navigation Bar */}
                 <div className="mb-8 sm:mb-10 no-print">
                     <div className="flex bg-white p-1.5 rounded-3xl shadow-sm border border-gray-100 gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+                        <TabButton id="dashboard" label="Dashboard" icon={LayoutDashboard} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -293,6 +313,81 @@ export default function Hotspot() {
                 </div>
 
                 <div className="space-y-8">
+                    {/* Dashboard Tab */}
+                    {activeTab === 'dashboard' && !showPrintView && dashboardData && (
+                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            {/* Dashboard Headline Stats */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <MetricCard title="Active Sessions" value={dashboardData.active_count} icon={Users} color="blue" />
+                                <MetricCard title="Total Vouchers" value={dashboardData.total_vouchers} icon={CreditCard} color="indigo" />
+                                <MetricCard title="Data (Current Sessions)" value={`${dashboardData.total_data_mb}MB`} icon={Activity} color="emerald" />
+                                <MetricCard title="System Health" value={healthStatus === 'online' ? 'Healthy' : 'Sync Error'} icon={Shield} color={healthStatus === 'online' ? 'emerald' : 'red'} />
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                {/* Profile Distribution Chart */}
+                                <div className="bg-white p-6 sm:p-8 rounded-[32px] shadow-sm border border-gray-100">
+                                    <h3 className="text-lg font-black text-gray-900 mb-6 uppercase tracking-tight flex items-center gap-2">
+                                        <Activity size={20} className="text-blue-500" />
+                                        Voucher Distribution
+                                    </h3>
+                                    <div className="h-[300px] w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={dashboardData.profile_distribution}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={60}
+                                                    outerRadius={100}
+                                                    paddingAngle={5}
+                                                    dataKey="value"
+                                                >
+                                                    {dashboardData.profile_distribution.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444'][index % 5]} />
+                                                    ))}
+                                                </Pie>
+                                                <RechartsTooltip />
+                                                <Legend />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Quick Actions / Status */}
+                                <div className="bg-white p-6 sm:p-8 rounded-[32px] shadow-sm border border-gray-100 flex flex-col justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-black text-gray-900 mb-4 uppercase tracking-tight">Sync Status</h3>
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-2 rounded-lg ${healthStatus === 'online' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                                                        <Globe size={18} />
+                                                    </div>
+                                                    <span className="text-sm font-bold text-gray-700">Router Integration</span>
+                                                </div>
+                                                <span className={`text-xs font-black uppercase ${healthStatus === 'online' ? 'text-emerald-600' : 'text-red-600'}`}>{healthStatus}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
+                                                        <Activity size={18} />
+                                                    </div>
+                                                    <span className="text-sm font-bold text-gray-700">API Latency</span>
+                                                </div>
+                                                <span className="text-xs font-black uppercase text-blue-600">Optimal</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-6 flex gap-3">
+                                        <button onClick={() => setActiveTab('generate')} className="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100">Quick Generate</button>
+                                        <button onClick={() => setActiveTab('active')} className="flex-1 bg-white border border-gray-100 text-gray-600 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest">View Sessions</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {/* Print View Overlay/Content */}
                     {showPrintView && (
                         <div className="bg-white rounded-3xl shadow-xl border border-blue-100 overflow-hidden animate-in fade-in zoom-in duration-300 mb-8 no-print">
@@ -315,8 +410,15 @@ export default function Hotspot() {
                                 {generatedBatch.map((u, i) => (
                                     <div key={i} className="bg-white p-3 sm:p-4 rounded-xl border border-gray-200 shadow-sm text-center">
                                         <div className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Voucher</div>
-                                        <div className="font-mono text-base sm:text-xl font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2" style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
-                                        <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
+                                        <div className="font-mono text-base sm:text-lg font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2" style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(`http://10.5.5.1/login?username=${u.username}&password=${u.password}`)}`}
+                                                alt="QR Login"
+                                                className="w-12 h-12 grayscale opacity-50 mb-1"
+                                            />
+                                            <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -336,8 +438,15 @@ export default function Hotspot() {
                                 <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
 
                                 <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                    <div className="font-mono text-lg font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <div className="bg-blue-50 border border-blue-100 rounded-md py-1 flex-1 flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                        <div className="font-mono text-base font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
+                                    </div>
+                                    <img
+                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(`http://10.5.5.1/login?username=${u.username}&password=${u.password}`)}`}
+                                        className="w-8 h-8 rounded border border-gray-100 p-0.5"
+                                        alt="QR"
+                                    />
                                 </div>
                                 <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
@@ -606,6 +715,18 @@ export default function Hotspot() {
                                                 render: (p) => <div className="text-gray-900 font-black text-sm text-center">{p['shared-users'] || '1'}</div>
                                             },
                                             {
+                                                header: 'Active Users',
+                                                accessor: 'active_users',
+                                                render: (p) => (
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${p.active_users > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`}></div>
+                                                        <span className={`text-[10px] font-black uppercase tracking-tight ${p.active_users > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                                            {p.active_users || 0} Online
+                                                        </span>
+                                                    </div>
+                                                )
+                                            },
+                                            {
                                                 header: 'Delete',
                                                 accessor: 'actions',
                                                 render: (p) => (
@@ -632,9 +753,15 @@ export default function Hotspot() {
                                                         {p['rate-limit'] || 'UNLIM'}
                                                     </div>
                                                 </div>
-                                                <div className="flex justify-between items-center text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
-                                                    <span className="uppercase font-bold text-[10px]">Shared Devices</span>
-                                                    <span className="font-black text-gray-900">{p['shared-users'] || '1'}</span>
+                                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                                    <div className="bg-gray-50 p-2 rounded-lg text-center">
+                                                        <div className="uppercase font-bold text-[8px] text-gray-400">Shared Devices</div>
+                                                        <div className="font-black text-gray-900">{p['shared-users'] || '1'}</div>
+                                                    </div>
+                                                    <div className="bg-emerald-50 p-2 rounded-lg text-center border border-emerald-100/50">
+                                                        <div className="uppercase font-bold text-[8px] text-emerald-600">Active Users</div>
+                                                        <div className="font-black text-emerald-700">{p.active_users || 0} Online</div>
+                                                    </div>
                                                 </div>
                                                 <div className="flex justify-end border-t pt-3 mt-1">
                                                     <button onClick={() => handleProfileDelete(p.name)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Delete Profile</button>
@@ -845,6 +972,27 @@ export default function Hotspot() {
         </div >
     );
 }
+
+const MetricCard = ({ title, value, icon: Icon, color }) => {
+    const colorClasses = {
+        blue: "bg-blue-50 text-blue-600 border-blue-100",
+        indigo: "bg-indigo-50 text-indigo-600 border-indigo-100",
+        emerald: "bg-emerald-50 text-emerald-600 border-emerald-100",
+        red: "bg-red-50 text-red-600 border-red-100"
+    };
+
+    return (
+        <div className={`bg-white p-6 rounded-[32px] border ${colorClasses[color] || colorClasses.blue} shadow-sm flex items-center gap-5 transition-all hover:scale-[1.02]`}>
+            <div className={`p-4 rounded-2xl ${colorClasses[color]?.split(' ')[0]} ${colorClasses[color]?.split(' ')[1]}`}>
+                <Icon size={24} />
+            </div>
+            <div>
+                <p className="text-[10px] font-black uppercase tracking-widest opacity-60">{title}</p>
+                <h4 className="text-2xl font-black tracking-tight">{value}</h4>
+            </div>
+        </div>
+    );
+};
 
 const TabButton = ({ id, label, icon: Icon, activeTab, setActiveTab }) => (
     <button

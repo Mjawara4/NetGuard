@@ -213,11 +213,83 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         api = connection.get_api()
         
         profiles = api.get_resource('/ip/hotspot/user/profile').get()
-        connection.disconnect()
+        active = api.get_resource('/ip/hotspot/active').get()
         
+        # Calculate active users per profile
+        active_per_profile = {}
+        for a in active:
+            # Active sessions don't explicitly show profile, we need to match user to profile
+            # However, for simplicity and performance, most MikroTik admins name users after profiles or used fixed profiles.
+            # A more robust way is to fetch users and join, but let's try a heuristic or just return the base stats first.
+            pass
+
+        # Let's just return the profiles for now, but enriched if we can.
+        # Enriched Profiles with user counts:
+        users = api.get_resource('/ip/hotspot/user').get()
+        user_to_profile = {u.get('name'): u.get('profile') for u in users}
+        
+        profile_counts = {p.get('name'): 0 for p in profiles}
+        for a in active:
+            u_name = a.get('user')
+            p_name = user_to_profile.get(u_name)
+            if p_name in profile_counts:
+                profile_counts[p_name] += 1
+        
+        for p in profiles:
+            p['active_users'] = profile_counts.get(p.get('name'), 0)
+
+        connection.disconnect()
         return profiles
     except Exception as e:
         logger.error(f"Hotspot Profiles Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{device_id}/summary")
+async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        active_resource = api.get_resource('/ip/hotspot/active')
+        user_resource = api.get_resource('/ip/hotspot/user')
+        
+        active_sessions = active_resource.get()
+        total_users = user_resource.get()
+        
+        total_bytes_in = sum(int(a.get('bytes-in', 0)) for a in active_sessions)
+        total_bytes_out = sum(int(a.get('bytes-out', 0)) for a in active_sessions)
+        
+        # Profile Distribution
+        profile_dist = {}
+        for u in total_users:
+            p = u.get('profile', 'default')
+            profile_dist[p] = profile_dist.get(p, 0) + 1
+            
+        connection.disconnect()
+        
+        return {
+            "active_count": len(active_sessions),
+            "total_vouchers": len(total_users),
+            "total_data_mb": round((total_bytes_in + total_bytes_out) / 1024 / 1024, 2),
+            "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
+        }
+    except Exception as e:
+        logger.error(f"Hotspot Summary Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{device_id}/profiles")
