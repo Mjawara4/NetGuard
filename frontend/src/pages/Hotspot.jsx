@@ -13,6 +13,8 @@ export default function Hotspot() {
     const [activeSessions, setActiveSessions] = useState([]);
     const [profiles, setProfiles] = useState([]);
     const [dashboardData, setDashboardData] = useState(null);
+    const [systemInfo, setSystemInfo] = useState(null);
+    const [batchHistory, setBatchHistory] = useState([]);
     const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
@@ -93,12 +95,32 @@ export default function Hotspot() {
         setLoading(true);
         try {
             if (activeTab === 'dashboard') {
-                const res = await api.get(`/hotspot/${selectedDevice}/summary`);
-                setDashboardData(res.data);
+                const [summaryRes, systemRes] = await Promise.all([
+                    api.get(`/hotspot/${selectedDevice}/summary`),
+                    api.get(`/hotspot/${selectedDevice}/system-info`)
+                ]);
+                setDashboardData(summaryRes.data);
+                setSystemInfo(systemRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'users') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users`);
                 setUsers(res.data);
+                setHealthStatus('online');
+            } else if (activeTab === 'history') {
+                const res = await api.get(`/hotspot/${selectedDevice}/users`);
+                // Extract unique batches from comments
+                const batches = [...new Set(res.data.filter(u => u.comment).map(u => u.comment))].map(c => {
+                    const batchUsers = res.data.filter(u => u.comment === c);
+                    return {
+                        id: c,
+                        name: c,
+                        count: batchUsers.length,
+                        used: batchUsers.filter(u => u.uptime && u.uptime !== '0s').length,
+                        profile: batchUsers[0].profile,
+                        data: batchUsers // Keep for re-print
+                    };
+                });
+                setBatchHistory(batches);
                 setHealthStatus('online');
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
@@ -116,6 +138,12 @@ export default function Hotspot() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleReprint = (batch) => {
+        setGeneratedBatch(batch.data.map(u => ({ username: u.name, password: u.password })));
+        setBatchForm({ ...batchForm, profile: batch.profile });
+        setShowPrintView(true);
     };
 
     const handleKick = async (id) => {
@@ -305,7 +333,8 @@ export default function Hotspot() {
                     <div className="flex bg-white p-1.5 rounded-3xl shadow-sm border border-gray-100 gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
                         <TabButton id="dashboard" label="Dashboard" icon={LayoutDashboard} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
-                        <TabButton id="users" label="Users" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="users" label="Vouchers" icon={CreditCard} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="history" label="Batches" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -323,6 +352,33 @@ export default function Hotspot() {
                                 <MetricCard title="Data (Current Sessions)" value={`${dashboardData.total_data_mb}MB`} icon={Activity} color="emerald" />
                                 <MetricCard title="System Health" value={healthStatus === 'online' ? 'Healthy' : 'Sync Error'} icon={Shield} color={healthStatus === 'online' ? 'emerald' : 'red'} />
                             </div>
+
+                            {/* System Info Stats */}
+                            {systemInfo && (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 rounded-lg bg-orange-50 text-orange-600"><Activity size={16} /></div>
+                                            <span className="text-[10px] font-black uppercase text-gray-400">CPU Load</span>
+                                        </div>
+                                        <span className="font-black text-gray-900">{systemInfo.cpu_load}%</span>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 rounded-lg bg-pink-50 text-pink-600"><CreditCard size={16} /></div>
+                                            <span className="text-[10px] font-black uppercase text-gray-400">Memory</span>
+                                        </div>
+                                        <span className="font-black text-gray-900">{Math.round(systemInfo.free_memory)}MB / {Math.round(systemInfo.total_memory)}MB</span>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 rounded-lg bg-cyan-50 text-cyan-600"><Clock size={16} /></div>
+                                            <span className="text-[10px] font-black uppercase text-gray-400">Router Uptime</span>
+                                        </div>
+                                        <span className="font-black text-gray-900 truncate max-w-[120px]">{systemInfo.uptime}</span>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 {/* Profile Distribution Chart */}
@@ -411,14 +467,7 @@ export default function Hotspot() {
                                     <div key={i} className="bg-white p-3 sm:p-4 rounded-xl border border-gray-200 shadow-sm text-center">
                                         <div className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Voucher</div>
                                         <div className="font-mono text-base sm:text-lg font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2" style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
-                                        <div className="flex flex-col items-center gap-1">
-                                            <img
-                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(`http://10.5.5.1/login?username=${u.username}&password=${u.password}`)}`}
-                                                alt="QR Login"
-                                                className="w-12 h-12 grayscale opacity-50 mb-1"
-                                            />
-                                            <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
-                                        </div>
+                                        <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
                                     </div>
                                 ))}
                             </div>
@@ -438,15 +487,8 @@ export default function Hotspot() {
                                 <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
 
                                 <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                <div className="flex items-center gap-2 mb-1.5">
-                                    <div className="bg-blue-50 border border-blue-100 rounded-md py-1 flex-1 flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                        <div className="font-mono text-base font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
-                                    </div>
-                                    <img
-                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=40x40&data=${encodeURIComponent(`http://10.5.5.1/login?username=${u.username}&password=${u.password}`)}`}
-                                        className="w-8 h-8 rounded border border-gray-100 p-0.5"
-                                        alt="QR"
-                                    />
+                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                    <div className="font-mono text-base font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
                                 <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
@@ -487,9 +529,25 @@ export default function Hotspot() {
                                             )
                                         },
                                         {
+                                            header: 'Traffic',
+                                            accessor: 'bytes',
+                                            render: (u) => (
+                                                <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-tighter">
+                                                    <div className="flex items-center gap-1 text-emerald-600">
+                                                        <ArrowDownCircle size={12} />
+                                                        {(u.bytes_out / 1024 / 1024).toFixed(1)} MB
+                                                    </div>
+                                                    <div className="flex items-center gap-1 text-blue-600">
+                                                        <ArrowUpCircle size={12} />
+                                                        {(u.bytes_in / 1024 / 1024).toFixed(1)} MB
+                                                    </div>
+                                                </div>
+                                            )
+                                        },
+                                        {
                                             header: 'Time Online',
                                             accessor: 'uptime',
-                                            render: (u) => <div className="text-xs text-gray-500 font-medium whitespace-nowrap">{u.uptime}</div>
+                                            render: (u) => <div className="text-xs text-gray-500 font-bold whitespace-nowrap bg-gray-50 px-2 py-1 rounded-lg">{u.uptime}</div>
                                         },
                                         {
                                             header: 'Interrupt',
@@ -669,6 +727,92 @@ export default function Hotspot() {
                                         </div>
                                     )}
                                     emptyMessage="Voucher database is empty."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Batch History Tab */}
+                    {activeTab === 'history' && !showPrintView && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex items-center justify-between bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                                <div>
+                                    <h2 className="text-xl font-black text-gray-900">Batch History</h2>
+                                    <p className="text-gray-500 text-sm font-medium">Manage and re-print previously generated voucher batches.</p>
+                                </div>
+                                <div className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+                                    {batchHistory.length} Total Batches
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+                                <ResponsiveTable
+                                    data={batchHistory}
+                                    columns={[
+                                        {
+                                            header: 'Batch ID / Comment',
+                                            accessor: 'name',
+                                            render: (b) => <div className="font-bold text-gray-900 uppercase text-sm">{b.name}</div>
+                                        },
+                                        {
+                                            header: 'Profile',
+                                            accessor: 'profile',
+                                            render: (b) => <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase">{b.profile}</span>
+                                        },
+                                        {
+                                            header: 'Quantity',
+                                            accessor: 'count',
+                                            render: (b) => (
+                                                <div className="flex flex-col">
+                                                    <div className="font-black text-gray-700">{b.count} Vouchers</div>
+                                                    <div className="text-[10px] font-bold text-gray-400 uppercase">{b.used} Used</div>
+                                                </div>
+                                            )
+                                        },
+                                        {
+                                            header: 'Manage',
+                                            accessor: 'actions',
+                                            render: (b) => (
+                                                <div className="flex gap-2 justify-end">
+                                                    <button
+                                                        onClick={() => handleReprint(b)}
+                                                        className="px-4 py-1.5 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100"
+                                                    >
+                                                        Re-Print
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleBulkDeleteByComment(b.name)}
+                                                        className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            )
+                                        }
+                                    ]}
+                                    renderCard={(b) => (
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-black text-gray-900 uppercase text-sm">{b.name}</span>
+                                                <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black">{b.profile}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-gray-500 bg-gray-50 p-3 rounded-2xl">
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold uppercase text-[9px]">Total</span>
+                                                    <span className="font-black text-gray-900">{b.count}</span>
+                                                </div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-bold uppercase text-[9px]">Used</span>
+                                                    <span className="font-black text-blue-600">{b.used}</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2 font-black text-[10px] uppercase tracking-widest pt-2">
+                                                <button onClick={() => handleReprint(b)} className="flex-1 bg-blue-600 text-white py-3 rounded-2xl shadow-lg shadow-blue-50">Re-Print Batch</button>
+                                                <button onClick={() => handleBulkDeleteByComment(b.name)} className="bg-red-50 text-red-500 px-4 rounded-2xl"><Trash2 size={16} /></button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    emptyMessage="No batches found with comments."
                                 />
                             </div>
                         </div>

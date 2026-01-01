@@ -292,6 +292,44 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
         logger.error(f"Hotspot Summary Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/{device_id}/system-info")
+async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        resource = api.get_resource('/system/resource')
+        info = resource.get()[0]
+        
+        connection.disconnect()
+        
+        return {
+            "cpu_load": info.get('cpu-load'),
+            "free_memory": int(info.get('free-memory', 0)) / 1024 / 1024,
+            "total_memory": int(info.get('total-memory', 0)) / 1024 / 1024,
+            "uptime": info.get('uptime'),
+            "version": info.get('version'),
+            "board_name": info.get('board-name')
+        }
+    except Exception as e:
+        logger.error(f"Router System Info Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/{device_id}/profiles")
 async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
