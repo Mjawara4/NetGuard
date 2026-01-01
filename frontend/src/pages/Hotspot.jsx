@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings } from 'lucide-react';
+import { Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText } from 'lucide-react';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 
@@ -14,6 +14,7 @@ export default function Hotspot() {
     const [loading, setLoading] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
+    const [userSearch, setUserSearch] = useState('');
 
     // Generation State
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
@@ -153,6 +154,62 @@ export default function Hotspot() {
             setShowPrintView(true);
         } catch (e) {
             alert('Generation failed: ' + (e.response?.data?.detail || e.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCleanupExpired = async () => {
+        if (!window.confirm("Delete all users who have reached their time or data limits?")) return;
+        setLoading(true);
+        try {
+            const res = await api.delete(`/hotspot/${selectedDevice}/users/bulk?expired=true`);
+            alert(`Cleaned up ${res.data.count} expired users.`);
+            fetchData();
+        } catch (e) {
+            alert("Cleanup failed.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleBulkDeleteByComment = async (comment) => {
+        if (!window.confirm(`Delete all users in batch "${comment}"?`)) return;
+        setLoading(true);
+        try {
+            const res = await api.delete(`/hotspot/${selectedDevice}/users/bulk?comment=${comment}`);
+            alert(`Deleted ${res.data.count} users.`);
+            fetchData();
+        } catch (e) {
+            alert("Bulk delete failed.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleExportCSV = async () => {
+        try {
+            const res = await api.get(`/hotspot/${selectedDevice}/users/export`, { responseType: 'blob' });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `hotspot_users_${selectedDevice}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (e) {
+            alert("Export failed.");
+        }
+    };
+
+    const handleDelete = async (name) => {
+        if (!window.confirm(`Are you sure you want to delete user "${name}"?`)) return;
+        setLoading(true);
+        try {
+            await api.delete(`/hotspot/${selectedDevice}/users/${name}`);
+            fetchData();
+        } catch (e) {
+            alert("Delete failed: " + (e.response?.data?.detail || e.message));
         } finally {
             setLoading(false);
         }
@@ -311,14 +368,19 @@ export default function Hotspot() {
                                             render: (u) => <div className="font-bold text-gray-900 text-sm">{u.user}</div>
                                         },
                                         {
-                                            header: 'Network Address',
+                                            header: 'Network Info',
                                             accessor: 'address',
-                                            render: (u) => <div className="text-xs text-gray-500 font-mono whitespace-nowrap">{u.address}</div>
+                                            render: (u) => (
+                                                <div>
+                                                    <div className="text-xs text-gray-900 font-mono font-bold leading-none mb-1">{u.address}</div>
+                                                    <div className="text-[10px] text-gray-400 font-mono tracking-tighter uppercase">{u.mac_address || 'Unknown MAC'}</div>
+                                                </div>
+                                            )
                                         },
                                         {
                                             header: 'Time Online',
                                             accessor: 'uptime',
-                                            render: (u) => <div className="text-xs text-gray-500 whitespace-nowrap">{u.uptime}</div>
+                                            render: (u) => <div className="text-xs text-gray-500 font-medium whitespace-nowrap">{u.uptime}</div>
                                         },
                                         {
                                             header: 'Interrupt',
@@ -361,45 +423,104 @@ export default function Hotspot() {
                     {/* Users Database */}
                     {activeTab === 'users' && (
                         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-6 sm:p-8 border-b border-gray-50">
-                                <h2 className="text-xl font-black text-gray-900">Voucher Database</h2>
+                            <div className="p-6 sm:p-8 border-b border-gray-50 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-blue-50 rounded-2xl">
+                                        <Users className="text-blue-600" size={24} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-gray-900 leading-none">Voucher Database</h2>
+                                        <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase tracking-widest">{users.length} Total Records</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                    <div className="relative group flex-1 sm:w-64">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" size={18} />
+                                        <input
+                                            type="text"
+                                            placeholder="Search vouchers..."
+                                            value={userSearch}
+                                            onChange={(e) => setUserSearch(e.target.value)}
+                                            className="w-full bg-gray-50 border border-transparent focus:border-blue-500/30 focus:bg-white rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 outline-none transition-all shadow-inner"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={handleExportCSV}
+                                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border border-gray-100 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50 transition-all active:scale-95"
+                                        >
+                                            <Download size={16} />
+                                            Export
+                                        </button>
+                                        <button
+                                            onClick={handleCleanupExpired}
+                                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-50 border border-red-100 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all active:scale-95"
+                                        >
+                                            <Trash2 size={16} />
+                                            Cleanup Expired
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                             <div className="overflow-hidden">
                                 <ResponsiveTable
-                                    data={users}
+                                    data={users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || (u.comment || '').toLowerCase().includes(userSearch.toLowerCase()))}
                                     columns={[
                                         {
                                             header: 'Identity',
                                             accessor: 'name',
                                             render: (u) => (
                                                 <div>
-                                                    <div className="font-bold text-gray-900 text-sm">{u.name}</div>
+                                                    <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                                                        {u.name}
+                                                        {u.comment && <span className="text-[8px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded uppercase tracking-tighter">Batch: {u.comment}</span>}
+                                                    </div>
                                                     <div className="text-[10px] text-gray-400 font-mono tracking-tighter">PWD: {u.password}</div>
                                                 </div>
                                             )
                                         },
                                         {
-                                            header: 'Profile',
+                                            header: 'Profile & Limits',
                                             accessor: 'profile',
-                                            render: (u) => <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
-                                        },
-                                        {
-                                            header: 'Usage',
-                                            accessor: 'bytes_in',
                                             render: (u) => (
-                                                <div>
-                                                    <div className="text-xs font-bold text-gray-700 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
-                                                    <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{u.uptime || '0s'}</div>
+                                                <div className="flex flex-col gap-1">
+                                                    <span className="max-w-fit px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
+                                                    {(u.limit_uptime || u.limit_bytes_total) && (
+                                                        <div className="text-[8px] text-gray-400 font-bold uppercase tracking-widest whitespace-nowrap">
+                                                            {u.limit_uptime && <span>Time: {u.limit_uptime}</span>}
+                                                            {u.limit_bytes_total > 0 && <span> • Data: {(u.limit_bytes_total / 1024 / 1024).toFixed(0)}MB</span>}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )
                                         },
                                         {
-                                            header: 'Interrupt',
+                                            header: 'Current Usage',
+                                            accessor: 'bytes_in',
+                                            render: (u) => (
+                                                <div>
+                                                    <div className="text-xs font-bold text-gray-700 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB In</div>
+                                                    <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{u.uptime || '0s'} Uptime</div>
+                                                </div>
+                                            )
+                                        },
+                                        {
+                                            header: 'Actions',
                                             accessor: 'actions',
                                             render: (u) => (
-                                                <div className="text-right">
-                                                    <button onClick={() => removeUser(u.id)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 rounded-lg whitespace-nowrap">
-                                                        Del
+                                                <div className="text-right flex items-center justify-end gap-2">
+                                                    {u.comment && (
+                                                        <button
+                                                            onClick={() => handleBulkDeleteByComment(u.comment)}
+                                                            className="text-orange-500 hover:text-orange-700 font-black text-[10px] uppercase tracking-widest hover:underline px-2 py-1 bg-orange-50 rounded-lg whitespace-nowrap"
+                                                            title={`Delete all users in batch ${u.comment}`}
+                                                        >
+                                                            Del Batch
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleDelete(u.name)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 rounded-lg whitespace-nowrap">
+                                                        Revoke
                                                     </button>
                                                 </div>
                                             )
@@ -412,7 +533,7 @@ export default function Hotspot() {
                                                     <Users size={16} className="text-blue-500" />
                                                     <span className="font-bold text-gray-900 text-sm">{u.name}</span>
                                                 </div>
-                                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-black uppercase">{u.profile}</span>
+                                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded-md text-[10px] font-black uppercase text-center">{u.profile}</span>
                                             </div>
                                             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
                                                 <div className="bg-gray-50 p-2 rounded-lg">
@@ -424,8 +545,17 @@ export default function Hotspot() {
                                                     <div className="font-mono font-bold text-gray-700">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
                                                 </div>
                                             </div>
-                                            <div className="flex justify-end border-t pt-3 mt-1">
-                                                <button onClick={() => removeUser(u.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Delete Voucher</button>
+                                            {(u.comment || u.limit_uptime || u.limit_bytes_total) && (
+                                                <div className="bg-blue-50/50 p-2 rounded-lg text-[8px] font-bold text-gray-500 uppercase tracking-widest flex flex-wrap gap-2">
+                                                    {u.comment && <div className="bg-white px-1.5 py-0.5 rounded shadow-sm border border-blue-100">Batch: {u.comment}</div>}
+                                                    {u.limit_uptime && <div className="bg-white px-1.5 py-0.5 rounded shadow-sm border border-blue-100">Limit: {u.limit_uptime}</div>}
+                                                </div>
+                                            )}
+                                            <div className="flex gap-2 border-t pt-3 mt-1">
+                                                {u.comment && (
+                                                    <button onClick={() => handleBulkDeleteByComment(u.comment)} className="flex-1 text-center text-orange-500 font-bold text-[10px] uppercase bg-orange-50 py-2 rounded-lg">Delete Batch</button>
+                                                )}
+                                                <button onClick={() => handleDelete(u.name)} className="flex-1 text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Revoke Token</button>
                                             </div>
                                         </div>
                                     )}
@@ -658,12 +788,13 @@ export default function Hotspot() {
                         </div>
                     )}
                 </div>
-            </div>
+            </div >
 
             {/* Profile Creation Modal */}
-            <ResponsiveModal
+            < ResponsiveModal
                 isOpen={showProfileModal}
-                onClose={() => setShowProfileModal(false)}
+                onClose={() => setShowProfileModal(false)
+                }
                 title="New Hotspot Profile"
                 size="lg"
             >
@@ -710,8 +841,8 @@ export default function Hotspot() {
                         </div>
                     </form>
                 </div>
-            </ResponsiveModal>
-        </div>
+            </ResponsiveModal >
+        </div >
     );
 }
 

@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.responses import StreamingResponse
+import io
+import csv
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +28,9 @@ class HotspotUser(BaseModel):
     uptime: Optional[str] = None
     bytes_in: Optional[int] = 0
     bytes_out: Optional[int] = 0
+    limit_uptime: Optional[str] = None
+    limit_bytes_total: Optional[int] = None
+    comment: Optional[str] = None
 
 class HotspotProfile(BaseModel):
     name: str
@@ -48,6 +54,7 @@ class HotspotActive(BaseModel):
     uptime: str
     bytes_in: int
     bytes_out: int
+    mac_address: Optional[str] = None
 
 def get_api_pool(ip, username, password, port=8728):
     connection = routeros_api.RouterOsApiPool(
@@ -95,7 +102,10 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
             profile=u.get('profile'),
             uptime=u.get('uptime'),
             bytes_in=int(u.get('bytes-in', 0)),
-            bytes_out=int(u.get('bytes-out', 0))
+            bytes_out=int(u.get('bytes-out', 0)),
+            limit_uptime=u.get('limit-uptime'),
+            limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
+            comment=u.get('comment')
         ) for u in users]
         
     except Exception as e:
@@ -145,6 +155,39 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
     except Exception as e:
         if "User already exists" in str(e): raise e
         logger.error(f"Create User Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@router.delete("/{device_id}/users/{username}")
+async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        resource = api.get_resource('/ip/hotspot/user')
+        user = resource.get(name=username)
+        if not user:
+             connection.disconnect()
+             raise HTTPException(status_code=404, detail="User not found")
+             
+        resource.remove(id=user[0]['.id'])
+        connection.disconnect()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Delete User Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/profiles", response_model=List[dict])
@@ -272,12 +315,13 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
         connection.disconnect()
         
         return [HotspotActive(
-            id=a.get('id'),
+            id=a.get('.id') or a.get('id'),
             user=a.get('user'),
             address=a.get('address'),
             uptime=a.get('uptime'),
             bytes_in=int(a.get('bytes-in', 0)),
-            bytes_out=int(a.get('bytes-out', 0))
+            bytes_out=int(a.get('bytes-out', 0)),
+            mac_address=a.get('mac-address')
         ) for a in active]
     except Exception as e:
         logger.error(f"Active Users Error: {e}")
@@ -433,3 +477,120 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         if 'connection' in locals() and connection:
             connection.disconnect()
         raise HTTPException(status_code=500, detail=f"Failed to generate vouchers: {str(e)}")
+@router.delete("/{device_id}/users/bulk")
+async def bulk_delete_users(
+    device_id: str, 
+    comment: Optional[str] = None, 
+    expired: bool = False, 
+    db: AsyncSession = Depends(get_db), 
+    actor = Depends(get_authorized_actor)
+):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+        
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+    
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        resource = api.get_resource('/ip/hotspot/user')
+        
+        users = resource.get()
+        to_delete = []
+        
+        for u in users:
+            should_delete = False
+            if comment and u.get('comment') == comment:
+                should_delete = True
+            
+            if expired:
+                uptime = u.get('uptime', '0s')
+                limit_uptime = u.get('limit-uptime')
+                bytes_out = int(u.get('bytes-out', 0))
+                bytes_in = int(u.get('bytes-in', 0))
+                total_bytes = bytes_out + bytes_in
+                limit_bytes = int(u.get('limit-bytes-total', 0))
+                
+                # Simple heuristic for "expired":
+                # 1. If reached uptime limit
+                # 2. If reached data limit
+                if limit_uptime and uptime == limit_uptime:
+                    should_delete = True
+                if limit_bytes > 0 and total_bytes >= limit_bytes:
+                    should_delete = True
+            
+            if should_delete:
+                to_delete.append(u.get('.id') or u.get('id'))
+        
+        for uid in to_delete:
+            resource.remove(id=uid)
+            
+        connection.disconnect()
+        return {"status": "success", "count": len(to_delete)}
+    except Exception as e:
+        logger.error(f"Bulk Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{device_id}/users/export")
+async def export_hotspot_users(
+    device_id: str, 
+    db: AsyncSession = Depends(get_db), 
+    actor = Depends(get_authorized_actor)
+):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+        
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+    
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        users = api.get_resource('/ip/hotspot/user').get()
+        connection.disconnect()
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Username', 'Password', 'Profile', 'Uptime', 'Bytes In', 'Bytes Out', 'Limit Uptime', 'Limit Bytes', 'Comment'])
+        
+        for u in users:
+            writer.writerow([
+                u.get('name'),
+                u.get('password'),
+                u.get('profile'),
+                u.get('uptime'),
+                u.get('bytes-in'),
+                u.get('bytes-out'),
+                u.get('limit-uptime'),
+                u.get('limit-bytes-total'),
+                u.get('comment')
+            ])
+            
+        output.seek(0)
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=hotspot_users_{device_id}.csv"}
+        )
+    except Exception as e:
+        logger.error(f"Export Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
