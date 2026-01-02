@@ -200,6 +200,23 @@ export default function Hotspot() {
         }
     };
 
+    const handleUpdatePriceSettings = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            await api.post(`/hotspot/${selectedDevice}/profiles/${selectedProfileSettings.name}/settings`, {
+                price: selectedProfileSettings.price,
+                currency: selectedProfileSettings.currency
+            });
+            setShowPriceModal(false);
+            fetchProfiles(selectedDevice);
+        } catch (err) {
+            alert("Failed to update price settings: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleGenerate = async (e) => {
         e.preventDefault();
         setLoading(true);
