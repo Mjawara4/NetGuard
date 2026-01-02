@@ -12,6 +12,7 @@ from app.models import Device, User, Site, APIKey, UserRole
 from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
+from datetime import datetime
 import random
 import string
 import logging
@@ -682,7 +683,7 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                     'name': username,
                     'password': password,
                     'profile': batch.profile or 'default',
-                    'comment': f"Batch-{batch.prefix or 'auto'}"
+                    'comment': f"Batch-{batch.prefix or 'auto'} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                 }
                 if batch.time_limit:
                     params['limit-uptime'] = batch.time_limit
@@ -827,7 +828,14 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/reports")
-async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def get_hotspot_reports(
+    device_id: str, 
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    period: Optional[str] = None,
+    db: AsyncSession = Depends(get_db), 
+    actor = Depends(get_authorized_actor)
+):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(Device).where(Device.id == UUID(device_id))
     elif isinstance(actor, APIKey) and not actor.organization_id:
@@ -879,21 +887,58 @@ async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db)
         total_revenue = {} # Store per currency
         total_sold = 0
         
+        # Handle period presets
+        from datetime import timedelta
+        now = datetime.now()
+        if period == 'day':
+            start_date = now.strftime('%Y-%m-%d')
+            end_date = None
+        elif period == 'week':
+            start_date = (now - timedelta(days=7)).strftime('%Y-%m-%d')
+            end_date = None
+        elif period == 'month':
+            start_date = now.replace(day=1).strftime('%Y-%m-%d')
+            end_date = None
+
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d') if start_date else None
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59) if end_date else None
+
+        def parse_comment_date(comment):
+            if ' | ' in comment:
+                try:
+                    date_part = comment.split(' | ')[-1]
+                    return datetime.strptime(date_part, '%Y-%m-%d %H:%M:%S')
+                except: pass
+            return None
+
         for u in users:
             uptime = u.get('uptime', '0s')
             if uptime != '0s':
+                comment = u.get('comment', '')
+                created_at = parse_comment_date(comment)
+                
+                # Check date filters
+                if start_dt and created_at and created_at < start_dt:
+                    continue
+                if end_dt and created_at and created_at > end_dt:
+                    continue
+                # If no timestamp (old voucher) but user filtered, skip it for accuracy?
+                # Actually, let's keep it if no filters, but if filters active, old vouchers might be hidden.
+                if (start_dt or end_dt) and not created_at:
+                    continue
+
                 price, curr = get_price_for_profile(u.get('profile'))
                 
                 total_revenue[curr] = total_revenue.get(curr, 0) + price
                 total_sold += 1
                 
                 report_data.append({
-                    "date": "Recently Used",
+                    "date": created_at.strftime('%Y-%m-%d %H:%M') if created_at else "Recently Used",
                     "user": u.get('name'),
                     "profile": u.get('profile'),
                     "price": price,
                     "currency": curr,
-                    "comment": u.get('comment', '')
+                    "comment": comment
                 })
         
         return {

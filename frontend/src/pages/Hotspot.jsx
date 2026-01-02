@@ -28,6 +28,15 @@ export default function Hotspot() {
     const [reportSearch, setReportSearch] = useState('');
     const [showPriceModal, setShowPriceModal] = useState(false);
     const [selectedProfileSettings, setSelectedProfileSettings] = useState({ name: '', price: 0, currency: 'TZS' });
+    const [reportPeriod, setReportPeriod] = useState('');
+    const [reportStartDate, setReportStartDate] = useState('');
+    const [reportEndDate, setReportEndDate] = useState('');
+
+    const filteredReports = reportData?.records?.filter(r =>
+        r.user.toLowerCase().includes(reportSearch.toLowerCase()) ||
+        r.profile.toLowerCase().includes(reportSearch.toLowerCase()) ||
+        (r.comment && r.comment.toLowerCase().includes(reportSearch.toLowerCase()))
+    ) || [];
 
     // Generation State
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
@@ -50,7 +59,7 @@ export default function Hotspot() {
         if (selectedDevice) {
             fetchData();
         }
-    }, [selectedDevice, activeTab]);
+    }, [selectedDevice, activeTab, reportPeriod, reportStartDate, reportEndDate]);
 
     const fetchDevices = async () => {
         try {
@@ -139,8 +148,13 @@ export default function Hotspot() {
                 setLogs(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'reports') {
+                const params = new URLSearchParams();
+                if (reportPeriod) params.append('period', reportPeriod);
+                if (reportStartDate) params.append('start_date', reportStartDate);
+                if (reportEndDate) params.append('end_date', reportEndDate);
+
                 const [reportRes, templateRes] = await Promise.all([
-                    api.get(`/hotspot/${selectedDevice}/reports`),
+                    api.get(`/hotspot/${selectedDevice}/reports?${params.toString()}`),
                     api.get(`/hotspot/${selectedDevice}/voucher-template`)
                 ]);
                 setReportData(reportRes.data);
@@ -973,25 +987,54 @@ export default function Hotspot() {
                     {activeTab === 'reports' && reportData && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                             <div className="flex flex-col md:flex-row gap-4 mb-6">
-                                <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
-                                    <div className="relative flex-1">
+                                <div className="flex-[2] bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-center gap-4">
+                                    <div className="relative flex-1 w-full">
                                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                                         <input
                                             type="text"
-                                            placeholder="Search sales (user, profile, or comment)..."
+                                            placeholder="Search sales..."
                                             value={reportSearch}
                                             onChange={(e) => setReportSearch(e.target.value)}
                                             className="w-full bg-gray-50 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
                                         />
                                     </div>
+                                    <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
+                                        {['', 'day', 'week', 'month'].map((p) => (
+                                            <button
+                                                key={p}
+                                                onClick={() => { setReportPeriod(p); setReportStartDate(''); setReportEndDate(''); }}
+                                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${reportPeriod === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                                            >
+                                                {p || 'All'}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
+
+                                <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-3">
+                                    <Clock className="text-gray-400" size={18} />
+                                    <input
+                                        type="date"
+                                        value={reportStartDate}
+                                        onChange={(e) => { setReportStartDate(e.target.value); setReportPeriod(''); }}
+                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    />
+                                    <span className="text-gray-300">-</span>
+                                    <input
+                                        type="date"
+                                        value={reportEndDate}
+                                        onChange={(e) => { setReportEndDate(e.target.value); setReportPeriod(''); }}
+                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    />
+                                </div>
+
                                 <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-3">
                                     <div className="text-[10px] font-black uppercase text-gray-400 px-2 whitespace-nowrap">Global Currency</div>
                                     <input
                                         type="text"
                                         value={template.default_currency || 'TZS'}
                                         onChange={(e) => setTemplate({ ...template, default_currency: e.target.value.toUpperCase() })}
-                                        className="w-20 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        className="w-16 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
                                         placeholder="TZS"
                                     />
                                     <button
@@ -1042,9 +1085,9 @@ export default function Hotspot() {
                                         >
                                             <Plus size={16} className="rotate-45" />
                                         </button>
-                                        <span className="text-xs font-black text-gray-500">Page {reportPage}</span>
+                                        <span className="text-xs font-black text-gray-500">Page {reportPage} of {Math.ceil(filteredReports.length / 30)}</span>
                                         <button
-                                            disabled={reportPage * 10 >= reportData.records.length}
+                                            disabled={reportPage * 30 >= filteredReports.length}
                                             onClick={() => setReportPage(p => p + 1)}
                                             className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
                                         >
@@ -1053,11 +1096,7 @@ export default function Hotspot() {
                                     </div>
                                 </div>
                                 <ResponsiveTable
-                                    data={reportData.records.filter(r =>
-                                        r.user.toLowerCase().includes(reportSearch.toLowerCase()) ||
-                                        r.profile.toLowerCase().includes(reportSearch.toLowerCase()) ||
-                                        (r.comment && r.comment.toLowerCase().includes(reportSearch.toLowerCase()))
-                                    ).slice((reportPage - 1) * 10, reportPage * 10)}
+                                    data={filteredReports.slice((reportPage - 1) * 30, reportPage * 30)}
                                     columns={[
                                         {
                                             header: 'Identity',
