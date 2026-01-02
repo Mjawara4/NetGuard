@@ -278,16 +278,18 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
             if p_name in profile_counts:
                 profile_counts[p_name] += 1
         
+        # Parse price/currency from local database settings (Device.voucher_template)
+        settings = device.voucher_template or {}
+        profile_pricing = settings.get('profile_pricing', {})
+        default_currency = settings.get('default_currency', 'TZS')
+        
         for p in profiles:
-            p['active_users'] = profile_counts.get(p.get('name'), 0)
-            # Parse price/currency from comment
-            comment = p.get('comment', '')
-            if 'price:' in comment:
-                import re
-                p_match = re.search(r'price:([\d\.]+)', comment)
-                c_match = re.search(r'curr:([A-Z\$]+)', comment)
-                if p_match: p['custom_price'] = float(p_match.group(1))
-                if c_match: p['custom_currency'] = c_match.group(1)
+            p_name = p.get('name')
+            p['active_users'] = profile_counts.get(p_name, 0)
+            
+            pricing = profile_pricing.get(p_name, {})
+            p['custom_price'] = pricing.get('price', 0)
+            p['custom_currency'] = pricing.get('currency', default_currency)
 
         connection.disconnect()
         return profiles
@@ -315,31 +317,25 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
     
     decrypt_device_secrets(device)
          
-    try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-        
-        resource = api.get_resource('/ip/hotspot/user/profile')
-        all_profiles = resource.get()
-        
-        # Find profile by name
-        target = next((p for p in all_profiles if p.get('name') == profile_name), None)
-        
-        if not target:
-            connection.disconnect()
-            raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
+        # Update local database instead of MikroTik (RouterOS might not support comments on profiles via API)
+        hs_settings = device.voucher_template or {}
+        if 'profile_pricing' not in hs_settings:
+            hs_settings['profile_pricing'] = {}
             
-        # Get ID safely
-        internal_id = target.get('.id') or target.get('id')
-        if not internal_id:
-            connection.disconnect()
-            raise HTTPException(status_code=500, detail="Could not resolve profile internal ID")
-
-        new_comment = f"price:{settings.price}|curr:{settings.currency}"
-        resource.set(id=internal_id, comment=new_comment)
+        # Update specific profile pricing
+        hs_settings['profile_pricing'][profile_name] = {
+            "price": settings.price,
+            "currency": settings.currency
+        }
         
-        connection.disconnect()
+        # Also update global default currency if provided
+        if settings.currency:
+            hs_settings['default_currency'] = settings.currency
+
+        device.voucher_template = hs_settings
+        db.add(device)
+        await db.commit()
+        
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Update Profile Settings Error: {e}")
@@ -590,6 +586,8 @@ class VoucherTemplate(BaseModel):
     footer_text: Optional[str] = "Thank you for visiting!"
     logo_url: Optional[str] = None
     color_primary: Optional[str] = "#2563EB"
+    profile_pricing: Optional[dict] = {}
+    default_currency: Optional[str] = "TZS"
 
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -856,25 +854,24 @@ async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db)
         profiles = profiles_resource.get()
         connection.disconnect()
         
-        # Build price map from profiles
-        profile_pricing = {}
-        for p in profiles:
-            comment = p.get('comment', '')
-            price = 0
-            currency = "TZS"
-            if 'price:' in comment:
-                import re
-                p_match = re.search(r'price:([\d\.]+)', comment)
-                c_match = re.search(r'curr:([A-Z\$]+)', comment)
-                if p_match: price = float(p_match.group(1))
-                if c_match: currency = c_match.group(1)
-            else:
-                # Fallback to name-based heuristic
-                import re
-                match = re.search(r'(\d+)$', p.get('name', ''))
-                if match: price = float(match.group(1))
+        # Build price map from local settings
+        hs_settings = device.voucher_template or {}
+        profile_pricing = hs_settings.get('profile_pricing', {})
+        default_currency = hs_settings.get('default_currency', 'TZS')
+        
+        # Map profiles for fallback heuristics if no local price set
+        profiles_map = {p.get('name'): p for p in profiles}
+        
+        def get_price_for_profile(p_name):
+            if p_name in profile_pricing:
+                return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
             
-            profile_pricing[p.get('name')] = {"price": price, "currency": currency}
+            # Fallback to name heuristic
+            import re
+            match = re.search(r'(\d+)$', p_name or '')
+            if match:
+                return float(match.group(1)), default_currency
+            return 0, default_currency
 
         # Filter for sold vouchers (uptime > 0)
         report_data = []
@@ -884,9 +881,7 @@ async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db)
         for u in users:
             uptime = u.get('uptime', '0s')
             if uptime != '0s':
-                pricing = profile_pricing.get(u.get('profile'), {"price": 0, "currency": "TZS"})
-                price = pricing['price']
-                curr = pricing['currency']
+                price, curr = get_price_for_profile(u.get('profile'))
                 
                 total_revenue[curr] = total_revenue.get(curr, 0) + price
                 total_sold += 1

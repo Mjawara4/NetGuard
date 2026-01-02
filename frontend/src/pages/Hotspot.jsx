@@ -139,11 +139,20 @@ export default function Hotspot() {
                 setLogs(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'reports') {
-                const res = await api.get(`/hotspot/${selectedDevice}/reports`);
-                setReportData(res.data);
+                const [reportRes, templateRes] = await Promise.all([
+                    api.get(`/hotspot/${selectedDevice}/reports`),
+                    api.get(`/hotspot/${selectedDevice}/voucher-template`)
+                ]);
+                setReportData(reportRes.data);
+                if (templateRes.data) setTemplate(templateRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'profiles') {
-                await fetchProfiles(selectedDevice);
+                const [profilesRes, templateRes] = await Promise.all([
+                    api.get(`/hotspot/${selectedDevice}/profiles`),
+                    api.get(`/hotspot/${selectedDevice}/voucher-template`)
+                ]);
+                setProfiles(profilesRes.data);
+                if (templateRes.data) setTemplate(templateRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'templates') {
                 await fetchTemplate(selectedDevice);
@@ -209,7 +218,7 @@ export default function Hotspot() {
                 currency: selectedProfileSettings.currency
             });
             setShowPriceModal(false);
-            fetchProfiles(selectedDevice);
+            fetchData();
         } catch (err) {
             alert("Failed to update price settings: " + (err.response?.data?.detail || err.message));
         } finally {
@@ -976,6 +985,23 @@ export default function Hotspot() {
                                         />
                                     </div>
                                 </div>
+                                <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-3">
+                                    <div className="text-[10px] font-black uppercase text-gray-400 px-2 whitespace-nowrap">Global Currency</div>
+                                    <input
+                                        type="text"
+                                        value={template.default_currency || 'TZS'}
+                                        onChange={(e) => setTemplate({ ...template, default_currency: e.target.value.toUpperCase() })}
+                                        className="w-20 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        placeholder="TZS"
+                                    />
+                                    <button
+                                        onClick={saveTemplate}
+                                        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all active:scale-90 shadow-lg shadow-blue-100"
+                                        title="Save Settings"
+                                    >
+                                        <Download size={18} />
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1425,7 +1451,7 @@ export default function Hotspot() {
                             <input
                                 type="text"
                                 required
-                                value={selectedProfileSettings.currency}
+                                value={selectedProfileSettings.currency || template.default_currency || 'TZS'}
                                 onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, currency: e.target.value.toUpperCase() })}
                                 className="w-full bg-gray-50 border-none rounded-2xl py-3 px-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500/20"
                                 placeholder="TZS"
