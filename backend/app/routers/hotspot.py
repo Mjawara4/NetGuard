@@ -318,7 +318,8 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
     decrypt_device_secrets(device)
     try:
         # Update local database instead of MikroTik (RouterOS might not support comments on profiles via API)
-        hs_settings = device.voucher_template or {}
+        import copy
+        hs_settings = copy.deepcopy(device.voucher_template) or {}
         if 'profile_pricing' not in hs_settings:
             hs_settings['profile_pricing'] = {}
             
