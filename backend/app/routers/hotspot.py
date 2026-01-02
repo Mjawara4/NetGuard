@@ -222,12 +222,19 @@ async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = 
         api = connection.get_api()
         
         resource = api.get_resource('/ip/hotspot/user')
-        user = resource.get(name=username)
-        if not user:
+        user_list = resource.get(name=username)
+        if not user_list:
              connection.disconnect()
              raise HTTPException(status_code=404, detail="User not found")
              
-        resource.remove(id=user[0]['.id'])
+        # Safely get internal ID (sometimes .id, sometimes id)
+        uid = user_list[0].get('.id') or user_list[0].get('id')
+        if not uid:
+            logger.error(f"Delete failed: Internal ID not found for user {username}. Response: {user_list[0]}")
+            connection.disconnect()
+            raise HTTPException(status_code=500, detail="Voucher found but internal identifier missing from router response.")
+
+        resource.remove(id=uid)
         connection.disconnect()
         return {"status": "success"}
     except Exception as e:
