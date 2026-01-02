@@ -280,11 +280,59 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         
         for p in profiles:
             p['active_users'] = profile_counts.get(p.get('name'), 0)
+            # Parse price/currency from comment
+            comment = p.get('comment', '')
+            if 'price:' in comment:
+                import re
+                p_match = re.search(r'price:([\d\.]+)', comment)
+                c_match = re.search(r'curr:([A-Z\$]+)', comment)
+                if p_match: p['custom_price'] = float(p_match.group(1))
+                if c_match: p['custom_currency'] = c_match.group(1)
 
         connection.disconnect()
         return profiles
     except Exception as e:
         logger.error(f"Hotspot Profiles Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ProfileSettings(BaseModel):
+    price: float
+    currency: str
+
+@router.post("/{device_id}/profiles/{profile_name}/settings")
+async def update_profile_settings(device_id: str, profile_name: str, settings: ProfileSettings, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        resource = api.get_resource('/ip/hotspot/user/profile')
+        profile = resource.get(name=profile_name)
+        if not profile:
+            connection.disconnect()
+            raise HTTPException(status_code=404, detail="Profile not found")
+            
+        new_comment = f"price:{settings.price}|curr:{settings.currency}"
+        resource.set(id=profile[0]['.id'], comment=new_comment)
+        
+        connection.disconnect()
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Update Profile Settings Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/summary")
@@ -790,45 +838,62 @@ async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db)
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
-        # Fetch all users
-        users = api.get_resource('/ip/hotspot/user').get()
+        # Fetch all users and profiles to get pricing
+        users_resource = api.get_resource('/ip/hotspot/user')
+        profiles_resource = api.get_resource('/ip/hotspot/user/profile')
+        
+        users = users_resource.get()
+        profiles = profiles_resource.get()
         connection.disconnect()
         
-        # Heuristic: Parse price from profile name (e.g., '1h-1000' -> 1000)
-        def get_price(profile_name):
-            if not profile_name: return 0
-            import re
-            match = re.search(r'(\d+)$', profile_name)
-            if match:
-                return float(match.group(1))
-            return 0
+        # Build price map from profiles
+        profile_pricing = {}
+        for p in profiles:
+            comment = p.get('comment', '')
+            price = 0
+            currency = "TZS"
+            if 'price:' in comment:
+                import re
+                p_match = re.search(r'price:([\d\.]+)', comment)
+                c_match = re.search(r'curr:([A-Z\$]+)', comment)
+                if p_match: price = float(p_match.group(1))
+                if c_match: currency = c_match.group(1)
+            else:
+                # Fallback to name-based heuristic
+                import re
+                match = re.search(r'(\d+)$', p.get('name', ''))
+                if match: price = float(match.group(1))
+            
+            profile_pricing[p.get('name')] = {"price": price, "currency": currency}
 
         # Filter for sold vouchers (uptime > 0)
         report_data = []
-        total_revenue = 0
+        total_revenue = {} # Store per currency
         total_sold = 0
         
-        # Sort users by some internal order if available, or just as they come
         for u in users:
             uptime = u.get('uptime', '0s')
             if uptime != '0s':
-                price = get_price(u.get('profile'))
-                total_revenue += price
+                pricing = profile_pricing.get(u.get('profile'), {"price": 0, "currency": "TZS"})
+                price = pricing['price']
+                curr = pricing['currency']
+                
+                total_revenue[curr] = total_revenue.get(curr, 0) + price
                 total_sold += 1
                 
                 report_data.append({
-                    "date": "Recently Used", # RouterOS doesn't store exact sale date easily without external RADIUS
+                    "date": "Recently Used",
                     "user": u.get('name'),
                     "profile": u.get('profile'),
                     "price": price,
+                    "currency": curr,
                     "comment": u.get('comment', '')
                 })
         
         return {
             "summary": {
-                "total_revenue": total_revenue,
+                "total_revenue": total_revenue, # dictionary of curr: amount
                 "total_sold": total_sold,
-                "currency": "TZS" # Default for context
             },
             "records": report_data
         }

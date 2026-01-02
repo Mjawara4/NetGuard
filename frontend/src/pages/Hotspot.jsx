@@ -24,7 +24,10 @@ export default function Hotspot() {
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
     const [userSearch, setUserSearch] = useState('');
     const [logSearch, setLogSearch] = useState('');
-    const [logFilter, setLogFilter] = useState('all'); // all, today, recent
+    const [logFilter, setLogFilter] = useState('all');
+    const [reportSearch, setReportSearch] = useState('');
+    const [showPriceModal, setShowPriceModal] = useState(false);
+    const [selectedProfileSettings, setSelectedProfileSettings] = useState({ name: '', price: 0, currency: 'TZS' });
 
     // Generation State
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
@@ -943,18 +946,35 @@ export default function Hotspot() {
                     {/* Sales Report Tab */}
                     {activeTab === 'reports' && reportData && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-                                            <Activity size={24} />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] font-black uppercase text-gray-400">Total Revenue</p>
-                                            <p className="text-2xl font-black text-gray-900">{reportData.summary.total_revenue.toLocaleString()} {reportData.summary.currency}</p>
-                                        </div>
+                            <div className="flex flex-col md:flex-row gap-4 mb-6">
+                                <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                        <input
+                                            type="text"
+                                            placeholder="Search sales (user, profile, or comment)..."
+                                            value={reportSearch}
+                                            onChange={(e) => setReportSearch(e.target.value)}
+                                            className="w-full bg-gray-50 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        />
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {Object.entries(reportData.summary.total_revenue).map(([curr, amount]) => (
+                                    <div key={curr} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                                                <Activity size={24} />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-gray-400">Revenue ({curr})</p>
+                                                <p className="text-2xl font-black text-gray-900">{amount.toLocaleString()} {curr}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
                                 <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
@@ -990,7 +1010,11 @@ export default function Hotspot() {
                                     </div>
                                 </div>
                                 <ResponsiveTable
-                                    data={reportData.records.slice((reportPage - 1) * 10, reportPage * 10)}
+                                    data={reportData.records.filter(r =>
+                                        r.user.toLowerCase().includes(reportSearch.toLowerCase()) ||
+                                        r.profile.toLowerCase().includes(reportSearch.toLowerCase()) ||
+                                        (r.comment && r.comment.toLowerCase().includes(reportSearch.toLowerCase()))
+                                    ).slice((reportPage - 1) * 10, reportPage * 10)}
                                     columns={[
                                         {
                                             header: 'Identity',
@@ -1005,7 +1029,7 @@ export default function Hotspot() {
                                         {
                                             header: 'Price',
                                             accessor: 'price',
-                                            render: (r) => <div className="font-black text-emerald-600">{r.price.toLocaleString()}</div>
+                                            render: (r) => <div className="font-black text-emerald-600">{r.price.toLocaleString()} {r.currency}</div>
                                         },
                                         {
                                             header: 'Activity',
@@ -1072,6 +1096,26 @@ export default function Hotspot() {
                                                 render: (p) => <div className="text-gray-900 font-black text-sm text-center">{p['shared-users'] || '1'}</div>
                                             },
                                             {
+                                                header: 'Charge',
+                                                accessor: 'price',
+                                                render: (p) => (
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedProfileSettings({
+                                                                name: p.name,
+                                                                price: p.custom_price || 0,
+                                                                currency: p.custom_currency || 'TZS'
+                                                            });
+                                                            setShowPriceModal(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-xl text-[10px] font-black tracking-widest hover:bg-emerald-100 transition-colors"
+                                                    >
+                                                        {p.custom_price ? `${p.custom_price.toLocaleString()} ${p.custom_currency || 'TZS'}` : 'SET PRICE'}
+                                                        <Settings size={12} />
+                                                    </button>
+                                                )
+                                            },
+                                            {
                                                 header: 'Active Users',
                                                 accessor: 'active_users',
                                                 render: (p) => (
@@ -1120,7 +1164,20 @@ export default function Hotspot() {
                                                         <div className="font-black text-emerald-700">{p.active_users || 0} Online</div>
                                                     </div>
                                                 </div>
-                                                <div className="flex justify-end border-t pt-3 mt-1">
+                                                <div className="flex flex-col border-t pt-3 mt-1 gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedProfileSettings({
+                                                                name: p.name,
+                                                                price: p.custom_price || 0,
+                                                                currency: p.custom_currency || 'TZS'
+                                                            });
+                                                            setShowPriceModal(true);
+                                                        }}
+                                                        className="w-full text-center text-emerald-600 font-bold text-[10px] uppercase bg-emerald-50 py-2 rounded-lg flex items-center justify-center gap-2"
+                                                    >
+                                                        <Settings size={14} /> Configure Price ({p.custom_price || '0'} {p.custom_currency || 'TZS'})
+                                                    </button>
                                                     <button onClick={() => handleProfileDelete(p.name)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Delete Profile</button>
                                                 </div>
                                             </div>
@@ -1325,7 +1382,57 @@ export default function Hotspot() {
                         </div>
                     </form>
                 </div>
-            </ResponsiveModal >
+            </ResponsiveModal>
+
+            {/* Profile Price/Currency Modal */}
+            <ResponsiveModal
+                isOpen={showPriceModal}
+                onClose={() => setShowPriceModal(false)}
+                title={`Price Settings: ${selectedProfileSettings.name}`}
+            >
+                <form onSubmit={handleUpdatePriceSettings} className="space-y-6">
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Voucher Price</label>
+                            <input
+                                type="number"
+                                required
+                                value={selectedProfileSettings.price}
+                                onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, price: parseFloat(e.target.value) })}
+                                className="w-full bg-gray-50 border-none rounded-2xl py-3 px-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                placeholder="e.g. 500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Currency Symbol (e.g. TZS, $, UGX)</label>
+                            <input
+                                type="text"
+                                required
+                                value={selectedProfileSettings.currency}
+                                onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, currency: e.target.value.toUpperCase() })}
+                                className="w-full bg-gray-50 border-none rounded-2xl py-3 px-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                placeholder="TZS"
+                            />
+                        </div>
+                    </div>
+                    <div className="flex gap-4">
+                        <button
+                            type="button"
+                            onClick={() => setShowPriceModal(false)}
+                            className="flex-1 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest text-gray-400 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-1 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            {loading ? <RefreshCw className="animate-spin" size={16} /> : <Settings size={16} />} Save Changes
+                        </button>
+                    </div>
+                </form>
+            </ResponsiveModal>
         </div >
     );
 }
