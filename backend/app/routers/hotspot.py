@@ -316,7 +316,7 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
         raise HTTPException(status_code=404, detail="Device not found")
     
     decrypt_device_secrets(device)
-         
+    try:
         # Update local database instead of MikroTik (RouterOS might not support comments on profiles via API)
         hs_settings = device.voucher_template or {}
         if 'profile_pricing' not in hs_settings:
