@@ -900,6 +900,9 @@ async def get_hotspot_reports(
             start_date = now.replace(day=1).strftime('%Y-%m-%d')
             end_date = None
 
+        if start_date or end_date or period:
+            logger.info(f"Filtering reports: period={period}, start={start_date}, end={end_date}")
+
         start_dt = datetime.strptime(start_date, '%Y-%m-%d') if start_date else None
         end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59) if end_date else None
 
@@ -922,10 +925,14 @@ async def get_hotspot_reports(
                     continue
                 if end_dt and created_at and created_at > end_dt:
                     continue
-                # If no timestamp (old voucher) but user filtered, skip it for accuracy?
-                # Actually, let's keep it if no filters, but if filters active, old vouchers might be hidden.
+                
+                # Fallback for legacy vouchers (no timestamp)
                 if (start_dt or end_dt) and not created_at:
-                    continue
+                    # If it's a "day" (Today) filter, we include legacy vouchers as they are "Recently Used"
+                    if period == 'day':
+                        pass 
+                    else:
+                        continue
 
                 price, curr = get_price_for_profile(u.get('profile'))
                 

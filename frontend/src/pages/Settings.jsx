@@ -249,16 +249,17 @@ export default function SettingsPage() {
                                     </div>
                                 </div>
 
-                                {/* Hotspot */}
                                 <div className="space-y-3">
                                     <h4 className="font-black text-gray-400 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
                                         <span className="p-1 bg-gray-100 rounded">🎫</span> Hotspot Integration
                                     </h4>
                                     <div className="grid gap-2">
                                         {[
-                                            { method: 'POST', path: '/hotspot/{id}/users/batch', desc: 'Generate unique vouchers' },
-                                            { method: 'GET', path: '/hotspot/{id}/active', desc: 'List active hotspot sessions' },
-                                            { method: 'GET', path: '/hotspot/{id}/profiles', desc: 'List MikroTik user profiles' }
+                                            { method: 'POST', path: '/hotspot/{id}/users/batch', desc: 'Generate unique vouchers (auto-timestamped)' },
+                                            { method: 'GET', path: '/hotspot/{id}/reports', desc: 'Sales report (params: period, start_date, end_date)' },
+                                            { method: 'GET', path: '/hotspot/{id}/profiles', desc: 'List profiles with custom prices' },
+                                            { method: 'POST', path: '/hotspot/{id}/profiles/{name}/settings', desc: 'Set profile price & currency' },
+                                            { method: 'GET', path: '/hotspot/{id}/active', desc: 'List active hotspot sessions' }
                                         ].map((ep, i) => (
                                             <div key={i} className="group p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
                                                 <div className="flex items-center gap-2">
@@ -270,29 +271,47 @@ export default function SettingsPage() {
                                         ))}
                                     </div>
 
-                                    {/* JSON Example Card */}
-                                    <div className="mt-4 bg-gray-900 rounded-xl overflow-hidden shadow-lg border border-gray-800">
-                                        <div className="px-3 py-2 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
-                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Example Batch Payload (JSON)</span>
-                                            <button onClick={() => copyToClipboard(`{
-  "qty": 5,
+                                    {/* JSON Example Cards */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                        <div className="bg-gray-900 rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                                            <div className="px-3 py-2 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Batch Payload (JSON)</span>
+                                                <button onClick={() => copyToClipboard(`{
+  "qty": 10,
   "prefix": "wifi",
   "random_mode": true,
-  "format": "numeric",
   "time_limit": "1h"
 }`)} className="text-gray-500 hover:text-white transition-colors">
-                                                <Copy size={12} />
-                                            </button>
-                                        </div>
-                                        <div className="p-3 font-mono text-[10px] text-blue-300 overflow-x-auto">
-                                            {`{
+                                                    <Copy size={12} />
+                                                </button>
+                                            </div>
+                                            <div className="p-3 font-mono text-[10px] text-blue-300 overflow-x-auto">
+                                                {`{
   "qty": 10,
   "prefix": "auto",
   "random_mode": true,
-  "format": "numeric",
   "time_limit": "1h",
   "data_limit": "500M"
 }`}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-900 rounded-xl overflow-hidden shadow-lg border border-gray-800">
+                                            <div className="px-3 py-2 bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Profile Settings (JSON)</span>
+                                                <button onClick={() => copyToClipboard(`{
+  "price": 1000,
+  "currency": "TZS"
+}`)} className="text-gray-500 hover:text-white transition-colors">
+                                                    <Copy size={12} />
+                                                </button>
+                                            </div>
+                                            <div className="p-3 font-mono text-[10px] text-green-300 overflow-x-auto">
+                                                {`{
+  "price": 1000,
+  "currency": "TZS"
+}`}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
