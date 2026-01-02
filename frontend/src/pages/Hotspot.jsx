@@ -1001,7 +1001,7 @@ export default function Hotspot() {
                                         </button>
                                         <span className="text-xs font-black text-gray-500">Page {reportPage}</span>
                                         <button
-                                            disabled={reportPage * 20 >= reportData.records.length}
+                                            disabled={reportPage * 10 >= reportData.records.length}
                                             onClick={() => setReportPage(p => p + 1)}
                                             className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
                                         >
