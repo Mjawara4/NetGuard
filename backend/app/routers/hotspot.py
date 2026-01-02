@@ -733,19 +733,36 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
-        # Fetch logs with topic 'hotspot'
+        # Fetch recent logs (last 300 to ensure we find enough hotspot entries)
         log_resource = api.get_resource('/log')
-        logs = log_resource.get(topics='hotspot')
+        all_logs = log_resource.get()
         
         connection.disconnect()
         
+        # Filter for logs containing 'hotspot' topic
+        hotspot_logs = [l for l in all_logs if 'hotspot' in l.get('topics', '').lower()]
+        
         # Return last 50 logs, reversed (newest first)
         results = []
-        for l in reversed(logs[-50:]):
+        for l in reversed(hotspot_logs[-50:]):
+            # Extract time and make it clear
+            # RouterOS usually provides 'time' as HH:MM:SS or MMM/DD HH:MM:SS
+            raw_time = l.get('time', 'unknown')
+            
+            # Identify user if possible from message
+            msg = l.get('message', '')
+            user_info = "system"
+            if '(' in msg and ')' in msg:
+                # Often logs look like: user muhammad (10.5.5.10): logged in
+                import re
+                match = re.search(r'user\s+([^\s\(]+)', msg)
+                if match:
+                    user_info = match.group(1)
+            
             results.append({
-                "time": l.get('time'),
-                "user_info": l.get('user') or l.get('message', '').split(':')[0] if ':' in l.get('message', '') else "system",
-                "message": l.get('message')
+                "time": raw_time,
+                "user_info": user_info,
+                "message": msg
             })
         return results
     except Exception as e:
