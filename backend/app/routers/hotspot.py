@@ -321,13 +321,23 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
         api = connection.get_api()
         
         resource = api.get_resource('/ip/hotspot/user/profile')
-        profile = resource.get(name=profile_name)
-        if not profile:
+        all_profiles = resource.get()
+        
+        # Find profile by name
+        target = next((p for p in all_profiles if p.get('name') == profile_name), None)
+        
+        if not target:
             connection.disconnect()
-            raise HTTPException(status_code=404, detail="Profile not found")
+            raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
             
+        # Get ID safely
+        internal_id = target.get('.id') or target.get('id')
+        if not internal_id:
+            connection.disconnect()
+            raise HTTPException(status_code=500, detail="Could not resolve profile internal ID")
+
         new_comment = f"price:{settings.price}|curr:{settings.currency}"
-        resource.set(id=profile[0]['.id'], comment=new_comment)
+        resource.set(id=internal_id, comment=new_comment)
         
         connection.disconnect()
         return {"status": "success"}
