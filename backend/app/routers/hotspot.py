@@ -733,7 +733,7 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
-        # Fetch recent logs (last 300 to ensure we find enough hotspot entries)
+        # Fetch recent logs (last 500 to ensure we find enough hotspot entries)
         log_resource = api.get_resource('/log')
         all_logs = log_resource.get()
         
@@ -742,9 +742,9 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         # Filter for logs containing 'hotspot' topic
         hotspot_logs = [l for l in all_logs if 'hotspot' in l.get('topics', '').lower()]
         
-        # Return last 50 logs, reversed (newest first)
+        # Return last 100 logs, reversed (newest first)
         results = []
-        for l in reversed(hotspot_logs[-50:]):
+        for l in reversed(hotspot_logs[-100:]):
             # Extract time and make it clear
             # RouterOS usually provides 'time' as HH:MM:SS or MMM/DD HH:MM:SS
             raw_time = l.get('time', 'unknown')

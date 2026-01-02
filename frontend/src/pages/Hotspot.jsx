@@ -21,6 +21,8 @@ export default function Hotspot() {
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
     const [userSearch, setUserSearch] = useState('');
+    const [logSearch, setLogSearch] = useState('');
+    const [logFilter, setLogFilter] = useState('all'); // all, today, recent
 
     // Generation State
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
@@ -850,10 +852,50 @@ export default function Hotspot() {
                                     <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                                 </button>
                             </div>
+                            <div className="flex flex-col md:flex-row gap-4">
+                                <div className="flex-1 bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                        <input
+                                            type="text"
+                                            placeholder="Search logs (user, ip, or message)..."
+                                            value={logSearch}
+                                            onChange={(e) => setLogSearch(e.target.value)}
+                                            className="w-full bg-gray-50 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        />
+                                    </div>
+                                    <select
+                                        value={logFilter}
+                                        onChange={(e) => setLogFilter(e.target.value)}
+                                        className="bg-gray-50 border-none rounded-2xl py-2.5 px-4 text-xs font-black uppercase tracking-widest text-gray-600 focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        <option value="all">All Logs</option>
+                                        <option value="today">Today Only</option>
+                                        <option value="recent">Last Hour</option>
+                                    </select>
+                                </div>
+                            </div>
 
                             <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
                                 <ResponsiveTable
-                                    data={logs}
+                                    data={logs.filter(l => {
+                                        const matchesSearch =
+                                            l.user_info.toLowerCase().includes(logSearch.toLowerCase()) ||
+                                            l.message.toLowerCase().includes(logSearch.toLowerCase()) ||
+                                            l.time.toLowerCase().includes(logSearch.toLowerCase());
+
+                                        if (logFilter === 'all') return matchesSearch;
+
+                                        // RouterOS heuristic: HH:MM:SS (Today) vs MMM/DD HH:MM:SS (Older)
+                                        const isToday = !l.time.includes('/') && !/[a-zA-Z]/.test(l.time.split(' ')[0]);
+
+                                        if (logFilter === 'today') return matchesSearch && isToday;
+                                        if (logFilter === 'recent') {
+                                            // Heuristic: Last 10 minutes or just top 10 logs if we can't parse
+                                            return matchesSearch && (isToday || logs.indexOf(l) < 10);
+                                        }
+                                        return matchesSearch;
+                                    })}
                                     columns={[
                                         {
                                             header: 'Time',
