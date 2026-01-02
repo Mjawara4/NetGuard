@@ -935,9 +935,16 @@ async def get_hotspot_reports(
                 
                 # Fallback for legacy vouchers (no timestamp)
                 if (start_dt or end_dt) and not created_at:
-                    # If it's a "day" (Today) filter, we include legacy vouchers as they are "Recently Used"
-                    if period == 'day':
-                        pass 
+                    # Robust check: If the range includes TODAY, include legacy vouchers as "Recently Used"
+                    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                    today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    
+                    in_range = True
+                    if start_dt and today_end < start_dt: in_range = False
+                    if end_dt and today_start > end_dt: in_range = False
+                    
+                    if in_range:
+                        pass
                     else:
                         continue
 
@@ -948,12 +955,21 @@ async def get_hotspot_reports(
                 
                 report_data.append({
                     "date": created_at.strftime('%Y-%m-%d %H:%M') if created_at else "Recently Used",
+                    "timestamp": created_at.timestamp() if created_at else float('inf'), # Put legacy at top
                     "user": u.get('name'),
                     "profile": u.get('profile'),
                     "price": price,
                     "currency": curr,
                     "comment": comment
                 })
+        
+        # Sort by timestamp descending (newest first)
+        # float('inf') for legacy ensures they stay at the top as "Recently Used"
+        report_data.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        
+        # Clean up internal timestamp before returning
+        for r in report_data:
+            r.pop('timestamp', None)
         
         return {
             "summary": {
