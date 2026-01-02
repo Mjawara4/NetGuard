@@ -55,6 +55,49 @@ class HotspotActive(BaseModel):
     bytes_in: int
     bytes_out: int
     mac_address: Optional[str] = None
+    remaining_time: Optional[str] = None
+
+def parse_routeros_time(time_str: str) -> int:
+    """Converts RouterOS time (1d2h3m4s) to seconds."""
+    if not time_str or time_str == "0s":
+        return 0
+    
+    total_seconds = 0
+    current_val = ""
+    
+    # Simple parser for d, h, m, s
+    multipliers = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
+    
+    for char in time_str:
+        if char.isdigit():
+            current_val += char
+        elif char in multipliers:
+            if current_val:
+                total_seconds += int(current_val) * multipliers[char]
+                current_val = ""
+                
+    return total_seconds
+
+def format_routeros_time(seconds: int) -> str:
+    """Converts seconds back to RouterOS time string."""
+    if seconds <= 0:
+        return "0s"
+    
+    periods = [
+        ('d', 86400),
+        ('h', 3600),
+        ('m', 60),
+        ('s', 1)
+    ]
+    
+    result = ""
+    for suffix, count in periods:
+        if seconds >= count:
+            val = seconds // count
+            result += f"{val}{suffix}"
+            seconds %= count
+            
+    return result or "0s"
 
 def get_api_pool(ip, username, password, port=8728):
     connection = routeros_api.RouterOsApiPool(
@@ -422,17 +465,35 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         active = api.get_resource('/ip/hotspot/active').get()
+        users = api.get_resource('/ip/hotspot/user').get()
         connection.disconnect()
         
-        return [HotspotActive(
-            id=a.get('.id') or a.get('id'),
-            user=a.get('user'),
-            address=a.get('address'),
-            uptime=a.get('uptime'),
-            bytes_in=int(a.get('bytes-in', 0)),
-            bytes_out=int(a.get('bytes-out', 0)),
-            mac_address=a.get('mac-address')
-        ) for a in active]
+        user_limits = {u.get('name'): u.get('limit-uptime') for u in users if u.get('limit-uptime')}
+        
+        results = []
+        for a in active:
+            username = a.get('user')
+            uptime_str = a.get('uptime', '0s')
+            limit_str = user_limits.get(username)
+            
+            remaining = "UNLIM"
+            if limit_str:
+                uptime_sec = parse_routeros_time(uptime_str)
+                limit_sec = parse_routeros_time(limit_str)
+                rem_sec = max(0, limit_sec - uptime_sec)
+                remaining = format_routeros_time(rem_sec)
+
+            results.append(HotspotActive(
+                id=a.get('.id') or a.get('id'),
+                user=username,
+                address=a.get('address'),
+                uptime=uptime_str,
+                bytes_in=int(a.get('bytes-in', 0)),
+                bytes_out=int(a.get('bytes-out', 0)),
+                mac_address=a.get('mac-address'),
+                remaining_time=remaining
+            ))
+        return results
     except Exception as e:
         logger.error(f"Active Users Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -649,6 +710,46 @@ async def bulk_delete_users(
         return {"status": "success", "count": len(to_delete)}
     except Exception as e:
         logger.error(f"Bulk Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{device_id}/logs")
+async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        # Fetch logs with topic 'hotspot'
+        log_resource = api.get_resource('/log')
+        logs = log_resource.get(topics='hotspot')
+        
+        connection.disconnect()
+        
+        # Return last 50 logs, reversed (newest first)
+        results = []
+        for l in reversed(logs[-50:]):
+            results.append({
+                "time": l.get('time'),
+                "user_info": l.get('user') or l.get('message', '').split(':')[0] if ':' in l.get('message', '') else "system",
+                "message": l.get('message')
+            })
+        return results
+    except Exception as e:
+        logger.error(f"Router Logs Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/users/export")

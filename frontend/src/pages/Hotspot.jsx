@@ -15,6 +15,7 @@ export default function Hotspot() {
     const [dashboardData, setDashboardData] = useState(null);
     const [systemInfo, setSystemInfo] = useState(null);
     const [batchHistory, setBatchHistory] = useState([]);
+    const [logs, setLogs] = useState([]);
     const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
@@ -125,6 +126,10 @@ export default function Hotspot() {
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
                 setActiveSessions(res.data);
+                setHealthStatus('online');
+            } else if (activeTab === 'logs') {
+                const res = await api.get(`/hotspot/${selectedDevice}/logs`);
+                setLogs(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'profiles') {
                 await fetchProfiles(selectedDevice);
@@ -335,6 +340,7 @@ export default function Hotspot() {
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="users" label="Vouchers" icon={CreditCard} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="history" label="Batches" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="logs" label="Logs" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -550,6 +556,17 @@ export default function Hotspot() {
                                             render: (u) => <div className="text-xs text-gray-500 font-bold whitespace-nowrap bg-gray-50 px-2 py-1 rounded-lg">{u.uptime}</div>
                                         },
                                         {
+                                            header: 'Time Left',
+                                            accessor: 'remaining_time',
+                                            render: (u) => (
+                                                <div className={`text-xs font-black px-2 py-1 rounded-lg border ${u.remaining_time === 'UNLIM' ? 'bg-gray-50 text-gray-400 border-gray-100' :
+                                                    u.remaining_time === '0s' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                                                    }`}>
+                                                    {u.remaining_time}
+                                                </div>
+                                            )
+                                        },
+                                        {
                                             header: 'Interrupt',
                                             accessor: 'actions',
                                             render: (u) => (
@@ -573,7 +590,10 @@ export default function Hotspot() {
                                             <div className="flex justify-between items-center text-xs text-gray-500">
                                                 <div className="flex items-center gap-1.5">
                                                     <Clock size={12} />
-                                                    <span>{u.uptime}</span>
+                                                    <span>{u.uptime} online</span>
+                                                </div>
+                                                <div className={`font-black text-[10px] uppercase ${u.remaining_time === 'UNLIM' ? 'text-gray-400' : 'text-blue-600'}`}>
+                                                    Left: {u.remaining_time}
                                                 </div>
                                             </div>
                                             <div className="flex justify-end border-t pt-3 mt-1">
@@ -813,6 +833,59 @@ export default function Hotspot() {
                                         </div>
                                     )}
                                     emptyMessage="No batches found with comments."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Hotspot Logs Tab */}
+                    {activeTab === 'logs' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex items-center justify-between bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                                <div>
+                                    <h2 className="text-xl font-black text-gray-900">System Logs</h2>
+                                    <p className="text-gray-500 text-sm font-medium">Real-time MikroTik hotspot event logs.</p>
+                                </div>
+                                <button onClick={fetchData} className="p-3 bg-blue-50 text-blue-600 rounded-2xl hover:bg-blue-100 transition-colors">
+                                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+                                </button>
+                            </div>
+
+                            <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+                                <ResponsiveTable
+                                    data={logs}
+                                    columns={[
+                                        {
+                                            header: 'Time',
+                                            accessor: 'time',
+                                            render: (l) => <div className="text-xs font-mono font-bold text-gray-400">{l.time}</div>
+                                        },
+                                        {
+                                            header: 'Username / IP',
+                                            accessor: 'user_info',
+                                            render: (l) => (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                                                    <div className="font-black text-gray-900 text-xs uppercase">{l.user_info}</div>
+                                                </div>
+                                            )
+                                        },
+                                        {
+                                            header: 'Event Message',
+                                            accessor: 'message',
+                                            render: (l) => <div className="text-xs font-medium text-gray-600 max-w-md truncate">{l.message}</div>
+                                        }
+                                    ]}
+                                    renderCard={(l) => (
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[10px] font-mono font-bold text-gray-400">{l.time}</span>
+                                                <span className="font-black text-blue-600 text-[10px] uppercase bg-blue-50 px-2 py-0.5 rounded-md">{l.user_info}</span>
+                                            </div>
+                                            <p className="text-xs font-medium text-gray-700 leading-relaxed">{l.message}</p>
+                                        </div>
+                                    )}
+                                    emptyMessage="No hotspot logs found."
                                 />
                             </div>
                         </div>
