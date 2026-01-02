@@ -16,6 +16,8 @@ export default function Hotspot() {
     const [systemInfo, setSystemInfo] = useState(null);
     const [batchHistory, setBatchHistory] = useState([]);
     const [logs, setLogs] = useState([]);
+    const [reportData, setReportData] = useState(null);
+    const [reportPage, setReportPage] = useState(1);
     const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
@@ -132,6 +134,10 @@ export default function Hotspot() {
             } else if (activeTab === 'logs') {
                 const res = await api.get(`/hotspot/${selectedDevice}/logs`);
                 setLogs(res.data);
+                setHealthStatus('online');
+            } else if (activeTab === 'reports') {
+                const res = await api.get(`/hotspot/${selectedDevice}/reports`);
+                setReportData(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'profiles') {
                 await fetchProfiles(selectedDevice);
@@ -343,6 +349,7 @@ export default function Hotspot() {
                         <TabButton id="users" label="Vouchers" icon={CreditCard} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="history" label="Batches" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="logs" label="Logs" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="reports" label="Report" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -928,6 +935,97 @@ export default function Hotspot() {
                                         </div>
                                     )}
                                     emptyMessage="No hotspot logs found."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Sales Report Tab */}
+                    {activeTab === 'reports' && reportData && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                                            <Activity size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-gray-400">Total Revenue</p>
+                                            <p className="text-2xl font-black text-gray-900">{reportData.summary.total_revenue.toLocaleString()} {reportData.summary.currency}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                                            <Users size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black uppercase text-gray-400">Vouchers Sold</p>
+                                            <p className="text-2xl font-black text-gray-900">{reportData.summary.total_sold}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="p-6 border-b border-gray-50 flex justify-between items-center">
+                                    <h3 className="font-black text-gray-900 uppercase text-xs tracking-widest">Sales Records</h3>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            disabled={reportPage === 1}
+                                            onClick={() => setReportPage(p => p - 1)}
+                                            className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
+                                        >
+                                            <Plus size={16} className="rotate-45" />
+                                        </button>
+                                        <span className="text-xs font-black text-gray-500">Page {reportPage}</span>
+                                        <button
+                                            disabled={reportPage * 20 >= reportData.records.length}
+                                            onClick={() => setReportPage(p => p + 1)}
+                                            className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
+                                        >
+                                            <Plus size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <ResponsiveTable
+                                    data={reportData.records.slice((reportPage - 1) * 10, reportPage * 10)}
+                                    columns={[
+                                        {
+                                            header: 'Identity',
+                                            accessor: 'user',
+                                            render: (r) => <div className="font-black text-gray-900 text-sm uppercase">{r.user}</div>
+                                        },
+                                        {
+                                            header: 'Profile',
+                                            accessor: 'profile',
+                                            render: (r) => <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black">{r.profile}</span>
+                                        },
+                                        {
+                                            header: 'Price',
+                                            accessor: 'price',
+                                            render: (r) => <div className="font-black text-emerald-600">{r.price.toLocaleString()}</div>
+                                        },
+                                        {
+                                            header: 'Activity',
+                                            accessor: 'date',
+                                            render: (r) => <div className="text-[10px] font-bold text-gray-400 uppercase">{r.date}</div>
+                                        }
+                                    ]}
+                                    renderCard={(r) => (
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <p className="font-black text-gray-900 uppercase text-sm">{r.user}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="font-black text-emerald-600">{r.price.toLocaleString()}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">{r.date}</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    emptyMessage="No sales recorded on this router."
                                 />
                             </div>
                         </div>

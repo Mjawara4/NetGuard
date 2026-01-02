@@ -769,6 +769,73 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         logger.error(f"Router Logs Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/{device_id}/reports")
+async def get_hotspot_reports(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+    
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    
+    decrypt_device_secrets(device)
+         
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        # Fetch all users
+        users = api.get_resource('/ip/hotspot/user').get()
+        connection.disconnect()
+        
+        # Heuristic: Parse price from profile name (e.g., '1h-1000' -> 1000)
+        def get_price(profile_name):
+            if not profile_name: return 0
+            import re
+            match = re.search(r'(\d+)$', profile_name)
+            if match:
+                return float(match.group(1))
+            return 0
+
+        # Filter for sold vouchers (uptime > 0)
+        report_data = []
+        total_revenue = 0
+        total_sold = 0
+        
+        # Sort users by some internal order if available, or just as they come
+        for u in users:
+            uptime = u.get('uptime', '0s')
+            if uptime != '0s':
+                price = get_price(u.get('profile'))
+                total_revenue += price
+                total_sold += 1
+                
+                report_data.append({
+                    "date": "Recently Used", # RouterOS doesn't store exact sale date easily without external RADIUS
+                    "user": u.get('name'),
+                    "profile": u.get('profile'),
+                    "price": price,
+                    "comment": u.get('comment', '')
+                })
+        
+        return {
+            "summary": {
+                "total_revenue": total_revenue,
+                "total_sold": total_sold,
+                "currency": "TZS" # Default for context
+            },
+            "records": report_data
+        }
+    except Exception as e:
+        logger.error(f"Router Reports Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{device_id}/users/export")
 async def export_hotspot_users(
     device_id: str, 
