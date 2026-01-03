@@ -799,23 +799,58 @@ async def bulk_delete_users(
         failed_count = 0
         errors = []
 
-        for uid in to_delete:
-            if uid:
+        # Function to (re)initialize connection and get resource
+        def get_resource():
+            # Close existing if it exists
+            nonlocal connection, api, resource
+            if connection:
                 try:
-                    resource.remove(id=uid)
-                    deleted_count += 1
-                    # Small delay to prevent overwhelming the API/Router
-                    if len(to_delete) > 10:
-                        time.sleep(0.01)
-                except Exception as del_err:
-                    failed_count += 1
-                    errors.append(str(del_err))
-                    logger.error(f"Failed to delete voucher {uid}: {del_err}")
+                    connection.disconnect()
+                except:
+                    pass
             
-        connection.disconnect()
+            # Re-establish
+            port = getattr(device, 'ssh_port', 8728) or 8728
+            connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+            api = connection.get_api()
+            resource = api.get_resource('/ip/hotspot/user')
+            return resource
+
+        for uid in to_delete:
+            if not uid:
+                continue
+                
+            try:
+                resource.remove(id=uid)
+                deleted_count += 1
+            except Exception as del_err:
+                err_msg = str(del_err)
+                logger.error(f"Failed to delete voucher {uid}: {err_msg}")
+                
+                # Check for protocol desync / malformed sentence
+                if "Malformed sentence" in err_msg or "desync" in err_msg.lower() or "!empty" in err_msg:
+                    logger.warning(f"Protocol desync detected during deletion of {uid}. Resetting connection...")
+                    try:
+                        resource = get_resource()
+                        # Do not retry the same UID to avoid infinite loop if that UID is specifically malformed
+                        failed_count += 1
+                        errors.append(f"{uid}: Protocol Reset")
+                    except Exception as conn_err:
+                        logger.error(f"Failed to reconnect after protocol error: {conn_err}")
+                        break # Cannot proceed if we can't reconnect
+                else:
+                    failed_count += 1
+                    errors.append(f"{uid}: {err_msg}")
+            
+            # Tiny sleep to let the router breathe
+            if deleted_count % 20 == 0:
+                time.sleep(0.01)
+            
+        if connection:
+            connection.disconnect()
         
         if failed_count > 0:
-            logger.warning(f"Bulk delete partial failure. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}...")
+            logger.warning(f"Bulk delete partial completion. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}")
             
         return {"status": "success", "count": deleted_count, "failed": failed_count}
     except Exception as e:
