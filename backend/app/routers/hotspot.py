@@ -146,11 +146,12 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
         
-        # Use binary resource for more raw control
-        users_resource = api.get_binary_resource('/ip/hotspot/user')
-        profiles = api.get_resource('/ip/hotspot/user/profile').get()
+        # Use standard resource (binary can sometimes have unexpected key names)
+        users_resource = api.get_resource('/ip/hotspot/user')
         users = users_resource.get()
+        logger.info(f"Sync: Found {len(users)} total hotspot users on device {device.name}")
         connection.disconnect()
+
         
         # Build price map
         hs_settings = device.voucher_template or {}
@@ -168,11 +169,13 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
 
         # Find users with uptime
         new_sales = 0
+        uptime_vouchers = 0
         for u in users:
             uptime_str = u.get('uptime', '0s')
             uptime_sec = parse_routeros_time(uptime_str)
             
             if uptime_sec > 0:
+                uptime_vouchers += 1
                 username = u.get('name')
                 comment = u.get('comment', '')
                 prof_name = u.get('profile', 'default')
@@ -210,9 +213,12 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
                     db.add(sale)
                     new_sales += 1
         
+        logger.info(f"Sync Stats: {len(users)} total, {uptime_vouchers} with uptime, {new_sales} newly recorded")
+        
         if new_sales > 0:
             await db.commit()
             logger.info(f"Synced {new_sales} new hotspot sales for device {device.name}")
+
             
     except Exception as e:
         logger.error(f"Sync Hotspot Sales Error: {e}")
