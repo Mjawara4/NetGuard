@@ -795,7 +795,8 @@ async def bulk_delete_users(
                 to_delete.append(u.get('.id') or u.get('id'))
         
         for uid in to_delete:
-            resource.remove(id=uid)
+            if uid:
+                resource.remove(id=uid)
             
         connection.disconnect()
         return {"status": "success", "count": len(to_delete)}

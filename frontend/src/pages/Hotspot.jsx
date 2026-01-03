@@ -264,7 +264,7 @@ export default function Hotspot() {
             alert(`Cleaned up ${res.data.count} expired users.`);
             fetchData();
         } catch (e) {
-            alert("Cleanup failed.");
+            alert("Cleanup failed: " + (e.response?.data?.detail || e.message));
         } finally {
             setLoading(false);
         }
