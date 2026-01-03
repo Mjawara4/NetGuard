@@ -13,6 +13,7 @@ from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
 from datetime import datetime
+import time
 import random
 import string
 import logging
@@ -794,12 +795,29 @@ async def bulk_delete_users(
             if should_delete:
                 to_delete.append(u.get('.id') or u.get('id'))
         
+        deleted_count = 0
+        failed_count = 0
+        errors = []
+
         for uid in to_delete:
             if uid:
-                resource.remove(id=uid)
+                try:
+                    resource.remove(id=uid)
+                    deleted_count += 1
+                    # Small delay to prevent overwhelming the API/Router
+                    if len(to_delete) > 10:
+                        time.sleep(0.01)
+                except Exception as del_err:
+                    failed_count += 1
+                    errors.append(str(del_err))
+                    logger.error(f"Failed to delete voucher {uid}: {del_err}")
             
         connection.disconnect()
-        return {"status": "success", "count": len(to_delete)}
+        
+        if failed_count > 0:
+            logger.warning(f"Bulk delete partial failure. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}...")
+            
+        return {"status": "success", "count": deleted_count, "failed": failed_count}
     except Exception as e:
         logger.error(f"Bulk Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
