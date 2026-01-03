@@ -526,7 +526,7 @@ export default function Hotspot() {
                                 {generatedBatch.map((u, i) => (
                                     <div key={i} className="bg-white p-3 sm:p-4 rounded-xl border border-gray-200 shadow-sm text-center">
                                         <div className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Voucher</div>
-                                        <div className="font-mono text-base sm:text-lg font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2" style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
+                                        <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base sm:text-lg'} font-mono font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
                                         <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
                                     </div>
                                 ))}
@@ -548,7 +548,7 @@ export default function Hotspot() {
 
                                 <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
                                 <div className="bg-blue-50 border border-blue-100 rounded-md py-1 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                    <div className="font-mono text-base font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1" style={{ color: template.color_primary }}>{u.username}</div>
+                                    <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base'} font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1 transition-all`} style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
                                 <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
