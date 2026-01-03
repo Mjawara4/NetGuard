@@ -44,7 +44,7 @@ class BatchUserCreate(BaseModel):
     profile: Optional[str] = "default"
     time_limit: Optional[str] = None
     data_limit: Optional[str] = None
-    length: Optional[int] = 4
+    length: Optional[int] = 10
     random_mode: Optional[bool] = False
     format: Optional[str] = "alphanumeric" # alphanumeric, numeric
 
@@ -671,17 +671,24 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
             attempts += 1
             if batch.random_mode:
                 if batch.format == "numeric":
-                    # 8 random numbers
-                    username = ''.join(random.choices(string.digits, k=8))
+                    # numeric mode with variable length
+                    length = batch.length if batch.length else 8
+                    username = ''.join(random.choices(string.digits, k=length))
                     password = username
                 else:
-                    # Default: 4 random lowercase letters + 4 random numbers
-                    letters = ''.join(random.choices(string.ascii_lowercase, k=4))
-                    numbers = ''.join(random.choices(string.digits, k=4))
+                    # alphanumeric mode: split length between letters and numbers
+                    # default length 8 if not specified
+                    length = batch.length if batch.length else 8
+                    num_len = length // 2
+                    char_len = length - num_len
+                    
+                    letters = ''.join(random.choices(string.ascii_lowercase, k=char_len))
+                    numbers = ''.join(random.choices(string.digits, k=num_len))
                     username = f"{letters}{numbers}"
                     password = username # Same as username
             else:
-                suffix = ''.join(random.choices(string.digits, k=batch.length))
+                suffix_len = batch.length if batch.length else 4
+                suffix = ''.join(random.choices(string.digits, k=suffix_len))
                 username = f"{batch.prefix}{suffix}"
                 password = ''.join(random.choices(string.digits, k=4)) # Simple 4 digit password
             
@@ -718,6 +725,7 @@ async def bulk_delete_users(
     device_id: str, 
     comment: Optional[str] = None, 
     expired: bool = False, 
+    unused: bool = False,
     db: AsyncSession = Depends(get_db), 
     actor = Depends(get_authorized_actor)
 ):
@@ -764,6 +772,16 @@ async def bulk_delete_users(
                     should_delete = True
                 if limit_bytes > 0 and total_bytes >= limit_bytes:
                     should_delete = True
+            
+            if unused:
+                # Delete never used vouchers (uptime is 0s, bytes in/out 0)
+                uptime = u.get('uptime', '0s')
+                bytes_out = int(u.get('bytes-out', 0))
+                bytes_in = int(u.get('bytes-in', 0))
+                
+                if (uptime == '0s' or uptime == '') and bytes_out == 0 and bytes_in == 0:
+                    should_delete = True
+
             
             if should_delete:
                 to_delete.append(u.get('.id') or u.get('id'))

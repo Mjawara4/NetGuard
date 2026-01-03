@@ -39,7 +39,7 @@ export default function Hotspot() {
     ) || [];
 
     // Generation State
-    const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 4, random_mode: false, format: 'alphanumeric' });
+    const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 10, random_mode: false, format: 'alphanumeric' });
     const [generatedBatch, setGeneratedBatch] = useState([]);
     const [showPrintView, setShowPrintView] = useState(false);
 
@@ -253,6 +253,8 @@ export default function Hotspot() {
             setLoading(false);
         }
     };
+
+
 
     const handleCleanupExpired = async () => {
         if (!window.confirm("Delete all users who have reached their time or data limits?")) return;
@@ -562,14 +564,29 @@ export default function Hotspot() {
                     {activeTab === 'active' && !showPrintView && (
                         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                             <div className="p-6 sm:p-8 border-b border-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <h2 className="text-xl font-black text-gray-900">Online Users</h2>
-                                <span className="inline-flex max-w-fit bg-blue-50 text-blue-600 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                                    {activeSessions.length} Connected
-                                </span>
+                                <div>
+                                    <h2 className="text-xl font-black text-gray-900">Online Users</h2>
+                                    <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase tracking-widest">{activeSessions.length} Connected</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="relative group flex-1 sm:w-64">
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" size={16} />
+                                        <input
+                                            type="text"
+                                            placeholder="Search active sessions..."
+                                            value={userSearch}
+                                            onChange={(e) => setUserSearch(e.target.value)}
+                                            className="w-full bg-gray-50 border border-transparent focus:border-blue-500/30 focus:bg-white rounded-2xl py-2 pl-10 pr-4 text-xs font-bold text-gray-700 outline-none transition-all shadow-inner uppercase tracking-wide"
+                                        />
+                                    </div>
+                                    <span className="inline-flex max-w-fit bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                                        Live
+                                    </span>
+                                </div>
                             </div>
                             <div className="overflow-hidden">
                                 <ResponsiveTable
-                                    data={activeSessions}
+                                    data={activeSessions.filter(u => u.user.toLowerCase().includes(userSearch.toLowerCase()) || (u.mac_address || '').toLowerCase().includes(userSearch.toLowerCase()) || (u.address || '').toLowerCase().includes(userSearch.toLowerCase()))}
                                     columns={[
                                         {
                                             header: 'Identity',
@@ -692,6 +709,7 @@ export default function Hotspot() {
                                             <Download size={16} />
                                             Export
                                         </button>
+
                                         <button
                                             onClick={handleCleanupExpired}
                                             className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-50 border border-red-100 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all active:scale-95"
@@ -1326,6 +1344,10 @@ export default function Hotspot() {
                                                         placeholder="Prefix..."
                                                     />
                                                 </div>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Code Length</label>
+                                                <input type="number" className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold" value={batchForm.length} onChange={e => setBatchForm({ ...batchForm, length: parseInt(e.target.value) })} min="4" max="20" />
                                             </div>
                                         </div>
 
