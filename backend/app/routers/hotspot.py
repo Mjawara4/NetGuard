@@ -59,6 +59,15 @@ class HotspotActive(BaseModel):
     mac_address: Optional[str] = None
     remaining_time: Optional[str] = None
 
+class SaleRecord(BaseModel):
+    device_id: UUID
+    username: str
+    profile: Optional[str] = "default"
+    uptime: Optional[str] = "0s"
+    bytes: Optional[int] = 0
+    comment: Optional[str] = ""
+
+
 def parse_routeros_time(time_str: str) -> int:
     """Converts RouterOS time (1d2h3m4s or HH:MM:SS) to seconds."""
     if not time_str or time_str in ("0s", "00:00:00", ""):
@@ -1184,3 +1193,75 @@ async def export_hotspot_users(
     except Exception as e:
         logger.error(f"Export Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/record-sale")
+async def record_hotspot_sale(
+    sale: SaleRecord,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint for MikroTik to report a sale in real-time.
+    Called via /tool fetch or similar on login.
+    """
+    # Verify device exists
+    stmt = select(Device).where(Device.id == sale.device_id)
+    res = await db.execute(stmt)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Check for existing record
+    stmt = select(VoucherSale).where(
+        VoucherSale.device_id == sale.device_id,
+        VoucherSale.username == sale.username
+    )
+    res = await db.execute(stmt)
+    existing = res.scalars().first()
+    
+    if existing:
+        return {"status": "already_recorded"}
+
+    # Determine price and currency
+    hs_settings = device.voucher_template or {}
+    profile_pricing = hs_settings.get('profile_pricing', {})
+    default_currency = hs_settings.get('default_currency', 'TZS')
+    
+    price = 0
+    currency = default_currency
+    
+    if sale.profile in profile_pricing:
+        price = profile_pricing[sale.profile]['price']
+        currency = profile_pricing[sale.profile]['currency']
+    else:
+        import re
+        match = re.search(r'(\d+)$', sale.profile or '')
+        if match:
+            price = float(match.group(1))
+
+    # Parse creation date from comment if possible
+    sale_date = datetime.utcnow()
+    if sale.comment and "|" in sale.comment:
+        try:
+            date_part = sale.comment.split("|")[-1].strip()
+            sale_date = datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
+        except:
+            pass
+
+    new_sale = VoucherSale(
+        device_id=sale.device_id,
+        site_id=device.site_id,
+        username=sale.username,
+        profile=sale.profile,
+        comment=sale.comment,
+        uptime=sale.uptime,
+        uptime_sec=parse_routeros_time(sale.uptime),
+        bytes_total=sale.bytes,
+        price=price,
+        currency=currency,
+        created_at=sale_date
+    )
+    
+    db.add(new_sale)
+    await db.commit()
+    
+    return {"status": "recorded", "id": str(new_sale.id)}

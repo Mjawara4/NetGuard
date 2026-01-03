@@ -1230,8 +1230,26 @@ export default function Hotspot() {
                                     emptyMessage="No sales recorded on this router."
                                 />
                             </div>
+
+                            {/* Real-time Setup Guide */}
+                            <div className="bg-blue-50/50 p-6 rounded-[32px] border border-blue-100/50 space-y-4">
+                                <div className="flex items-center gap-3 text-blue-600">
+                                    <Activity size={20} />
+                                    <h4 className="font-black uppercase text-xs tracking-widest">Real-time Recording (Recommended)</h4>
+                                </div>
+                                <p className="text-xs font-medium text-gray-600 leading-relaxed">
+                                    For 100% accuracy, add this script to your Hotspot User Profile (Login Script).
+                                    This records the sale the exact second a user logs in.
+                                </p>
+                                <div className="bg-gray-900 rounded-2xl p-4 relative group">
+                                    <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto">
+                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${device.id}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
+                                    </pre>
+                                </div>
+                            </div>
                         </div>
                     )}
+
 
                     {/* Hotspot Profiles Tab */}
                     {activeTab === 'profiles' && (
