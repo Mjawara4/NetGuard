@@ -1243,7 +1243,7 @@ export default function Hotspot() {
                                 </p>
                                 <div className="bg-gray-900 rounded-2xl p-4 relative group">
                                     <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto">
-                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${device.id}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
+                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${selectedDevice?.id}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
                                     </pre>
                                 </div>
                             </div>
