@@ -98,7 +98,7 @@ export default function Hotspot() {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await api.post(`/hotspot/${selectedDevice?.id}/voucher-template`, template);
+            const res = await api.post(`/hotspot/${selectedDevice}/voucher-template`, template);
             if (res.data) alert('Template saved!');
         } catch (e) {
             alert("Failed to save template.");
@@ -113,18 +113,18 @@ export default function Hotspot() {
         try {
             if (activeTab === 'dashboard') {
                 const [summaryRes, systemRes] = await Promise.all([
-                    api.get(`/hotspot/${selectedDevice?.id}/summary`),
-                    api.get(`/hotspot/${selectedDevice?.id}/system-info`)
+                    api.get(`/hotspot/${selectedDevice}/summary`),
+                    api.get(`/hotspot/${selectedDevice}/system-info`)
                 ]);
                 setDashboardData(summaryRes.data);
                 setSystemInfo(systemRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'users') {
-                const res = await api.get(`/hotspot/${selectedDevice?.id}/users`);
+                const res = await api.get(`/hotspot/${selectedDevice}/users`);
                 setUsers(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'history') {
-                const res = await api.get(`/hotspot/${selectedDevice?.id}/users`);
+                const res = await api.get(`/hotspot/${selectedDevice}/users`);
                 // Extract unique batches from comments
                 const batches = [...new Set(res.data.filter(u => u.comment).map(u => u.comment))].map(c => {
                     const batchUsers = res.data.filter(u => u.comment === c);
@@ -140,11 +140,11 @@ export default function Hotspot() {
                 setBatchHistory(batches);
                 setHealthStatus('online');
             } else if (activeTab === 'active') {
-                const res = await api.get(`/hotspot/${selectedDevice?.id}/active`);
+                const res = await api.get(`/hotspot/${selectedDevice}/active`);
                 setActiveSessions(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'logs') {
-                const res = await api.get(`/hotspot/${selectedDevice?.id}/logs`);
+                const res = await api.get(`/hotspot/${selectedDevice}/logs`);
                 setLogs(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'reports') {
@@ -154,16 +154,16 @@ export default function Hotspot() {
                 if (reportEndDate) params.append('end_date', reportEndDate);
 
                 const [reportRes, templateRes] = await Promise.all([
-                    api.get(`/hotspot/${selectedDevice?.id}/reports?${params.toString()}`),
-                    api.get(`/hotspot/${selectedDevice?.id}/voucher-template`)
+                    api.get(`/hotspot/${selectedDevice}/reports?${params.toString()}`),
+                    api.get(`/hotspot/${selectedDevice}/voucher-template`)
                 ]);
                 setReportData(reportRes.data);
                 if (templateRes.data) setTemplate(templateRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'profiles') {
                 const [profilesRes, templateRes] = await Promise.all([
-                    api.get(`/hotspot/${selectedDevice?.id}/profiles`),
-                    api.get(`/hotspot/${selectedDevice?.id}/voucher-template`)
+                    api.get(`/hotspot/${selectedDevice}/profiles`),
+                    api.get(`/hotspot/${selectedDevice}/voucher-template`)
                 ]);
                 setProfiles(profilesRes.data);
                 if (templateRes.data) setTemplate(templateRes.data);
@@ -188,7 +188,7 @@ export default function Hotspot() {
     const handleKick = async (id) => {
         if (!window.confirm("Disconnect this user?")) return;
         try {
-            await api.delete(`/hotspot/${selectedDevice?.id}/active/${id}`);
+            await api.delete(`/hotspot/${selectedDevice}/active/${id}`);
             fetchData();
         } catch (e) {
             alert("Failed to kick user.");
@@ -199,7 +199,7 @@ export default function Hotspot() {
         e.preventDefault();
         if (!selectedDevice) return;
         try {
-            await api.post(`/hotspot/${selectedDevice?.id}/profiles`, {
+            await api.post(`/hotspot/${selectedDevice}/profiles`, {
                 name: profileForm.name,
                 'rate-limit': profileForm.rateLimit,
                 'shared-users': profileForm.sharedUsers
@@ -216,7 +216,7 @@ export default function Hotspot() {
         if (!selectedDevice) return;
         if (!confirm(`Are you sure you want to delete profile "${name}"?`)) return;
         try {
-            await api.delete(`/hotspot/${selectedDevice?.id}/profiles/${name}`);
+            await api.delete(`/hotspot/${selectedDevice}/profiles/${name}`);
             fetchProfiles(selectedDevice);
         } catch (err) {
             alert("Failed to delete profile: " + (err.response?.data?.detail || err.message));
@@ -227,7 +227,7 @@ export default function Hotspot() {
         e.preventDefault();
         setLoading(true);
         try {
-            await api.post(`/hotspot/${selectedDevice?.id}/profiles/${selectedProfileSettings.name}/settings`, {
+            await api.post(`/hotspot/${selectedDevice}/profiles/${selectedProfileSettings.name}/settings`, {
                 price: selectedProfileSettings.price,
                 currency: selectedProfileSettings.currency
             });
@@ -244,7 +244,7 @@ export default function Hotspot() {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await api.post(`/hotspot/${selectedDevice?.id}/users/batch`, batchForm);
+            const res = await api.post(`/hotspot/${selectedDevice}/users/batch`, batchForm);
             setGeneratedBatch(res.data);
             setShowPrintView(true);
         } catch (e) {
@@ -260,7 +260,7 @@ export default function Hotspot() {
         if (!window.confirm("Delete all users who have reached their time or data limits?")) return;
         setLoading(true);
         try {
-            const res = await api.delete(`/hotspot/${selectedDevice?.id}/users/bulk?expired=true`);
+            const res = await api.delete(`/hotspot/${selectedDevice}/users/bulk?expired=true`);
             alert(`Cleaned up ${res.data.count} expired users.`);
             fetchData();
         } catch (e) {
@@ -274,7 +274,7 @@ export default function Hotspot() {
         if (!window.confirm(`Delete all users in batch "${comment}"?`)) return;
         setLoading(true);
         try {
-            const res = await api.delete(`/hotspot/${selectedDevice?.id}/users/bulk?comment=${comment}`);
+            const res = await api.delete(`/hotspot/${selectedDevice}/users/bulk?comment=${comment}`);
             alert(`Deleted ${res.data.count} users.`);
             fetchData();
         } catch (e) {
@@ -286,11 +286,11 @@ export default function Hotspot() {
 
     const handleExportCSV = async () => {
         try {
-            const res = await api.get(`/hotspot/${selectedDevice?.id}/users/export`, { responseType: 'blob' });
+            const res = await api.get(`/hotspot/${selectedDevice}/users/export`, { responseType: 'blob' });
             const url = window.URL.createObjectURL(new Blob([res.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `hotspot_users_${selectedDevice?.id}.csv`);
+            link.setAttribute('download', `hotspot_users_${selectedDevice}.csv`);
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -303,7 +303,7 @@ export default function Hotspot() {
         if (!window.confirm(`Are you sure you want to delete user "${name}"?`)) return;
         setLoading(true);
         try {
-            await api.delete(`/hotspot/${selectedDevice?.id}/users/${name}`);
+            await api.delete(`/hotspot/${selectedDevice}/users/${name}`);
             fetchData();
         } catch (e) {
             alert("Delete failed: " + (e.response?.data?.detail || e.message));
@@ -1243,7 +1243,7 @@ export default function Hotspot() {
                                 </p>
                                 <div className="bg-gray-900 rounded-2xl p-4 relative group">
                                     <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto">
-                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${selectedDevice?.id}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
+                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${selectedDevice}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
                                     </pre>
                                 </div>
                             </div>
