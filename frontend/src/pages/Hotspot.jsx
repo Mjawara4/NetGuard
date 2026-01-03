@@ -113,9 +113,11 @@ export default function Hotspot() {
     };
 
     const fetchData = async () => {
+        console.log("FETCH_DATA_START: selectedDevice =", selectedDevice, "type =", typeof selectedDevice);
         if (!selectedDevice) return;
         setLoading(true);
         try {
+
             if (activeTab === 'dashboard') {
                 const [summaryRes, systemRes] = await Promise.all([
                     api.get(`/hotspot/${selectedDevice}/summary`),
