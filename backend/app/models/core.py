@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event, BigInteger
+
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -131,8 +132,9 @@ class VoucherSale(Base):
     comment = Column(String)
     uptime = Column(String) # For display
     uptime_sec = Column(Integer, default=0) # For calculations
-    bytes_total = Column(Integer, default=0)
-    price = Column(Integer, default=0)
+    bytes_total = Column(BigInteger, default=0)
+    price = Column(BigInteger, default=0)
+
     currency = Column(String, default="TZS")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     

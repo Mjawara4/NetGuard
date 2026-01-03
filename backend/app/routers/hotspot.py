@@ -222,6 +222,8 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
             
     except Exception as e:
         logger.error(f"Sync Hotspot Sales Error: {e}")
+        await db.rollback()
+
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
 async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

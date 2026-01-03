@@ -64,16 +64,13 @@ export default function Hotspot() {
     const fetchDevices = async () => {
         try {
             const res = await api.get('/inventory/devices');
-            console.log("FETCH_DEVICES_RAW:", res.data);
             const routers = res.data.filter(d => d.device_type?.toLowerCase() === 'router');
-            console.log("FETCH_DEVICES_ROUTERS:", routers);
             setDevices(routers);
             if (routers.length > 0 && !selectedDevice) {
-                console.log("SETTING_INITIAL_DEVICE:", routers[0].id);
                 setSelectedDevice(routers[0].id);
             }
         } catch (e) {
-            console.error("FETCH_DEVICES_ERROR:", e);
+            console.error(e);
         }
     };
 
@@ -113,7 +110,6 @@ export default function Hotspot() {
     };
 
     const fetchData = async () => {
-        console.log("FETCH_DATA_START: selectedDevice =", selectedDevice, "type =", typeof selectedDevice);
         if (!selectedDevice) return;
         setLoading(true);
         try {
