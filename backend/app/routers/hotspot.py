@@ -60,14 +60,26 @@ class HotspotActive(BaseModel):
     remaining_time: Optional[str] = None
 
 def parse_routeros_time(time_str: str) -> int:
-    """Converts RouterOS time (1d2h3m4s) to seconds."""
-    if not time_str or time_str == "0s":
+    """Converts RouterOS time (1d2h3m4s or HH:MM:SS) to seconds."""
+    if not time_str or time_str in ("0s", "00:00:00", ""):
         return 0
     
+    # Handle HH:MM:SS format
+    if ":" in time_str:
+        try:
+            parts = [p for p in time_str.split(':') if p.strip()]
+            if len(parts) == 3: # HH:MM:SS
+                h, m, s = map(int, parts)
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2: # MM:SS
+                m, s = map(int, parts)
+                return m * 60 + s
+        except (ValueError, TypeError):
+            pass # Fall through to regex-like parser
+            
+    # Handle 1d2h3m4s format
     total_seconds = 0
     current_val = ""
-    
-    # Simple parser for d, h, m, s
     multipliers = {'d': 86400, 'h': 3600, 'm': 60, 's': 1}
     
     for char in time_str:
@@ -765,8 +777,11 @@ async def bulk_delete_users(
                 should_delete = True
             
             if expired:
-                uptime = u.get('uptime', '0s')
-                limit_uptime = u.get('limit-uptime')
+                uptime_str = u.get('uptime', '0s')
+                limit_uptime_str = u.get('limit-uptime')
+                
+                uptime_sec = parse_routeros_time(uptime_str)
+                limit_uptime_sec = parse_routeros_time(limit_uptime_str)
                 
                 # Mikrotik returns bytes as strings
                 bytes_out = safe_int(u.get('bytes-out'))
@@ -774,21 +789,22 @@ async def bulk_delete_users(
                 total_bytes = bytes_out + bytes_in
                 limit_bytes = safe_int(u.get('limit-bytes-total'))
                 
-                # Heuristic for "expired":
-                # 1. If reached uptime limit (exact match as Mikrotik stops counting)
+                # Robust comparison for "expired":
+                # 1. If reached uptime limit
                 # 2. If reached data limit
-                if limit_uptime and uptime == limit_uptime:
+                if limit_uptime_sec > 0 and uptime_sec >= limit_uptime_sec:
                     should_delete = True
                 if limit_bytes > 0 and total_bytes >= limit_bytes:
                     should_delete = True
             
             if unused:
                 # Delete never used vouchers (uptime is 0s, bytes in/out 0)
-                uptime = u.get('uptime', '0s')
+                uptime_str = u.get('uptime', '0s')
+                uptime_sec = parse_routeros_time(uptime_str)
                 bytes_out = safe_int(u.get('bytes-out'))
                 bytes_in = safe_int(u.get('bytes-in'))
                 
-                if (uptime == '0s' or uptime == '' or uptime == '00:00:00') and bytes_out == 0 and bytes_in == 0:
+                if uptime_sec == 0 and bytes_out == 0 and bytes_in == 0:
                     should_delete = True
 
             
