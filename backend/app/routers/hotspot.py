@@ -752,6 +752,12 @@ async def bulk_delete_users(
         users = resource.get()
         to_delete = []
         
+        def safe_int(v):
+            try:
+                return int(v) if v else 0
+            except ValueError:
+                return 0
+
         for u in users:
             should_delete = False
             if comment and u.get('comment') == comment:
@@ -760,13 +766,15 @@ async def bulk_delete_users(
             if expired:
                 uptime = u.get('uptime', '0s')
                 limit_uptime = u.get('limit-uptime')
-                bytes_out = int(u.get('bytes-out', 0))
-                bytes_in = int(u.get('bytes-in', 0))
-                total_bytes = bytes_out + bytes_in
-                limit_bytes = int(u.get('limit-bytes-total', 0))
                 
-                # Simple heuristic for "expired":
-                # 1. If reached uptime limit
+                # Mikrotik returns bytes as strings
+                bytes_out = safe_int(u.get('bytes-out'))
+                bytes_in = safe_int(u.get('bytes-in'))
+                total_bytes = bytes_out + bytes_in
+                limit_bytes = safe_int(u.get('limit-bytes-total'))
+                
+                # Heuristic for "expired":
+                # 1. If reached uptime limit (exact match as Mikrotik stops counting)
                 # 2. If reached data limit
                 if limit_uptime and uptime == limit_uptime:
                     should_delete = True
@@ -776,10 +784,10 @@ async def bulk_delete_users(
             if unused:
                 # Delete never used vouchers (uptime is 0s, bytes in/out 0)
                 uptime = u.get('uptime', '0s')
-                bytes_out = int(u.get('bytes-out', 0))
-                bytes_in = int(u.get('bytes-in', 0))
+                bytes_out = safe_int(u.get('bytes-out'))
+                bytes_in = safe_int(u.get('bytes-in'))
                 
-                if (uptime == '0s' or uptime == '') and bytes_out == 0 and bytes_in == 0:
+                if (uptime == '0s' or uptime == '' or uptime == '00:00:00') and bytes_out == 0 and bytes_in == 0:
                     should_delete = True
 
             
