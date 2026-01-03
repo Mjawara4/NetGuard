@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
-from app.models import Device, User, Site, APIKey, UserRole
+from app.models import Device, User, Site, APIKey, UserRole, VoucherSale
 from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
@@ -123,6 +123,90 @@ def get_api_pool(ip, username, password, port=8728):
         use_ssl=False
     )
     return connection
+
+async def sync_hotspot_sales(device: Device, db: AsyncSession):
+    """
+    Syncs sold/used vouchers from MikroTik to the local VoucherSale table.
+    A voucher is considered 'sold' if uptime > 0.
+    """
+    try:
+        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
+        db_port = getattr(device, 'ssh_port', 8728) or 8728
+        port = 8728 if int(db_port) == 22 else db_port
+        
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+        
+        # Use binary resource for more raw control
+        users_resource = api.get_binary_resource('/ip/hotspot/user')
+        profiles = api.get_resource('/ip/hotspot/user/profile').get()
+        users = users_resource.get()
+        connection.disconnect()
+        
+        # Build price map
+        hs_settings = device.voucher_template or {}
+        profile_pricing = hs_settings.get('profile_pricing', {})
+        default_currency = hs_settings.get('default_currency', 'TZS')
+        
+        def get_pricing(p_name):
+            if p_name in profile_pricing:
+                return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
+            import re
+            match = re.search(r'(\d+)$', p_name or '')
+            if match:
+                return float(match.group(1)), default_currency
+            return 0, default_currency
+
+        # Find users with uptime
+        new_sales = 0
+        for u in users:
+            uptime_str = u.get('uptime', '0s')
+            uptime_sec = parse_routeros_time(uptime_str)
+            
+            if uptime_sec > 0:
+                username = u.get('name')
+                comment = u.get('comment', '')
+                prof_name = u.get('profile', 'default')
+                
+                # Check for existing record to avoid duplicates
+                stmt = select(VoucherSale).where(VoucherSale.device_id == device.id, VoucherSale.username == username)
+                res = await db.execute(stmt)
+                existing = res.scalars().first()
+                
+                if not existing:
+                    price, currency = get_pricing(prof_name)
+                    
+                    # Try to parse creation date from comment: "Batch-pref | YYYY-MM-DD HH:MM:SS"
+                    sale_date = datetime.utcnow()
+                    if '|' in comment:
+                        try:
+                            date_str = comment.split('|')[-1].strip()
+                            sale_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                        except:
+                            pass
+                    
+                    sale = VoucherSale(
+                        device_id=device.id,
+                        site_id=device.site_id,
+                        username=username,
+                        profile=prof_name,
+                        comment=comment,
+                        uptime=uptime_str,
+                        uptime_sec=uptime_sec,
+                        bytes_total=int(u.get('bytes-in', 0)) + int(u.get('bytes-out', 0)),
+                        price=price,
+                        currency=currency,
+                        created_at=sale_date
+                    )
+                    db.add(sale)
+                    new_sales += 1
+        
+        if new_sales > 0:
+            await db.commit()
+            logger.info(f"Synced {new_sales} new hotspot sales for device {device.name}")
+            
+    except Exception as e:
+        logger.error(f"Sync Hotspot Sales Error: {e}")
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
 async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -957,128 +1041,94 @@ async def get_hotspot_reports(
     decrypt_device_secrets(device)
          
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
+        # 1. Sync latest sales before reporting
+        await sync_hotspot_sales(device, db)
         
-        # Fetch all users and profiles to get pricing
-        users_resource = api.get_resource('/ip/hotspot/user')
-        profiles_resource = api.get_resource('/ip/hotspot/user/profile')
+        # 2. Query the persistent VoucherSale table
+        from sqlalchemy import and_, func
         
-        users = users_resource.get()
-        profiles = profiles_resource.get()
-        connection.disconnect()
-        
-        # Build price map from local settings
-        hs_settings = device.voucher_template or {}
-        profile_pricing = hs_settings.get('profile_pricing', {})
-        default_currency = hs_settings.get('default_currency', 'TZS')
-        
-        # Map profiles for fallback heuristics if no local price set
-        profiles_map = {p.get('name'): p for p in profiles}
-        
-        def get_price_for_profile(p_name):
-            if p_name in profile_pricing:
-                return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
-            
-            # Fallback to name heuristic
-            import re
-            match = re.search(r'(\d+)$', p_name or '')
-            if match:
-                return float(match.group(1)), default_currency
-            return 0, default_currency
-
-        # Filter for sold vouchers (uptime > 0)
-        report_data = []
-        total_revenue = {} # Store per currency
-        total_sold = 0
+        stmt = select(VoucherSale).where(VoucherSale.device_id == device.id)
         
         # Handle period presets
         from datetime import timedelta
-        now = datetime.now()
+        now = datetime.utcnow()
         if period == 'day':
             start_date = now.strftime('%Y-%m-%d')
-            end_date = None
         elif period == 'week':
             start_date = (now - timedelta(days=7)).strftime('%Y-%m-%d')
-            end_date = None
         elif period == 'month':
             start_date = now.replace(day=1).strftime('%Y-%m-%d')
-            end_date = None
 
-        if start_date or end_date or period:
-            logger.info(f"Filtering reports: period={period}, start={start_date}, end={end_date}")
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                stmt = stmt.where(VoucherSale.created_at >= start_dt)
+            except: pass
+            
+        if end_date:
+            try:
+                # End date inclusive (until end of day)
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                stmt = stmt.where(VoucherSale.created_at <= end_dt)
+            except: pass
 
-        start_dt = datetime.strptime(start_date, '%Y-%m-%d') if start_date else None
-        end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59) if end_date else None
-
-        def parse_comment_date(comment):
-            if ' | ' in comment:
-                try:
-                    date_part = comment.split(' | ')[-1]
-                    return datetime.strptime(date_part, '%Y-%m-%d %H:%M:%S')
-                except: pass
-            return None
-
-        for u in users:
-            uptime = u.get('uptime', '0s')
-            if uptime != '0s':
-                comment = u.get('comment', '')
-                created_at = parse_comment_date(comment)
-                
-                # Check date filters
-                if start_dt and created_at and created_at < start_dt:
-                    continue
-                if end_dt and created_at and created_at > end_dt:
-                    continue
-                
-                # Fallback for legacy vouchers (no timestamp)
-                if (start_dt or end_dt) and not created_at:
-                    # Robust check: If the range includes TODAY, include legacy vouchers as "Recently Used"
-                    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                    today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
-                    
-                    in_range = True
-                    if start_dt and today_end < start_dt: in_range = False
-                    if end_dt and today_start > end_dt: in_range = False
-                    
-                    if in_range:
-                        pass
-                    else:
-                        continue
-
-                price, curr = get_price_for_profile(u.get('profile'))
-                
-                total_revenue[curr] = total_revenue.get(curr, 0) + price
-                total_sold += 1
-                
-                report_data.append({
-                    "date": created_at.strftime('%Y-%m-%d %H:%M') if created_at else "Recently Used",
-                    "timestamp": created_at.timestamp() if created_at else float('inf'), # Put legacy at top
-                    "user": u.get('name'),
-                    "profile": u.get('profile'),
-                    "price": price,
-                    "currency": curr,
-                    "comment": comment
-                })
+        # Sort by most recent
+        stmt = stmt.order_by(VoucherSale.created_at.desc())
         
-        # Sort by timestamp descending (newest first)
-        # float('inf') for legacy ensures they stay at the top as "Recently Used"
-        report_data.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        res = await db.execute(stmt)
+        all_sales = res.scalars().all()
         
-        # Clean up internal timestamp before returning
-        for r in report_data:
-            r.pop('timestamp', None)
+        report_data = []
+        total_revenue = {} # Per currency
+        total_sold = 0
         
+        for sale in all_sales:
+            total_sold += 1
+            curr = sale.currency or "TZS"
+            total_revenue[curr] = total_revenue.get(curr, 0) + sale.price
+            
+            report_data.append({
+                "username": sale.username,
+                "profile": sale.profile,
+                "created_at": sale.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                "uptime": sale.uptime,
+                "bytes": sale.bytes_total,
+                "price": sale.price,
+                "currency": sale.currency,
+                "comment": sale.comment
+            })
+
+        # Aggregation by period (Mikhmon Style)
+        daily_stats = {}
+        for sale in all_sales:
+            day_str = sale.created_at.strftime('%Y-%m-%d')
+            if day_str not in daily_stats:
+                daily_stats[day_str] = {"count": 0, "revenue": {}}
+            
+            daily_stats[day_str]["count"] += 1
+            c = sale.currency or "TZS"
+            daily_stats[day_str]["revenue"][c] = daily_stats[day_str]["revenue"].get(c, 0) + sale.price
+
+        profile_stats = {}
+        for sale in all_sales:
+            p = sale.profile
+            if p not in profile_stats:
+                profile_stats[p] = {"count": 0, "revenue": {}}
+            profile_stats[p]["count"] += 1
+            c = sale.currency or "TZS"
+            profile_stats[p]["revenue"][c] = profile_stats[p]["revenue"].get(c, 0) + sale.price
+
         return {
-            "summary": {
-                "total_revenue": total_revenue, # dictionary of curr: amount
-                "total_sold": total_sold,
-            },
-            "records": report_data
+            "status": "success",
+            "period": period or f"{start_date} to {end_date}",
+            "total_sold": total_sold,
+            "total_revenue": total_revenue,
+            "data": report_data,
+            "daily_stats": sorted([{"date": k, **v} for k, v in daily_stats.items()], key=lambda x: x['date'], reverse=True),
+            "profile_stats": sorted([{"profile": k, **v} for k, v in profile_stats.items()], key=lambda x: x['count'], reverse=True)
         }
     except Exception as e:
-        logger.error(f"Router Reports Error: {e}")
+        logger.error(f"Hotspot Report Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/users/export")

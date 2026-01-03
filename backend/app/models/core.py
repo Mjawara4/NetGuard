@@ -119,3 +119,25 @@ def decrypt_device_secrets(device: "Device") -> "Device":
         device.wg_private_key = decrypt_value(device.wg_private_key)
     
     return device
+
+class VoucherSale(Base):
+    __tablename__ = "hotspot_sales"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=False)
+    site_id = Column(UUID(as_uuid=True), ForeignKey("sites.id"), nullable=False)
+    username = Column(String, nullable=False, index=True)
+    profile = Column(String, nullable=False)
+    comment = Column(String)
+    uptime = Column(String) # For display
+    uptime_sec = Column(Integer, default=0) # For calculations
+    bytes_total = Column(Integer, default=0)
+    price = Column(Integer, default=0)
+    currency = Column(String, default="TZS")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Optional: track if this was synced from a specific fetch
+    sync_id = Column(String, nullable=True)
+
+    device = relationship("Device")
+    site = relationship("Site")

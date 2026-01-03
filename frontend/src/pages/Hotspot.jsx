@@ -32,10 +32,10 @@ export default function Hotspot() {
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
 
-    const filteredReports = reportData?.records?.filter(r =>
-        r.user.toLowerCase().includes(reportSearch.toLowerCase()) ||
-        r.profile.toLowerCase().includes(reportSearch.toLowerCase()) ||
-        (r.comment && r.comment.toLowerCase().includes(reportSearch.toLowerCase()))
+    const filteredReports = reportData?.data?.filter(r =>
+        (r.username || '').toLowerCase().includes(reportSearch.toLowerCase()) ||
+        (r.profile || '').toLowerCase().includes(reportSearch.toLowerCase()) ||
+        (r.comment || '').toLowerCase().includes(reportSearch.toLowerCase())
     ) || [];
 
     // Generation State
@@ -1004,13 +1004,14 @@ export default function Hotspot() {
                     {/* Sales Report Tab */}
                     {activeTab === 'reports' && reportData && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            {/* Stats Controls */}
                             <div className="flex flex-col md:flex-row gap-4 mb-6">
                                 <div className="flex-[2] bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-center gap-4">
                                     <div className="relative flex-1 w-full">
                                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                                         <input
                                             type="text"
-                                            placeholder="Search sales..."
+                                            placeholder="Search sales history..."
                                             value={reportSearch}
                                             onChange={(e) => setReportSearch(e.target.value)}
                                             className="w-full bg-gray-50 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -1035,79 +1036,151 @@ export default function Hotspot() {
                                         type="date"
                                         value={reportStartDate}
                                         onChange={(e) => { setReportStartDate(e.target.value); setReportPeriod(''); }}
-                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-[10px] font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
                                     />
                                     <span className="text-gray-300">-</span>
                                     <input
                                         type="date"
                                         value={reportEndDate}
                                         onChange={(e) => { setReportEndDate(e.target.value); setReportPeriod(''); }}
-                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        className="bg-gray-50 border-none rounded-xl py-2 px-3 text-[10px] font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
                                     />
-                                </div>
-
-                                <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-3">
-                                    <div className="text-[10px] font-black uppercase text-gray-400 px-2 whitespace-nowrap">Global Currency</div>
-                                    <input
-                                        type="text"
-                                        value={template.default_currency || 'TZS'}
-                                        onChange={(e) => setTemplate({ ...template, default_currency: e.target.value.toUpperCase() })}
-                                        className="w-16 bg-gray-50 border-none rounded-xl py-2 px-3 text-xs font-black text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                        placeholder="TZS"
-                                    />
-                                    <button
-                                        onClick={saveTemplate}
-                                        className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all active:scale-90 shadow-lg shadow-blue-100"
-                                        title="Save Settings"
-                                    >
-                                        <Download size={18} />
-                                    </button>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {Object.entries(reportData.summary.total_revenue).map(([curr, amount]) => (
-                                    <div key={curr} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                            {/* Revenue Summary Cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {Object.entries(reportData.total_revenue || {}).map(([curr, amount]) => (
+                                    <div key={curr} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-emerald-200 transition-all">
                                         <div className="flex items-center gap-3">
-                                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+                                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:scale-110 transition-transform">
                                                 <Activity size={24} />
                                             </div>
                                             <div>
-                                                <p className="text-[10px] font-black uppercase text-gray-400">Revenue ({curr})</p>
-                                                <p className="text-2xl font-black text-gray-900">{amount.toLocaleString()} {curr}</p>
+                                                <p className="text-[10px] font-black uppercase text-gray-400">Total Profit ({curr})</p>
+                                                <p className="text-2xl font-black text-gray-900">{amount.toLocaleString()} <span className="text-xs text-emerald-600 ml-1">{curr}</span></p>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
-                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-blue-200 transition-all">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform">
                                             <Users size={24} />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black uppercase text-gray-400">Vouchers Sold</p>
-                                            <p className="text-2xl font-black text-gray-900">{reportData.summary.total_sold}</p>
+                                            <p className="text-[10px] font-black uppercase text-gray-400">Total Vouchers</p>
+                                            <p className="text-2xl font-black text-gray-900">{reportData.total_sold}</p>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Mikhmon Breakdown Aggregates */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Daily Sales Breakdown */}
+                                <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+                                    <div className="p-6 border-b border-gray-50 bg-gray-50/50">
+                                        <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                            <Clock size={16} className="text-blue-500" />
+                                            Daily Sales Summary
+                                        </h3>
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="sticky top-0 bg-white shadow-sm z-10">
+                                                <tr className="bg-gray-50/50">
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Date</th>
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Qty</th>
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Revenue</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {(reportData.daily_stats || []).map((day) => (
+                                                    <tr key={day.date} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 text-xs font-black text-gray-900">{day.date}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-lg text-xs font-black">{day.count}</span>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-xs font-black text-emerald-600">
+                                                            {Object.entries(day.revenue).map(([curr, amt]) => (
+                                                                <div key={curr}>{amt.toLocaleString()} {curr}</div>
+                                                            ))}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {(!reportData.daily_stats || reportData.daily_stats.length === 0) && (
+                                                    <tr>
+                                                        <td colSpan="3" className="px-6 py-12 text-center text-xs text-gray-400 font-bold italic">No daily history for this period.</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Profile Performance */}
+                                <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
+                                    <div className="p-6 border-b border-gray-50 bg-gray-50/50">
+                                        <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                            <Activity size={16} className="text-emerald-500" />
+                                            Best Selling Profiles
+                                        </h3>
+                                    </div>
+                                    <div className="max-h-[300px] overflow-y-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="sticky top-0 bg-white shadow-sm z-10">
+                                                <tr className="bg-gray-50/50">
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Profile</th>
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Sold</th>
+                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Income</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {(reportData.profile_stats || []).map((prof) => (
+                                                    <tr key={prof.profile} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 text-xs font-black text-gray-900 uppercase">{prof.profile}</td>
+                                                        <td className="px-6 py-4">
+                                                            <span className="bg-purple-50 text-purple-600 px-2 py-1 rounded-lg text-xs font-black">{prof.count}</span>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-xs font-black text-emerald-600">
+                                                            {Object.entries(prof.revenue).map(([curr, amt]) => (
+                                                                <div key={curr}>{amt.toLocaleString()} {curr}</div>
+                                                            ))}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {(!reportData.profile_stats || reportData.profile_stats.length === 0) && (
+                                                    <tr>
+                                                        <td colSpan="3" className="px-6 py-12 text-center text-xs text-gray-400 font-bold italic">No profile sales data.</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Detailed Records List */}
                             <div className="bg-white rounded-[32px] shadow-sm border border-gray-100 overflow-hidden">
-                                <div className="p-6 border-b border-gray-50 flex justify-between items-center">
-                                    <h3 className="font-black text-gray-900 uppercase text-xs tracking-widest">Sales Records</h3>
+                                <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
+                                    <h3 className="font-black text-gray-900 uppercase text-[10px] tracking-widest flex items-center gap-2">
+                                        <FileText size={16} className="text-gray-400" />
+                                        Full Transaction Logs
+                                    </h3>
                                     <div className="flex items-center gap-2">
                                         <button
                                             disabled={reportPage === 1}
                                             onClick={() => setReportPage(p => p - 1)}
-                                            className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
+                                            className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-30 shadow-sm"
                                         >
                                             <Plus size={16} className="rotate-45" />
                                         </button>
-                                        <span className="text-xs font-black text-gray-500">Page {reportPage} of {Math.ceil(filteredReports.length / 30)}</span>
+                                        <span className="text-[10px] font-black text-gray-400 uppercase">Page {reportPage} / {Math.max(1, Math.ceil(filteredReports.length / 30))}</span>
                                         <button
                                             disabled={reportPage * 30 >= filteredReports.length}
                                             onClick={() => setReportPage(p => p + 1)}
-                                            className="p-2 rounded-xl bg-gray-50 hover:bg-gray-100 disabled:opacity-30"
+                                            className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-30 shadow-sm"
                                         >
                                             <Plus size={16} />
                                         </button>
@@ -1117,35 +1190,40 @@ export default function Hotspot() {
                                     data={filteredReports.slice((reportPage - 1) * 30, reportPage * 30)}
                                     columns={[
                                         {
-                                            header: 'Identity',
-                                            accessor: 'user',
-                                            render: (r) => <div className="font-black text-gray-900 text-sm uppercase">{r.user}</div>
+                                            header: 'Code',
+                                            accessor: 'username',
+                                            render: (r) => <div className="font-black text-gray-900 text-sm">{r.username}</div>
                                         },
                                         {
                                             header: 'Profile',
                                             accessor: 'profile',
-                                            render: (r) => <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black">{r.profile}</span>
+                                            render: (r) => <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[9px] font-black uppercase">{r.profile}</span>
                                         },
                                         {
                                             header: 'Price',
                                             accessor: 'price',
-                                            render: (r) => <div className="font-black text-emerald-600">{r.price.toLocaleString()} {r.currency}</div>
+                                            render: (r) => <div className="font-black text-emerald-600 text-xs">{r.price.toLocaleString()} {r.currency}</div>
                                         },
                                         {
-                                            header: 'Activity',
-                                            accessor: 'date',
-                                            render: (r) => <div className="text-[10px] font-bold text-gray-400 uppercase">{r.date}</div>
+                                            header: 'Time',
+                                            accessor: 'uptime',
+                                            render: (r) => <div className="text-[10px] font-bold text-blue-400">{r.uptime}</div>
+                                        },
+                                        {
+                                            header: 'Sold Date',
+                                            accessor: 'created_at',
+                                            render: (r) => <div className="text-[10px] font-bold text-gray-400 uppercase">{r.created_at}</div>
                                         }
                                     ]}
                                     renderCard={(r) => (
-                                        <div className="flex justify-between items-center">
+                                        <div className="flex justify-between items-center p-2">
                                             <div>
-                                                <p className="font-black text-gray-900 uppercase text-sm">{r.user}</p>
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile}</p>
+                                                <p className="font-black text-gray-900 uppercase text-sm">{r.username}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile} • {r.uptime}</p>
                                             </div>
                                             <div className="text-right">
-                                                <p className="font-black text-emerald-600">{r.price.toLocaleString()}</p>
-                                                <p className="text-[9px] font-bold text-gray-400 uppercase">{r.date}</p>
+                                                <p className="font-black text-emerald-600">{r.price.toLocaleString()} {r.currency}</p>
+                                                <p className="text-[9px] font-bold text-gray-400 uppercase">{r.created_at}</p>
                                             </div>
                                         </div>
                                     )}
