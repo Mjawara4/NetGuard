@@ -537,23 +537,23 @@ export default function Hotspot() {
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
-                    <div className="hidden print:grid print:grid-cols-5 print:gap-3 print:p-4" id="printable-area">
+                    <div className="hidden print:grid print:grid-cols-3 print:gap-4 print:p-8" id="printable-area">
                         {generatedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-2 rounded-lg border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[70px] overflow-hidden break-inside-avoid shadow-sm relative">
+                            <div key={i} className="voucher-card p-4 rounded-xl border border-gray-300 text-center bg-white flex flex-col justify-center min-h-[120px] overflow-hidden break-inside-avoid shadow-sm relative">
                                 {/* Cut Guides */}
-                                <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-gray-300"></div>
-                                <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r border-gray-300"></div>
-                                <div className="absolute bottom-0 left-0 w-1.5 h-1.5 border-b border-l border-gray-300"></div>
-                                <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-gray-300"></div>
+                                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-gray-400"></div>
+                                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-gray-400"></div>
+                                <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-gray-400"></div>
+                                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-gray-400"></div>
 
-                                <div className="text-[9px] font-black uppercase tracking-widest leading-none mb-1.5 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                    <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base'} font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1 transition-all`} style={{ color: template.color_primary }}>{u.username}</div>
+                                <div className="text-[12px] font-black uppercase tracking-[0.2em] leading-none mb-3 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
+                                <div className="bg-blue-50 border-2 border-blue-100 rounded-lg py-2.5 mb-3 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                    <div className={`${u.username.length > 8 ? 'text-sm' : 'text-xl'} font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-2 transition-all`} style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
-                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
+                                <div className="text-[10px] font-bold text-gray-500 uppercase leading-none mb-1" style={{ color: template.color_primary }}>
                                     {template.footer_text}
                                 </div>
-                                <div className="text-[7px] font-bold text-gray-400 uppercase leading-none">
+                                <div className="text-[10px] font-bold text-gray-500 uppercase leading-none">
                                     LIM: {batchForm.time_limit || 'UNLIM'}
                                 </div>
                             </div>

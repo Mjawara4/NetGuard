@@ -813,38 +813,41 @@ async def bulk_delete_users(
             port = getattr(device, 'ssh_port', 8728) or 8728
             connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
             api = connection.get_api()
-            resource = api.get_resource('/ip/hotspot/user')
+            # Use binary resource for more raw control
+            resource = api.get_binary_resource('/ip/hotspot/user')
             return resource
+
+        # Initialize
+        resource = get_resource()
 
         for uid in to_delete:
             if not uid:
                 continue
                 
             try:
-                resource.remove(id=uid)
+                # Use call('remove') directly on binary resource for more stability
+                resource.call('remove', {'.id': uid})
                 deleted_count += 1
             except Exception as del_err:
                 err_msg = str(del_err)
                 logger.error(f"Failed to delete voucher {uid}: {err_msg}")
                 
-                # Check for protocol desync / malformed sentence
-                if "Malformed sentence" in err_msg or "desync" in err_msg.lower() or "!empty" in err_msg:
+                # If we hit protocol desync or malformed sentence, stay calm and reconnect
+                if "Malformed sentence" in err_msg or "!empty" in err_msg or "desync" in err_msg.lower():
                     logger.warning(f"Protocol desync detected during deletion of {uid}. Resetting connection...")
                     try:
                         resource = get_resource()
-                        # Do not retry the same UID to avoid infinite loop if that UID is specifically malformed
-                        failed_count += 1
-                        errors.append(f"{uid}: Protocol Reset")
+                        failed_count += 1 # Count this one as failed for now
                     except Exception as conn_err:
                         logger.error(f"Failed to reconnect after protocol error: {conn_err}")
-                        break # Cannot proceed if we can't reconnect
+                        break 
                 else:
                     failed_count += 1
                     errors.append(f"{uid}: {err_msg}")
             
-            # Tiny sleep to let the router breathe
-            if deleted_count % 20 == 0:
-                time.sleep(0.01)
+            # Throttling
+            if deleted_count % 10 == 0:
+                time.sleep(0.02)
             
         if connection:
             connection.disconnect()
