@@ -70,6 +70,7 @@ async def get_devices(
     db: AsyncSession = Depends(get_db), 
     actor = Depends(get_authorized_actor)
 ):
+    from app.models.core import decrypt_device_secrets
     
     if isinstance(actor, APIKey):
         if actor.organization_id:
@@ -78,18 +79,27 @@ async def get_devices(
         else:
             # Global API key sees all
             result = await db.execute(select(Device))
-        return result.scalars().all()
+        devices = result.scalars().all()
+        for d in devices:
+            decrypt_device_secrets(d)
+        return devices
 
     current_user = actor
     # Super Admin sees all
     if current_user.role == UserRole.SUPER_ADMIN:
         result = await db.execute(select(Device))
-        return result.scalars().all()
+        devices = result.scalars().all()
+        for d in devices:
+            decrypt_device_secrets(d)
+        return devices
 
     # Filter by user's org via Site
     if current_user.organization_id:
         result = await db.execute(select(Device).join(Site).where(Site.organization_id == current_user.organization_id))
-        return result.scalars().all()
+        devices = result.scalars().all()
+        for d in devices:
+            decrypt_device_secrets(d)
+        return devices
     
     return []
 

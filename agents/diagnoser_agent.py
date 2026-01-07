@@ -111,15 +111,29 @@ def analyze_metrics():
                     if metrics and len(metrics) > 0:
                         cpu = metrics[0]['value']
                         if cpu > 80:
-                             alert_payload = {
-                                 "device_id": device['id'],
-                                 "rule_name": "High CPU",
-                                 "severity": "critical",
-                                 "message": f"High CPU usage detected: {cpu}%",
-                                 "status": "open"
-                             }
-                             requests.post(f"{API_URL}/monitoring/alerts", json=alert_payload, headers=get_headers())
-                             logger.warning(f"Created alert (HIGH CPU) for {device['name']}")
+                             # CHECK IF ALERT ALREADY EXISTS
+                             existing = requests.get(
+                                 f"{API_URL}/monitoring/alerts?device_id={device['id']}",
+                                 headers=get_headers(),
+                                 timeout=10
+                             )
+                             already_alerted = False
+                             if existing.status_code == 200:
+                                 for a in existing.json():
+                                     if a['rule_name'] == 'High CPU' and a['status'] == 'open':
+                                         already_alerted = True
+                                         break
+                             
+                             if not already_alerted:
+                                 alert_payload = {
+                                     "device_id": device['id'],
+                                     "rule_name": "High CPU",
+                                     "severity": "critical",
+                                     "message": f"High CPU usage detected: {cpu}%",
+                                     "status": "open"
+                                 }
+                                 requests.post(f"{API_URL}/monitoring/alerts", json=alert_payload, headers=get_headers())
+                                 logger.warning(f"Created alert (HIGH CPU) for {device['name']}")
             except Exception as e_cpu:
                  logger.error(f"CPU check failed: {e_cpu}")
             except Exception as e_inner:
