@@ -113,8 +113,8 @@ def run_agent():
                                          logger.info(f"ALERT FIXED: {alert['message']}")
                                      except Exception as ex:
                                          logger.error(f"Failed to update alert status: {ex}")
-                                else:
-                                    logger.error("Failed to connect via SSH. Cannot fix.")
+                                 else:
+                                     logger.error("Failed to connect via SSH. Cannot fix.")
                              else:
                                  logger.warning("Device not found or no IP address.")
 
