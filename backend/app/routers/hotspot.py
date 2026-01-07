@@ -1234,17 +1234,26 @@ async def record_hotspot_sale(
     profile_pricing = hs_settings.get('profile_pricing', {})
     default_currency = hs_settings.get('default_currency', 'TZS')
     
+    logger.info(f"Record Sale Debug: Device={device.name}, Profile='{sale.profile}', PricingMap={profile_pricing}")
+    
     price = 0
     currency = default_currency
     
     if sale.profile in profile_pricing:
         price = profile_pricing[sale.profile]['price']
         currency = profile_pricing[sale.profile]['currency']
+        logger.info(f"Price matched via map: {price} {currency}")
     else:
         import re
+        # Try finding digits at end of string first
         match = re.search(r'(\d+)$', sale.profile or '')
         if match:
             price = float(match.group(1))
+            logger.info(f"Price matched via regex (end of string): {price}")
+        else:
+            # Fallback: Try finding any digits? usage might be risky "User1" -> 1
+            # Let's log that we failed
+            logger.warning(f"Price resolution failed for profile '{sale.profile}'. No map match and no regex match.")
 
     # Parse creation date from comment if possible
     sale_date = datetime.utcnow()
