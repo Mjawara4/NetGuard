@@ -1244,12 +1244,11 @@ async def record_hotspot_sale(
         currency = profile_pricing[sale.profile]['currency']
         logger.info(f"Price matched via map: {price} {currency}")
     else:
-        import re
-        # Try finding digits at end of string first
-        match = re.search(r'(\d+)$', sale.profile or '')
+        # Try finding ANY digits in the string (e.g. "3-Hours" -> 3, "User500" -> 500)
+        match = re.search(r'(\d+)', sale.profile or '')
         if match:
             price = float(match.group(1))
-            logger.info(f"Price matched via regex (end of string): {price}")
+            logger.info(f"Price matched via regex (heuristic): {price}")
         else:
             # Fallback: Try finding any digits? usage might be risky "User1" -> 1
             # Let's log that we failed
