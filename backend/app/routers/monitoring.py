@@ -8,7 +8,7 @@ from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus, User
 from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse, DashboardStatsResponse
 from app.auth.deps import get_authorized_actor, get_current_user
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 router = APIRouter()
 from app.core.limiter import limiter
@@ -100,12 +100,18 @@ async def get_historical_metrics(request: Request, device_id: str, start_time: s
         if start_time.endswith('Z'):
             start_time = start_time[:-1] + '+00:00'
         start = datetime.fromisoformat(start_time)
+        # Ensure start is naive UTC if it has tzinfo
+        if start.tzinfo is not None:
+            start = start.astimezone(timezone.utc).replace(tzinfo=None)
+            
         query = query.where(Metric.time >= start)
         
         if end_time:
              if end_time.endswith('Z'):
                 end_time = end_time[:-1] + '+00:00'
              end = datetime.fromisoformat(end_time)
+             if end.tzinfo is not None:
+                end = end.astimezone(timezone.utc).replace(tzinfo=None)
              query = query.where(Metric.time <= end)
              
         if metric_type:
