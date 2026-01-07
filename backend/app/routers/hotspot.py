@@ -654,7 +654,13 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
             limit_str = user_limits.get(username)
             
             remaining = "UNLIM"
-            if limit_str:
+            
+            # 1. Prefer direct router value if available
+            router_time_left = a.get('session-time-left')
+            if router_time_left:
+                remaining = router_time_left
+            # 2. Fallback to calculation
+            elif limit_str:
                 uptime_sec = parse_routeros_time(uptime_str)
                 limit_sec = parse_routeros_time(limit_str)
                 rem_sec = max(0, limit_sec - uptime_sec)
