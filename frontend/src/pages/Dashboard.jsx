@@ -213,7 +213,14 @@ export default function Dashboard() {
                     <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="p-6 sm:p-8 border-b border-gray-50 flex items-center justify-between">
                             <h2 className="text-xl font-black text-gray-900">Security & System Events</h2>
-                            <button onClick={() => setAlerts([])} className="text-[10px] font-bold text-gray-400 uppercase hover:text-blue-600 transition-colors">Clear All</button>
+                            <button onClick={async () => {
+                                try {
+                                    await api.post('/monitoring/alerts/clear');
+                                    fetchData();
+                                } catch (e) {
+                                    console.error("Failed to clear alerts", e);
+                                }
+                            }} className="text-[10px] font-bold text-gray-400 uppercase hover:text-blue-600 transition-colors">Clear All</button>
                         </div>
                         <div className="overflow-hidden">
                             <ResponsiveTable

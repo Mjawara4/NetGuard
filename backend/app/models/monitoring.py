@@ -16,6 +16,7 @@ class AlertStatus(str, enum.Enum):
     OPEN = "open"
     AUTO_FIXED = "auto_fixed"
     RESOLVED = "resolved"
+    ARCHIVED = "archived"
 
 class Metric(Base):
     __tablename__ = "metrics"

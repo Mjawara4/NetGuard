@@ -58,6 +58,8 @@ class HotspotActive(BaseModel):
     bytes_out: int
     mac_address: Optional[str] = None
     remaining_time: Optional[str] = None
+    limit_uptime: Optional[str] = None
+    limit_bytes_total: Optional[int] = None
 
 class SaleRecord(BaseModel):
     device_id: UUID
@@ -189,13 +191,14 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
                     price, currency = get_pricing(prof_name)
                     
                     # Try to parse creation date from comment: "Batch-pref | YYYY-MM-DD HH:MM:SS"
+                    # UPDATE: User requested to track sale based on Usage Date (Now), not creation date.
                     sale_date = datetime.utcnow()
-                    if '|' in comment:
-                        try:
-                            date_str = comment.split('|')[-1].strip()
-                            sale_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-                        except:
-                            pass
+                    # if '|' in comment:
+                    #     try:
+                    #         date_str = comment.split('|')[-1].strip()
+                    #         sale_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    #     except:
+                    #         pass
                     
                     sale = VoucherSale(
                         device_id=device.id,
@@ -645,13 +648,22 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
         users = api.get_resource('/ip/hotspot/user').get()
         connection.disconnect()
         
-        user_limits = {u.get('name'): u.get('limit-uptime') for u in users if u.get('limit-uptime')}
+        user_limits = {
+            u.get('name'): {
+                'limit-uptime': u.get('limit-uptime'), 
+                'limit-bytes-total': int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None
+            } 
+            for u in users
+        }
         
         results = []
         for a in active:
             username = a.get('user')
             uptime_str = a.get('uptime', '0s')
-            limit_str = user_limits.get(username)
+            
+            limits = user_limits.get(username, {})
+            limit_str = limits.get('limit-uptime')
+            limit_bytes = limits.get('limit-bytes-total')
             
             remaining = "UNLIM"
             
@@ -674,7 +686,9 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
                 bytes_in=int(a.get('bytes-in', 0)),
                 bytes_out=int(a.get('bytes-out', 0)),
                 mac_address=a.get('mac-address'),
-                remaining_time=remaining
+                remaining_time=remaining,
+                limit_uptime=limit_str,
+                limit_bytes_total=limit_bytes
             ))
         return results
     except Exception as e:
@@ -1261,13 +1275,14 @@ async def record_hotspot_sale(
             logger.warning(f"Price resolution failed for profile '{sale.profile}'. No map match and no regex match.")
 
     # Parse creation date from comment if possible
+    # UPDATE: User requested to track sale based on Usage Date (Now), not creation date.
     sale_date = datetime.utcnow()
-    if sale.comment and "|" in sale.comment:
-        try:
-            date_part = sale.comment.split("|")[-1].strip()
-            sale_date = datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
-        except:
-            pass
+    # if sale.comment and "|" in sale.comment:
+    #     try:
+    #         date_part = sale.comment.split("|")[-1].strip()
+    #         sale_date = datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
+    #     except:
+    #         pass
 
     new_sale = VoucherSale(
         device_id=sale.device_id,

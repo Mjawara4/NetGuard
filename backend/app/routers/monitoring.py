@@ -128,11 +128,11 @@ async def get_historical_metrics(request: Request, device_id: str, start_time: s
 @router.get("/alerts", response_model=List[AlertResponse])
 async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
-        stmt = select(Alert).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
     elif isinstance(actor, APIKey) and not actor.organization_id:
-        stmt = select(Alert).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
     else:
-        stmt = select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+        stmt = select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id, Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
     
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -144,6 +144,33 @@ async def create_alert(alert: AlertCreate, db: AsyncSession = Depends(get_db), a
     await db.commit()
     await db.refresh(new_alert)
     return new_alert
+
+@router.post("/alerts/clear", response_model=dict)
+async def clear_alerts(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    """
+    Archives all currently visible alerts (Open/Resolved) for the organization.
+    They will no longer appear in the main list.
+    """
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED)
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED)
+    else:
+        stmt = select(Alert).join(Device).join(Site).where(
+            Site.organization_id == actor.organization_id,
+            Alert.status != AlertStatus.ARCHIVED
+        )
+    
+    result = await db.execute(stmt)
+    alerts = result.scalars().all()
+    
+    count = 0
+    for alert in alerts:
+        alert.status = AlertStatus.ARCHIVED
+        count += 1
+        
+    await db.commit()
+    return {"status": "success", "cleared_count": count}
 
 @router.get("/incidents", response_model=List[IncidentResponse])
 async def get_incidents(db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

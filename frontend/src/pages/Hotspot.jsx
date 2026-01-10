@@ -628,13 +628,21 @@ export default function Hotspot() {
                                             render: (u) => <div className="text-xs text-gray-500 font-bold whitespace-nowrap bg-gray-50 px-2 py-1 rounded-lg">{u.uptime}</div>
                                         },
                                         {
-                                            header: 'Time Left',
+                                            header: 'Time Left / Limits',
                                             accessor: 'remaining_time',
                                             render: (u) => (
-                                                <div className={`text-xs font-black px-2 py-1 rounded-lg border ${u.remaining_time === 'UNLIM' ? 'bg-gray-50 text-gray-400 border-gray-100' :
-                                                    u.remaining_time === '0s' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'
-                                                    }`}>
-                                                    {u.remaining_time}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className={`text-xs font-black px-2 py-1 rounded-lg border max-w-fit ${u.remaining_time === 'UNLIM' ? 'bg-gray-50 text-gray-400 border-gray-100' :
+                                                        u.remaining_time === '0s' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+                                                        }`}>
+                                                        {u.remaining_time}
+                                                    </div>
+                                                    {(u.limit_uptime || u.limit_bytes_total) && (
+                                                        <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wide">
+                                                            {u.limit_uptime && <div>Limit: {u.limit_uptime}</div>}
+                                                            {u.limit_bytes_total > 0 && <div>Data: {(u.limit_bytes_total / 1024 / 1024).toFixed(0)}MB</div>}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )
                                         },
