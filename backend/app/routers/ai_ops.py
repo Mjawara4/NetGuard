@@ -103,7 +103,10 @@ async def chat_with_network(request: ChatRequest, db: Session = Depends(get_db))
     # 1. Generate SQL
     error, sql = ask_llm_sql(user_query)
     
-    if error or not sql or sql == "NO_SQL":
+    if error:
+         return ChatResponse(response=f"System Error: {error}", sql_query=None)
+    
+    if not sql or sql == "NO_SQL":
          return ChatResponse(response="I couldn't understand how to query the database for that. Try asking about devices, alerts, or sales.", sql_query=None)
     
     # 2. Safety Check (Basic)
