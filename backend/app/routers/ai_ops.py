@@ -256,9 +256,10 @@ async def chat_with_network(
              return ChatResponse(response="I need to know which device you are referring to.")
 
         # Resolve Device (Filtered by Org)
+        # Resolve Device (Filtered by Org)
         try:
             query = text("""
-                SELECT d.id, d.name, d.ip_address, d.ssh_username, d.ssh_password, d.ssh_port 
+                SELECT d.id, d.name, d.ip_address, d.ssh_username, d.ssh_password, d.ssh_port, d.device_type 
                 FROM devices d
                 JOIN sites s ON d.site_id = s.id
                 WHERE s.organization_id = :org_id
@@ -278,23 +279,34 @@ async def chat_with_network(
             from app.utils.encryption import decrypt_value
             ssh_pass = decrypt_value(device.ssh_password) if device.ssh_password else None
             
-            # Sub-Action: KICK USER
+            # Helper for RouterOS API Connection
+            def get_routeros_api(device, password):
+                import routeros_api
+                port = 8728 if not device.ssh_port or int(device.ssh_port) == 22 else int(device.ssh_port)
+                # Note: Default API port is 8728, but we often map it. 
+                # If ssh_port is 22, we assume API is on default 8728 or needs to be configured. 
+                # Ideally device model should have api_port, but we'll try 8728 first or fallback.
+                # For robust MVP, let's assume if device is RouterOS, ssh_port MIGHT be the api port if explicitly set, 
+                # or we just use default 8728. 
+                # Given specific user context, let's use 8728 default unless otherwise specified.
+                api_port = 8728 
+                
+                return routeros_api.RouterOsApiPool(
+                    device.ip_address, 
+                    username=device.ssh_username or 'admin', 
+                    password=password or 'admin', 
+                    port=api_port,
+                    plaintext_login=True, 
+                    use_ssl=False
+                )
+
+            # Sub-Action: KICK USER (Always API for MikroTik)
             if action == "kick_user":
                 if not target_user:
                      return ChatResponse(response="Please specify which user to kick.")
                      
-                import routeros_api
                 try:
-                    # Connect to Router
-                    port = 8728 if not device.ssh_port or int(device.ssh_port) == 22 else int(device.ssh_port)
-                    pool = routeros_api.RouterOsApiPool(
-                        device.ip_address, 
-                        username=device.ssh_username or 'admin', 
-                        password=ssh_pass or 'admin', 
-                        port=port,
-                        plaintext_login=True, 
-                        use_ssl=False
-                    )
+                    pool = get_routeros_api(device, ssh_pass)
                     api = pool.get_api()
                     
                     # Find Active Session
@@ -316,21 +328,41 @@ async def chat_with_network(
                     logger.error(f"Kick User Failed: {e}")
                     return ChatResponse(response=f"Failed to kick user. Router Error: {e}")
 
-            # Sub-Action: SSH COMMANDS (Reboot, Restart)
-            elif action in ["reboot", "restart_service"]:
-                if action == "reboot":
-                     cmd = "reboot"
-                elif action == "restart_service":
-                     cmd = command if command else "echo 'No command provided'"
+            # Sub-Action: REBOOT (Hybrid: API for MikroTik, SSH for others)
+            elif action == "reboot":
+                is_mikrotik = device.device_type and any(x in device.device_type.lower() for x in ['router', 'mikrotik', 'routeros'])
                 
-                # Exec
-                ssh_output = execute_ssh_command(
+                if is_mikrotik:
+                    try:
+                        pool = get_routeros_api(device, ssh_pass)
+                        api = pool.get_api()
+                        # Execute reboot via API (Menu: /system, Command: reboot)
+                        api.get_resource('/system').call('reboot')
+                        pool.disconnect()
+                        return ChatResponse(response=f"✅ **Device Rebooting**\n\nTarget: {device.name}\nMethod: API (/system/reboot)")
+                    except Exception as e:
+                        logger.error(f"API Reboot Failed: {e}")
+                        return ChatResponse(response=f"Failed to reboot via API. Error: {e}")
+                else:
+                    # Linux / Generic SSH Reboot
+                    ssh_output = execute_ssh_command(
+                        host=device.ip_address,
+                        command="reboot",
+                        user=device.ssh_username, 
+                        password=ssh_pass
+                    )
+                    return ChatResponse(response=f"✅ **Device Rebooting**\n\nTarget: {device.name}\nMethod: SSH\nOutput: {ssh_output}")
+
+            # Sub-Action: RESTART SERVICE (SSH default)
+            elif action == "restart_service":
+                 cmd = command if command else "echo 'No command provided'"
+                 ssh_output = execute_ssh_command(
                     host=device.ip_address,
                     command=cmd,
                     user=device.ssh_username, 
                     password=ssh_pass
                 )
-                return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name}\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
+                 return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name}\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
             
             else:
                  return ChatResponse(response=f"I don't know how to perform action: {action}")
