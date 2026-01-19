@@ -41,39 +41,45 @@ from app.models import User
 
 # ... import statements ...
 
-def ask_llm_sql(user_query: str, organization_id: str):
+from app.services.device_control import execute_ssh_command
+from sqlalchemy import text # Ensure text is imported
+
+def ask_llm_intent(user_query: str, organization_id: str):
     """
-    Asks the LLM to generate a SQL query (PostgreSQL) based on the user request.
-    Enforces Strict Multi-Tenancy.
+    Asks the LLM to determine if the user wants to querying DATA (SQL) or performing an ACTION (Command).
     """
     if not LLM_API_KEY:
-        return "Error: LLM API Key not configured.", None
+        return None, "Error: LLM API Key not configured.", None
 
     schema = get_db_schema_context()
+    
     system_prompt = f"""
-    You are a PostgreSQL expert for a Network Management System.
+    You are a Network Operations Assistant.
     
     Database Schema:
     {schema}
     
-    CRITICAL SECURITY RULE (MULTI-TENANCY):
-    You MUST RESTRICT all data to the Organization ID: '{organization_id}'.
-    - For 'sites' table: WHERE organization_id = '{organization_id}'
-    - For 'devices' table: JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
-    - For 'metrics' table: JOIN devices ON metrics.device_id = devices.id JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
-    - For 'alerts' table: JOIN devices ON alerts.device_id = devices.id JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
-    - For 'hotspot_sales' table: JOIN sites ON hotspot_sales.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
+    User Query: "{user_query}"
     
-    Other Rules:
-    1. Generate a VALID, READ-ONLY PostgreSQL query.
-    2. Use "metrics" table for performance data (TimescaleDB).
-    3. Return ONLY the SQL query. No markdown.
-    4. If the question cannot be answered with SQL, return "NO_SQL".
+    Organization ID: {organization_id}
+
+    Task: Determine intent.
     
-    User Question: {user_query}
+    Type 1: DATA RETRIEVAL (User asks for info, stats, alerts, list devices)
+    - Output JSON: {{"type": "SQL", "content": "VALID_POSTGRES_SQL"}}
+    - Enforce Organization ID restriction in WHERE clauses.
+    
+    Type 2: ACTION (User wants to change state: reboot, restart, block, reset)
+    - Output JSON: {{"type": "ACTION", "action": "reboot|restart_service|other", "target_device_name": "exact name or fuzzy match", "command": "shell command if applicable"}}
+    - Note: Only allow safe actions.
+    
+    Output strictly JSON.
     """
 
     try:
+        import json
+        response_text = ""
+        
         if LLM_PROVIDER == "gemini":
             from google import genai
             client = genai.Client(api_key=LLM_API_KEY)
@@ -81,73 +87,28 @@ def ask_llm_sql(user_query: str, organization_id: str):
                 model='gemini-2.5-flash-lite',
                 contents=system_prompt
             )
-            sql = resp.text.strip().replace("```sql", "").replace("```", "")
-            return None, sql
+            response_text = resp.text
             
         elif LLM_PROVIDER == "openai":
             client = openai.OpenAI(api_key=LLM_API_KEY)
             completion = client.chat.completions.create(
                 model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a SQL generator. Output only raw SQL."},
-                    {"role": "user", "content": system_prompt}
-                ]
+                messages=[{"role": "user", "content": system_prompt}],
+                response_format={"type": "json_object"}
             )
-            sql = completion.choices[0].message.content.strip().replace("```sql", "").replace("```", "")
-            return None, sql
-            
+            response_text = completion.choices[0].message.content
+
+        # Clean JSON
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(response_text)
+        return data, None
+
     except Exception as e:
-        logger.error(f"LLM Error: {e}")
-        return f"LLM Error: {str(e)}", None
+        logger.error(f"LLM Intent Error: {e}")
+        return None, f"LLM Error: {str(e)}"
 
-    return "Could not generate query.", None
 
-def explain_result(user_query, result_data, total_count):
-    """
-    Asks LLM to explain the SQL result in natural language.
-    """
-    if not result_data:
-        return "No results found matching your query."
-
-    # Limit context size
-    data_sample = result_data[:20]
-    
-    prompt = f"""
-    You are a helpful Network Ops Assistant.
-    
-    User Query: "{user_query}"
-    
-    Data Found ({len(data_sample)} of {total_count} records):
-    {data_sample}
-    
-    Task: Answer the user's question based on this data.
-    - Be concise and friendly.
-    - Summarize key findings (e.g., "Found 5 critical CPU alerts").
-    - If list is long, mention only the most important items (e.g., critical severity).
-    - Do not simply list all tuples.
-    """
-    
-    try:
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=prompt
-            )
-            return resp.text.strip()
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return completion.choices[0].message.content.strip()
-            
-    except Exception as e:
-        logger.error(f"Explanation Error: {e}")
-        return f"Found {total_count} records, but could not summarize them due to an error."
+# ... explain_result ...
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_network(
@@ -156,37 +117,91 @@ async def chat_with_network(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Chat with your network data using AI.
+    Chat with your network data using AI. Supports Queries and Actions.
     """
     user_query = request.query
     
-    # 1. Generate SQL with Org Context
-    error, sql = ask_llm_sql(user_query, str(current_user.organization_id))
+    # 1. Determine Intent
+    result_json, error = ask_llm_intent(user_query, str(current_user.organization_id))
     
     if error:
-         return ChatResponse(response=f"System Error: {error}", sql_query=None)
+         return ChatResponse(response=f"System Error: {error}")
     
-    if not sql or sql == "NO_SQL":
-         return ChatResponse(response="I couldn't understand how to query the database for that. Try asking about devices, alerts, or sales.", sql_query=None)
-    
-    # 2. Safety Check (Basic)
-    if any(keyword in sql.upper() for keyword in ["DELETE", "DROP", "UPDATE", "INSERT", "TRUNCATE", "ALTER"]):
-        return ChatResponse(response="I cannot execute destructive queries. Read-only access only.", sql_query=sql)
+    if not result_json:
+         return ChatResponse(response="I couldn't understand your request.")
 
-    # 3. Execute SQL (ASYNC FIX)
-    try:
-        from sqlalchemy import text
-        result = await db.execute(text(sql))
-        rows = result.fetchall()
-        
-        # Convert rows to list of dicts/strings for simpler handling
-        data = [str(row) for row in rows]
-        
-        # 4. Generate Natural Language Answer
-        summary = explain_result(user_query, data, len(data))
+    intent_type = result_json.get("type")
+    
+    # --- HANDLE SQL QUERIES ---
+    if intent_type == "SQL":
+        sql = result_json.get("content")
+        if not sql or sql == "NO_SQL":
+             return ChatResponse(response="I couldn't understand how to query the database for that.")
              
-        return ChatResponse(response=summary, sql_query=sql)
+        # Safety Check
+        if any(keyword in sql.upper() for keyword in ["DELETE", "DROP", "UPDATE", "INSERT", "TRUNCATE", "ALTER"]):
+            return ChatResponse(response="I cannot execute destructive queries. Read-only access only.", sql_query=sql)
+
+        try:
+            result = await db.execute(text(sql))
+            rows = result.fetchall()
+            data = [str(row) for row in rows]
+            summary = explain_result(user_query, data, len(data))
+            return ChatResponse(response=summary, sql_query=sql)
+            
+        except Exception as e:
+            logger.error(f"SQL Execution Failed: {e}")
+            return ChatResponse(response=f"The generated query failed to execute. Error: {str(e)}", sql_query=sql)
+            
+    # --- HANDLE ACTIONS ---
+    elif intent_type == "ACTION":
+        target_name = result_json.get("target_device_name")
+        action = result_json.get("action")
+        command = result_json.get("command")
         
-    except Exception as e:
-        logger.error(f"SQL Execution Failed: {e}")
-        return ChatResponse(response=f"The generated query failed to execute. Error: {str(e)}", sql_query=sql)
+        if not target_name:
+            return ChatResponse(response="I understood you want to perform an action, but I couldn't identify the device.")
+
+        # Resolve Device (Filtered by Org)
+        try:
+            query = text("""
+                SELECT d.id, d.name, d.ip_address, d.username, d.password 
+                FROM devices d
+                JOIN sites s ON d.site_id = s.id
+                WHERE s.organization_id = :org_id
+                AND d.name ILIKE :name
+                LIMIT 1
+            """)
+            result = await db.execute(query, {
+                "org_id": current_user.organization_id, 
+                "name": f"%{target_name}%"
+            })
+            device = result.one_or_none()
+            
+            if not device:
+                 return ChatResponse(response=f"I couldn't find a device named '{target_name}' in your organization.")
+                 
+            # EXECUTE
+            if action == "reboot":
+                 cmd = "reboot"
+            elif action == "restart_service":
+                 cmd = command if command else "echo 'No command provided'"
+            else:
+                 return ChatResponse(response=f"I don't know how to perform action: {action}")
+                 
+            # Call Service
+            ssh_output = execute_ssh_command(
+                host=device.ip_address,
+                command=cmd,
+                user=device.username, # Use DB creds if available
+                password=device.password
+            )
+            
+            return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name} ({device.ip_address})\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
+
+        except Exception as e:
+             logger.error(f"Action Execution Failed: {e}")
+             return ChatResponse(response=f"Failed to execute action. Error: {str(e)}")
+             
+    else:
+        return ChatResponse(response="I'm not sure if you want data or an action.")
