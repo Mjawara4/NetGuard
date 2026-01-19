@@ -223,16 +223,42 @@ async def chat_with_network(
     elif intent_type == "ACTION":
         target_name = result_json.get("target_device_name")
         action = result_json.get("action")
+        target_user = result_json.get("target_user")
         command = result_json.get("command")
         
+        # 1. CLEAR ALERTS (No device needed)
+        if action == "clear_alerts":
+            try:
+                # Re-use logic from monitoring.py (but we can't import the router function easily as it depends on request context)
+                # So we simulate it here:
+                from app.models import Alert
+                from app.models.monitoring import AlertStatus
+                
+                # Fetch open alerts
+                query = text("""
+                    UPDATE alerts 
+                    SET status = 'archived' 
+                    FROM devices, sites
+                    WHERE alerts.device_id = devices.id 
+                    AND devices.site_id = sites.id 
+                    AND sites.organization_id = :org_id 
+                    AND alerts.status != 'archived'
+                """)
+                await db.execute(query, {"org_id": current_user.organization_id})
+                await db.commit()
+                return ChatResponse(response="✅ **All alerts have been cleared/archived.**")
+            except Exception as e:
+                logger.error(f"Clear Alerts Failed: {e}")
+                return ChatResponse(response=f"Failed to clear alerts. Error: {e}")
+
+        # 2. DEVICE ACTIONS (Reboot, Restart, Kick User)
         if not target_name:
-            return ChatResponse(response="I understood you want to perform an action, but I couldn't identify the device.")
+             return ChatResponse(response="I need to know which device you are referring to.")
 
         # Resolve Device (Filtered by Org)
         try:
-            # We must select ssh_username/ssh_password (fixing my previous mistake)
             query = text("""
-                SELECT d.id, d.name, d.ip_address, d.ssh_username, d.ssh_password 
+                SELECT d.id, d.name, d.ip_address, d.ssh_username, d.ssh_password, d.ssh_port 
                 FROM devices d
                 JOIN sites s ON d.site_id = s.id
                 WHERE s.organization_id = :org_id
@@ -248,34 +274,73 @@ async def chat_with_network(
             if not device:
                  return ChatResponse(response=f"I couldn't find a device named '{target_name}' in your organization.")
             
-            # Decrypt password if present
+            # Decrypt password
             from app.utils.encryption import decrypt_value
             ssh_pass = decrypt_value(device.ssh_password) if device.ssh_password else None
-                 
-            # EXECUTE
-            if action == "reboot":
-                 cmd = "reboot"
-            elif action == "restart_service":
-                 cmd = command if command else "echo 'No command provided'"
+            
+            # Sub-Action: KICK USER
+            if action == "kick_user":
+                if not target_user:
+                     return ChatResponse(response="Please specify which user to kick.")
+                     
+                import routeros_api
+                try:
+                    # Connect to Router
+                    port = 8728 if not device.ssh_port or int(device.ssh_port) == 22 else int(device.ssh_port)
+                    pool = routeros_api.RouterOsApiPool(
+                        device.ip_address, 
+                        username=device.ssh_username or 'admin', 
+                        password=ssh_pass or 'admin', 
+                        port=port,
+                        plaintext_login=True, 
+                        use_ssl=False
+                    )
+                    api = pool.get_api()
+                    
+                    # Find Active Session
+                    active_resource = api.get_resource('/ip/hotspot/active')
+                    active_sessions = active_resource.get(user=target_user)
+                    
+                    if not active_sessions:
+                        pool.disconnect()
+                        return ChatResponse(response=f"User '{target_user}' is not currently active on {device.name}.")
+                        
+                    # Remove (Kick)
+                    for session in active_sessions:
+                        active_resource.remove(id=session.get('.id') or session.get('id'))
+                        
+                    pool.disconnect()
+                    return ChatResponse(response=f"✅ **User '{target_user}' has been kicked** from {device.name}.")
+                    
+                except Exception as e:
+                    logger.error(f"Kick User Failed: {e}")
+                    return ChatResponse(response=f"Failed to kick user. Router Error: {e}")
+
+            # Sub-Action: SSH COMMANDS (Reboot, Restart)
+            elif action in ["reboot", "restart_service"]:
+                if action == "reboot":
+                     cmd = "reboot"
+                elif action == "restart_service":
+                     cmd = command if command else "echo 'No command provided'"
+                
+                # Exec
+                ssh_output = execute_ssh_command(
+                    host=device.ip_address,
+                    command=cmd,
+                    user=device.ssh_username, 
+                    password=ssh_pass
+                )
+                return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name}\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
+            
             else:
                  return ChatResponse(response=f"I don't know how to perform action: {action}")
-                 
-            # Call Service
-            ssh_output = execute_ssh_command(
-                host=device.ip_address,
-                command=cmd,
-                user=device.ssh_username, 
-                password=ssh_pass
-            )
-            
-            return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name} ({device.ip_address})\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
 
         except Exception as e:
              logger.error(f"Action Execution Failed: {e}")
              return ChatResponse(response=f"Failed to execute action. Error: {str(e)}")
              
     elif intent_type == "HELP":
-        return ChatResponse(response=result_json.get("message", "I can help you view network data (Devices, Alerts, Sales) or perform actions (Reboot, Restart Services). What would you like to do?"))
+        return ChatResponse(response=result_json.get("message", "I can help you view network data (Devices, Alerts, Sales) or perform actions (Reboot, Kicking Users)."))
              
     else:
         return ChatResponse(response="I'm not sure if you want data or an action. Try asking 'Show me critical alerts' or 'Reboot router X'.")
