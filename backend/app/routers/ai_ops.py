@@ -102,7 +102,52 @@ def ask_llm_sql(user_query: str, organization_id: str):
 
     return "Could not generate query.", None
 
-# ... explain_result ...
+def explain_result(user_query, result_data, total_count):
+    """
+    Asks LLM to explain the SQL result in natural language.
+    """
+    if not result_data:
+        return "No results found matching your query."
+
+    # Limit context size
+    data_sample = result_data[:20]
+    
+    prompt = f"""
+    You are a helpful Network Ops Assistant.
+    
+    User Query: "{user_query}"
+    
+    Data Found ({len(data_sample)} of {total_count} records):
+    {data_sample}
+    
+    Task: Answer the user's question based on this data.
+    - Be concise and friendly.
+    - Summarize key findings (e.g., "Found 5 critical CPU alerts").
+    - If list is long, mention only the most important items (e.g., critical severity).
+    - Do not simply list all tuples.
+    """
+    
+    try:
+        if LLM_PROVIDER == "gemini":
+            from google import genai
+            client = genai.Client(api_key=LLM_API_KEY)
+            resp = client.models.generate_content(
+                model='gemini-2.5-flash-lite',
+                contents=prompt
+            )
+            return resp.text.strip()
+            
+        elif LLM_PROVIDER == "openai":
+            client = openai.OpenAI(api_key=LLM_API_KEY)
+            completion = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return completion.choices[0].message.content.strip()
+            
+    except Exception as e:
+        logger.error(f"Explanation Error: {e}")
+        return f"Found {total_count} records, but could not summarize them due to an error."
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_network(
@@ -134,14 +179,11 @@ async def chat_with_network(
         result = await db.execute(text(sql))
         rows = result.fetchall()
         
-        # Convert rows to list of dicts for simpler handling
+        # Convert rows to list of dicts/strings for simpler handling
         data = [str(row) for row in rows]
         
         # 4. Generate Natural Language Answer
-        if len(data) > 10:
-             summary = f"Found {len(data)} results. First 5: {data[:5]}"
-        else:
-             summary = f"Result: {data}"
+        summary = explain_result(user_query, data, len(data))
              
         return ChatResponse(response=summary, sql_query=sql)
         
