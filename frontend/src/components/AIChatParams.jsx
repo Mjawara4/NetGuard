@@ -91,15 +91,11 @@ const AIChatParams = () => {
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user'
-                                ? 'bg-blue-600 text-white rounded-tr-none'
-                                : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
+                            ? 'bg-blue-600 text-white rounded-tr-none'
+                            : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
                             } ${msg.isError ? 'bg-red-50 text-red-600 border-red-100' : ''}`}>
                             <p>{msg.text}</p>
-                            {msg.sql && (
-                                <div className="mt-2 text-xs bg-slate-900 text-green-400 p-2 rounded-lg font-mono overflow-x-auto">
-                                    {msg.sql}
-                                </div>
-                            )}
+                            {/* SQL display hidden as per user request */}
                         </div>
                     </div>
                 ))}
