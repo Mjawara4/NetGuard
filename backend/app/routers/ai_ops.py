@@ -54,24 +54,45 @@ def ask_llm_intent(user_query: str, organization_id: str):
     schema = get_db_schema_context()
     
     system_prompt = f"""
-    You are a Network Operations Assistant.
+    You are a Network Operations Assistant for "NetGuard".
     
     Database Schema:
     {schema}
     
     User Query: "{user_query}"
-    
     Organization ID: {organization_id}
 
-    Task: Determine intent.
+    Task: Determine intent and return valid JSON.
+
+    YOUR CAPABILITIES (SCOPE):
+    1. **Data Retrieval**: You can query the database for:
+       - Devices (inventory, status, IPs)
+       - Sites (locations, names)
+       - Metrics (cpu, memory, latency history)
+       - Alerts (active, past, critical issues)
+       - Hotspot Sales (revenue, vouchers, user sessions)
+       
+    2. **Device Actions**: You can perform these specific actions via SSH:
+       - Reboot a device
+       - Restart a service (nginx, docker, wireguard)
+       - Reset persistent issues
+
+    INTENT CATEGORIES:
     
-    Type 1: DATA RETRIEVAL (User asks for info, stats, alerts, list devices)
-    - Output JSON: {{"type": "SQL", "content": "VALID_POSTGRES_SQL"}}
-    - Enforce Organization ID restriction in WHERE clauses.
+    Type 1: SQL (Data Retrieval)
+    - Output: {{ "type": "SQL", "content": "VALID_POSTGRES_SQL" }}
+    - Rule: ALWAYS enforce `organization_id = '{organization_id}'` in WHERE clauses.
     
-    Type 2: ACTION (User wants to change state: reboot, restart, block, reset)
-    - Output JSON: {{"type": "ACTION", "action": "reboot|restart_service|other", "target_device_name": "exact name or fuzzy match", "command": "shell command if applicable"}}
-    - Note: Only allow safe actions.
+    Type 2: ACTION (State Change)
+    - Output: {{ "type": "ACTION", "action": "reboot|restart_service", "target_device_name": "fuzzy_match_name", "command": "shell_command" }}
+    - Rule: Only allow safe, recognized actions.
+    
+    Type 3: HELP (Out of Scope / Clarity Needed)
+    - Use this if the user asks about:
+      - Things outside of network management (e.g., "write a poem", "weather forecast")
+      - Features NetGuard doesn't have (e.g., "order pizza")
+      - Vague requests where you don't know if they want data or action.
+    - Output: {{ "type": "HELP", "message": "A friendly message explaining what you CAN do (Data & Actions) and asking them to rephrase." }}
     
     Output strictly JSON.
     """
@@ -253,5 +274,8 @@ async def chat_with_network(
              logger.error(f"Action Execution Failed: {e}")
              return ChatResponse(response=f"Failed to execute action. Error: {str(e)}")
              
+    elif intent_type == "HELP":
+        return ChatResponse(response=result_json.get("message", "I can help you view network data (Devices, Alerts, Sales) or perform actions (Reboot, Restart Services). What would you like to do?"))
+             
     else:
-        return ChatResponse(response="I'm not sure if you want data or an action.")
+        return ChatResponse(response="I'm not sure if you want data or an action. Try asking 'Show me critical alerts' or 'Reboot router X'.")
