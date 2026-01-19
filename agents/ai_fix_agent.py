@@ -87,10 +87,22 @@ def ask_llm(alert, device_info):
         response_text = ""
         
         if LLM_PROVIDER == "gemini":
-            genai.configure(api_key=LLM_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
-            resp = model.generate_content(system_prompt + "\nResponse (JSON):")
-            response_text = resp.text
+            try:
+                from google import genai
+                client = genai.Client(api_key=LLM_API_KEY)
+                response = client.models.generate_content(
+                    model='gemini-3-pro',
+                    contents=system_prompt
+                )
+                decision = parse_json(response.text)
+                if decision:
+                    return decision
+                else:
+                    logger.error(f"Gemini output could not be parsed as JSON: {response.text}")
+                    return None
+            except Exception as e:
+                logger.error(f"Gemini Error: {e}")
+                return None
             
         elif LLM_PROVIDER == "openai":
             client = openai.OpenAI(api_key=LLM_API_KEY)

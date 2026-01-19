@@ -65,9 +65,12 @@ def get_sales_prediction(days: int = 7, db: Session = Depends(get_db)):
         response_text = ""
         
         if LLM_PROVIDER == "gemini":
-            genai.configure(api_key=LLM_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
-            resp = model.generate_content(system_prompt)
+            from google import genai
+            client = genai.Client(api_key=LLM_API_KEY)
+            resp = client.models.generate_content(
+                model='gemini-3-flash',
+                contents=system_prompt
+            )
             response_text = resp.text
             
         elif LLM_PROVIDER == "openai":

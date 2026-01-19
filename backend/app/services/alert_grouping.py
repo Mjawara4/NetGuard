@@ -101,9 +101,12 @@ async def rename_incident_with_ai(incident_id, db: AsyncSession):
     try:
         response_text = ""
         if LLM_PROVIDER == "gemini":
-            genai.configure(api_key=LLM_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
-            resp = model.generate_content(prompt)
+            from google import genai
+            client = genai.Client(api_key=LLM_API_KEY)
+            resp = client.models.generate_content(
+                model='gemini-3-flash',
+                contents=prompt
+            )
             response_text = resp.text
             
         elif LLM_PROVIDER == "openai":
