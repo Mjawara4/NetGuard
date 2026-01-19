@@ -82,7 +82,7 @@ def ask_llm_sql(user_query: str):
             
     except Exception as e:
         logger.error(f"LLM Error: {e}")
-        return "I encountered an error processing your request.", None
+        return f"LLM Error: {str(e)}", None
 
     return "Could not generate query.", None
 
