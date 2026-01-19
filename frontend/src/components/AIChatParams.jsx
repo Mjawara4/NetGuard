@@ -74,7 +74,7 @@ const AIChatParams = () => {
     }
 
     return (
-        <div className="fixed bottom-6 right-6 w-96 h-[500px] bg-white rounded-2xl shadow-2xl flex flex-col z-50 border border-gray-100 overflow-hidden font-sans">
+        <div className="fixed bottom-0 right-0 w-full sm:bottom-6 sm:right-6 sm:w-96 h-[80vh] sm:h-[500px] bg-white sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col z-50 border border-gray-100 overflow-hidden font-sans transition-all duration-300">
             {/* Header */}
             <div className="p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center">
                 <div className="flex items-center gap-2">
