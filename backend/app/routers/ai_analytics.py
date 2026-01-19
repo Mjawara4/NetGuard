@@ -4,7 +4,6 @@ from sqlalchemy import text
 from app.core.database import get_db
 import os
 import logging
-import google.generativeai as genai
 import openai
 from datetime import datetime, timedelta
 

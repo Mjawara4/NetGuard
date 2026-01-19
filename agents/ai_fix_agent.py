@@ -34,7 +34,6 @@ if not LLM_API_KEY:
 def get_headers():
     return {"X-API-Key": API_KEY}
 
-import google.generativeai as genai
 import openai
 
 def ask_llm(alert, device_info):

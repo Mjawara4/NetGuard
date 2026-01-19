@@ -4,7 +4,6 @@ from app.models import Alert, Incident, AlertStatus
 from app.core.database import SessionLocal
 from datetime import datetime, timedelta
 import os
-import google.generativeai as genai
 import openai
 import logging
 

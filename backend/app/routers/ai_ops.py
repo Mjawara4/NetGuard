@@ -5,7 +5,6 @@ from app.core.database import get_db
 from app.core.config import settings
 import os
 import logging
-import google.generativeai as genai
 import openai
 
 # Configure Logging
