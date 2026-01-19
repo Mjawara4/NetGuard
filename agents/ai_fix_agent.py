@@ -90,7 +90,7 @@ def ask_llm(alert, device_info):
                 from google import genai
                 client = genai.Client(api_key=LLM_API_KEY)
                 response = client.models.generate_content(
-                    model='gemini-3-pro',
+                    model='gemini-1.5-pro',
                     contents=system_prompt
                 )
                 decision = parse_json(response.text)

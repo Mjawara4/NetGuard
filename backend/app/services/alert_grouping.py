@@ -103,7 +103,7 @@ async def rename_incident_with_ai(incident_id, db: AsyncSession):
             from google import genai
             client = genai.Client(api_key=LLM_API_KEY)
             resp = client.models.generate_content(
-                model='gemini-3-flash',
+                model='gemini-1.5-flash',
                 contents=prompt
             )
             response_text = resp.text

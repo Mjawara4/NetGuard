@@ -64,7 +64,7 @@ def ask_llm_sql(user_query: str):
             from google import genai
             client = genai.Client(api_key=LLM_API_KEY)
             resp = client.models.generate_content(
-                model='gemini-3-pro',
+                model='gemini-1.5-pro',
                 contents=system_prompt
             )
             sql = resp.text.strip().replace("```sql", "").replace("```", "")
