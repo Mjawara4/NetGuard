@@ -164,8 +164,9 @@ async def chat_with_network(
 
         # Resolve Device (Filtered by Org)
         try:
+            # We must select ssh_username/ssh_password (fixing my previous mistake)
             query = text("""
-                SELECT d.id, d.name, d.ip_address, d.username, d.password 
+                SELECT d.id, d.name, d.ip_address, d.ssh_username, d.ssh_password 
                 FROM devices d
                 JOIN sites s ON d.site_id = s.id
                 WHERE s.organization_id = :org_id
@@ -180,6 +181,10 @@ async def chat_with_network(
             
             if not device:
                  return ChatResponse(response=f"I couldn't find a device named '{target_name}' in your organization.")
+            
+            # Decrypt password if present
+            from app.utils.encryption import decrypt_value
+            ssh_pass = decrypt_value(device.ssh_password) if device.ssh_password else None
                  
             # EXECUTE
             if action == "reboot":
@@ -193,8 +198,8 @@ async def chat_with_network(
             ssh_output = execute_ssh_command(
                 host=device.ip_address,
                 command=cmd,
-                user=device.username, # Use DB creds if available
-                password=device.password
+                user=device.ssh_username, 
+                password=ssh_pass
             )
             
             return ChatResponse(response=f"✅ **Action Executed**\n\nTarget: {device.name} ({device.ip_address})\nCommand: `{cmd}`\n\nOutput:\n```\n{ssh_output}\n```")
