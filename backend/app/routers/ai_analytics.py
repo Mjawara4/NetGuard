@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from app.auth.deps import get_current_user
+from app.models import User
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
@@ -14,28 +16,35 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 LLM_API_KEY = os.getenv("GEMINI_API_KEY") if LLM_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY")
 
 @router.get("/predictions")
-def get_sales_prediction(days: int = 7, db: Session = Depends(get_db)):
+async def get_sales_prediction(
+    days: int = 7, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Predicts sales for the next N days based on historical data using AI.
     """
     if not LLM_API_KEY:
         return {"error": "LLM API Key not configured"}
 
-    # 1. Fetch Historical Data (Last 30 days)
+    # 1. Fetch Historical Data (Last 30 days) - FILTERED BY ORG
     try:
         query = text("""
-            SELECT date(created_at) as day, SUM(price) as total_sales
-            FROM hotspot_sales
-            WHERE created_at > NOW() - INTERVAL '30 days'
+            SELECT date(hs.created_at) as day, SUM(hs.price) as total_sales
+            FROM hotspot_sales hs
+            JOIN sites s ON hs.site_id = s.id
+            WHERE hs.created_at > NOW() - INTERVAL '30 days'
+            AND s.organization_id = :org_id
             GROUP BY day
             ORDER BY day ASC
         """)
-        result = db.execute(query).fetchall()
+        result = await db.execute(query, {"org_id": current_user.organization_id})
+        rows = result.fetchall()
         
-        if not result:
+        if not rows:
             return {"message": "Not enough data for prediction", "data": []}
             
-        history_str = "\n".join([f"{row.day}: {row.total_sales}" for row in result])
+        history_str = "\n".join([f"{row.day}: {row.total_sales}" for row in rows])
         
     except Exception as e:
         logger.error(f"DB Error: {e}")

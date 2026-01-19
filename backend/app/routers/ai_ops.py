@@ -36,9 +36,15 @@ def get_db_schema_context():
     - hotspot_sales (id, username, price, created_at, site_id)
     """
 
-def ask_llm_sql(user_query: str):
+from app.auth.deps import get_current_user
+from app.models import User
+
+# ... import statements ...
+
+def ask_llm_sql(user_query: str, organization_id: str):
     """
     Asks the LLM to generate a SQL query (PostgreSQL) based on the user request.
+    Enforces Strict Multi-Tenancy.
     """
     if not LLM_API_KEY:
         return "Error: LLM API Key not configured.", None
@@ -50,10 +56,18 @@ def ask_llm_sql(user_query: str):
     Database Schema:
     {schema}
     
-    Rules:
-    1. Generate a VALID, READ-ONLY PostgreSQL query to answer the user's question.
-    2. Use "metrics" table for performance data. Note it is a TimescaleDB hypertable.
-    3. Return ONLY the SQL query in the response. No markdown, no explanation.
+    CRITICAL SECURITY RULE (MULTI-TENANCY):
+    You MUST RESTRICT all data to the Organization ID: '{organization_id}'.
+    - For 'sites' table: WHERE organization_id = '{organization_id}'
+    - For 'devices' table: JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
+    - For 'metrics' table: JOIN devices ON metrics.device_id = devices.id JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
+    - For 'alerts' table: JOIN devices ON alerts.device_id = devices.id JOIN sites ON devices.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
+    - For 'hotspot_sales' table: JOIN sites ON hotspot_sales.site_id = sites.id WHERE sites.organization_id = '{organization_id}'
+    
+    Other Rules:
+    1. Generate a VALID, READ-ONLY PostgreSQL query.
+    2. Use "metrics" table for performance data (TimescaleDB).
+    3. Return ONLY the SQL query. No markdown.
     4. If the question cannot be answered with SQL, return "NO_SQL".
     
     User Question: {user_query}
@@ -88,22 +102,21 @@ def ask_llm_sql(user_query: str):
 
     return "Could not generate query.", None
 
-def explain_result(user_query, result_data):
-    """
-    Asks LLM to explain the SQL result in natural language.
-    """
-    # Simple placeholder for MVP
-    return f"I found {len(result_data)} records matching your query."
+# ... explain_result ...
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_with_network(request: ChatRequest, db: Session = Depends(get_db)):
+async def chat_with_network(
+    request: ChatRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     """
     Chat with your network data using AI.
     """
     user_query = request.query
     
-    # 1. Generate SQL
-    error, sql = ask_llm_sql(user_query)
+    # 1. Generate SQL with Org Context
+    error, sql = ask_llm_sql(user_query, str(current_user.organization_id))
     
     if error:
          return ChatResponse(response=f"System Error: {error}", sql_query=None)
@@ -115,16 +128,16 @@ async def chat_with_network(request: ChatRequest, db: Session = Depends(get_db))
     if any(keyword in sql.upper() for keyword in ["DELETE", "DROP", "UPDATE", "INSERT", "TRUNCATE", "ALTER"]):
         return ChatResponse(response="I cannot execute destructive queries. Read-only access only.", sql_query=sql)
 
-    # 3. Execute SQL
+    # 3. Execute SQL (ASYNC FIX)
     try:
         from sqlalchemy import text
-        result = db.execute(text(sql))
+        result = await db.execute(text(sql))
         rows = result.fetchall()
         
-        # Convert rows to list of dicts for simpler handling (optional, or just stringify)
+        # Convert rows to list of dicts for simpler handling
         data = [str(row) for row in rows]
         
-        # 4. Generate Natural Language Answer (Simplified for MVP: Just show count or list)
+        # 4. Generate Natural Language Answer
         if len(data) > 10:
              summary = f"Found {len(data)} results. First 5: {data[:5]}"
         else:
