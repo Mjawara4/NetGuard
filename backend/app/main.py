@@ -145,10 +145,12 @@ app.include_router(devices.router, prefix=f"{settings.API_PREFIX}/inventory", ta
 app.include_router(monitoring.router, prefix=f"{settings.API_PREFIX}/monitoring", tags=["monitoring"])
 app.include_router(api_keys.router, prefix=f"{settings.API_PREFIX}/api-keys", tags=["api-keys"])
 
-from app.routers import agents, hotspot, admin
+from app.routers import agents, hotspot, admin, ai_ops, ai_analytics
 app.include_router(agents.router, prefix=f"{settings.API_PREFIX}/agents", tags=["agents"])
 app.include_router(hotspot.router, prefix=f"{settings.API_PREFIX}/hotspot", tags=["hotspot"])
 app.include_router(admin.router, prefix=f"{settings.API_PREFIX}/admin", tags=["admin"])
+app.include_router(ai_ops.router, prefix=f"{settings.API_PREFIX}/ai-ops", tags=["ai-ops"])
+app.include_router(ai_analytics.router, prefix=f"{settings.API_PREFIX}/analytics", tags=["analytics"])
 
 # Global Exception Handlers
 from app.core.exceptions import (

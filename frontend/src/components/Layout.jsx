@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Server, Map, FileText, Wifi, LogOut, Globe, Menu, X, Settings, ShieldCheck } from 'lucide-react';
+import AIChatParams from './AIChatParams';
 
 const SidebarItem = ({ to, icon: Icon, label, onClick }) => {
     const location = useLocation();
@@ -107,6 +108,9 @@ export default function Layout({ children }) {
             <div className="flex-1 overflow-auto pt-[calc(4rem+env(safe-area-inset-top))] lg:pt-0">
                 {children}
             </div>
+
+            {/* AI Assistant Float */}
+            <AIChatParams />
         </div>
     );
 }

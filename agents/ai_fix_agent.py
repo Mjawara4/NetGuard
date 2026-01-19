@@ -47,22 +47,37 @@ def ask_llm(alert, device_info):
         return None
 
     system_prompt = f"""
-    You are an expert Network Reliability Engineer. 
-    Analyze the following network alert and device status.
-    Recommend a specific remediation action.
+    You are an expert Network Reliability Engineer acting as an autonomous agent. 
+    Analyze the following network alert and device status to determine the best remediation strategy.
     
+    CONTEXT:
     Alert Message: {alert['message']}
-    Rule: {alert['rule_name']}
-    Device: {device_info.get('name', 'Unknown')} ({device_info.get('ip_address', 'Unknown')})
+    Rule Violated: {alert['rule_name']}
+    Device Name: {device_info.get('name', 'Unknown')}
+    Device IP: {device_info.get('ip_address', 'Unknown')}
     Platform: {device_info.get('platform', 'linux')}
     
-    Valid Actions: REBOOT, RESTART_SERVICE, CLEAR_CACHE, IPSLA_RESET, IGNORE, ESCALATE.
+    AVAILABLE ACTIONS:
+    1. REBOOT: Restart the device. Use only if critical and unresponsive.
+    2. RESTART_SERVICE: Restart a specific service (e.g., nginx, docker). 
+    3. CLEAR_CACHE: Clear temporary files or caches if disk is full.
+    4. IPSLA_RESET: Reset IP SLA statistics.
+    5. IGNORE: False positive or transient issue.
+    6. ESCALATE: Issue is complex, unknown, or risky. Requires human intervention.
     
+    SAFETY GUIDELINES:
+    - PREFER 'RESTART_SERVICE' over 'REBOOT'.
+    - If the issue is unclear, choose 'ESCALATE'.
+    - If the device is critical (e.g., Core Router), be extremely conservative.
+    - Provide a specific shell command for the action if applicable.
+    
+    RESPONSE FORMAT:
     Output strictly valid JSON:
     {{
-        "analysis": "Brief reasoning",
+        "analysis": "Concise reasoning for your decision (max 1 sentence)",
         "action": "ACTION_NAME",
-        "command": "Shell command to execute (or null)"
+        "command": "Specific shell command to execute (e.g., 'systemctl restart nginx') or null if not applicable or action is ESCALATE/IGNORE",
+        "confidence": "Low/Medium/High"
     }}
     """
 
@@ -229,24 +244,38 @@ def run_agent():
                          decision = ask_llm(alert, device)
                          
                          if decision:
-                             logger.info(f"AI Decision: {decision['action']} ({decision['analysis']})")
+                             logger.info(f"AI Decision: {decision['action']} (Confidence: {decision.get('confidence', 'Unknown')})")
+                             logger.info(f"Reasoning: {decision.get('analysis')}")
+
+                             action = decision['action']
+                             confidence = decision.get('confidence', 'Low').upper()
+                             command = decision.get('command')
+
+                             # SAFETY CHECKS
+                             is_safe = True
+                             if confidence == "LOW":
+                                 logger.warning("Confidence is LOW. Escalating instead of executing.")
+                                 is_safe = False
+                             elif action == "REBOOT" and confidence != "HIGH":
+                                 logger.warning("Reboot requested but confidence is not HIGH. Escalating.")
+                                 is_safe = False
                              
-                             if decision['action'] in ['REBOOT', 'RESTART_SERVICE', 'CLEAR_CACHE', 'IPSLA_RESET']:
-                                 success, output = execute_fix(decision['action'], decision.get('command'), device.get('ip_address'))
+                             if is_safe and action in ['REBOOT', 'RESTART_SERVICE', 'CLEAR_CACHE', 'IPSLA_RESET']:
+                                 success, output = execute_fix(action, command, device.get('ip_address'))
                                  
                                  status_code = "success" if success else "failed"
-                                 report_fix_action(alert['id'], decision['action'], status_code, output or decision['analysis'])
+                                 report_fix_action(alert['id'], action, status_code, output or decision['analysis'])
                                  
                                  if success:
                                      logger.info(f"Fix executed. Marking alert resolved.")
                                      update_alert_status(alert['id'], "auto_fixed", resolution_summary=decision['analysis'])
                                  
-                             elif decision['action'] == 'ESCALATE':
-                                 logger.info("AI decided to escalate to human.")
+                             elif not is_safe or action == 'ESCALATE':
+                                 logger.info("Escalating to human.")
                                  report_fix_action(alert['id'], "ESCALATE", "pending", decision['analysis'])
                                  
                              else:
-                                 logger.info("AI suggested no action or ignore.")
+                                 logger.info("AI suggested IGNORE or no action.")
                                  report_fix_action(alert['id'], "IGNORE", "skipped", decision['analysis'])
                          else:
                              logger.warning("AI failed to decide. Falling back to Classic rules.")

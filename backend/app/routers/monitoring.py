@@ -138,11 +138,16 @@ async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(
     return result.scalars().all()
 
 @router.post("/alerts", response_model=AlertResponse)
-async def create_alert(alert: AlertCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def create_alert(alert: AlertCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     new_alert = Alert(**alert.dict())
     db.add(new_alert)
     await db.commit()
     await db.refresh(new_alert)
+    
+    # Trigger Intelligent Grouping
+    from app.services.alert_grouping import process_alert_grouping
+    background_tasks.add_task(process_alert_grouping, str(new_alert.id))
+    
     return new_alert
 
 @router.post("/alerts/clear", response_model=dict)

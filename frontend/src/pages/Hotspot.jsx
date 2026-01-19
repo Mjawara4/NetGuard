@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../api';
-import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText, Globe, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText, Globe, AlertCircle, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
+import SalesForecast from '../components/SalesForecast';
 
 export default function Hotspot() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -398,6 +399,7 @@ export default function Hotspot() {
                         <TabButton id="history" label="Batches" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="logs" label="Logs" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="reports" label="Report" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="forecast" label="AI Forecast" icon={TrendingUp} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="profiles" label="Profiles" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="generate" label="Generator" icon={Printer} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="templates" label="Templates" icon={Settings} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -405,6 +407,12 @@ export default function Hotspot() {
                 </div>
 
                 <div className="space-y-8">
+                    {/* Forecast Tab */}
+                    {activeTab === 'forecast' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <SalesForecast />
+                        </div>
+                    )}
                     {/* Dashboard Tab */}
                     {activeTab === 'dashboard' && !showPrintView && dashboardData && (
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
