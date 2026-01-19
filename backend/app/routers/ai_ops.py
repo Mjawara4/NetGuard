@@ -29,9 +29,9 @@ def get_db_schema_context():
     """
     return """
     Tables:
-    - devices (id, name, ip_address, site_id, is_active, device_type)
+    - devices (id, name, ip_address, site_id, is_active, device_type) -- 'device_type' is a COLUMN in 'devices' table!
     - sites (id, name, location, organization_id)
-    - metrics (time, device_id, metric_type, value) -- metric_types: cpu, memory, latency, uptime_status
+    - metrics (time, device_id, metric_type, value)
     - alerts (id, device_id, rule_name, severity, status, message, created_at)
     - hotspot_sales (id, username, price, created_at, site_id)
     """
@@ -108,7 +108,52 @@ def ask_llm_intent(user_query: str, organization_id: str):
         return None, f"LLM Error: {str(e)}"
 
 
-# ... explain_result ...
+def explain_result(user_query, result_data, total_count):
+    """
+    Asks LLM to explain the SQL result in natural language.
+    """
+    if not result_data:
+        return "No results found matching your query."
+
+    # Limit context size
+    data_sample = result_data[:20]
+    
+    prompt = f"""
+    You are a helpful Network Ops Assistant.
+    
+    User Query: "{user_query}"
+    
+    Data Found ({len(data_sample)} of {total_count} records):
+    {data_sample}
+    
+    Task: Answer the user's question based on this data.
+    - Be concise and friendly.
+    - Summarize key findings (e.g., "Found 5 critical CPU alerts").
+    - If list is long, mention only the most important items (e.g., critical severity).
+    - Do not simply list all tuples.
+    """
+    
+    try:
+        if LLM_PROVIDER == "gemini":
+            from google import genai
+            client = genai.Client(api_key=LLM_API_KEY)
+            resp = client.models.generate_content(
+                model='gemini-2.5-flash-lite',
+                contents=prompt
+            )
+            return resp.text.strip()
+            
+        elif LLM_PROVIDER == "openai":
+            client = openai.OpenAI(api_key=LLM_API_KEY)
+            completion = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return completion.choices[0].message.content.strip()
+            
+    except Exception as e:
+        logger.error(f"Explanation Error: {e}")
+        return f"Found {total_count} records, but could not summarize them due to an error."
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_network(
