@@ -14,6 +14,7 @@ services:
       - "5432:5432"
     networks:
       - netguard-net
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -33,7 +34,7 @@ services:
     command: >
       sh -c "
         ip route add 10.13.13.0/24 via 172.25.0.100 || true &&
-        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
       "
     volumes:
       - ./backend:/app
