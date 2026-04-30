@@ -17,6 +17,7 @@ import time
 import random
 import string
 import logging
+import re
 import os
 import json
 import redis
