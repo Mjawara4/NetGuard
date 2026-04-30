@@ -159,27 +159,25 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
     """
     Syncs sold/used vouchers from MikroTik to the local VoucherSale table.
     A voucher is considered 'sold' if uptime > 0.
+    Optimized to fetch existing records in bulk and commit inserts in one transaction.
     """
+    connection = None
     try:
-        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
         db_port = getattr(device, 'ssh_port', 8728) or 8728
         port = 8728 if int(db_port) == 22 else db_port
-        
+
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
-        # Use standard resource (binary can sometimes have unexpected key names)
+
         users_resource = api.get_resource('/ip/hotspot/user')
         users = users_resource.get()
         logger.info(f"Sync: Found {len(users)} total hotspot users on device {device.name}")
-        connection.disconnect()
 
-        
         # Build price map
         hs_settings = device.voucher_template or {}
         profile_pricing = hs_settings.get('profile_pricing', {})
         default_currency = hs_settings.get('default_currency', 'TZS')
-        
+
         def get_pricing(p_name):
             if p_name in profile_pricing:
                 return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
@@ -189,63 +187,75 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
                 return float(match.group(1)), default_currency
             return 0, default_currency
 
-        # Find users with uptime
-        new_sales = 0
-        uptime_vouchers = 0
+        # Collect users with uptime > 0
+        uptime_users = []
         for u in users:
             uptime_str = u.get('uptime', '0s')
             uptime_sec = parse_routeros_time(uptime_str)
-            
             if uptime_sec > 0:
-                uptime_vouchers += 1
-                username = u.get('name')
-                comment = u.get('comment', '')
-                prof_name = u.get('profile', 'default')
-                
-                # Check for existing record to avoid duplicates
-                stmt = select(VoucherSale).where(VoucherSale.device_id == device.id, VoucherSale.username == username)
-                res = await db.execute(stmt)
-                existing = res.scalars().first()
-                
-                if not existing:
-                    price, currency = get_pricing(prof_name)
-                    
-                    # Try to parse creation date from comment: "Batch-pref | YYYY-MM-DD HH:MM:SS"
-                    # UPDATE: User requested to track sale based on Usage Date (Now), not creation date.
-                    sale_date = datetime.utcnow()
-                    # if '|' in comment:
-                    #     try:
-                    #         date_str = comment.split('|')[-1].strip()
-                    #         sale_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-                    #     except:
-                    #         pass
-                    
-                    sale = VoucherSale(
-                        device_id=device.id,
-                        site_id=device.site_id,
-                        username=username,
-                        profile=prof_name,
-                        comment=comment,
-                        uptime=uptime_str,
-                        uptime_sec=uptime_sec,
-                        bytes_total=int(u.get('bytes-in', 0)) + int(u.get('bytes-out', 0)),
-                        price=price,
-                        currency=currency,
-                        created_at=sale_date
-                    )
-                    db.add(sale)
-                    new_sales += 1
-        
-        logger.info(f"Sync Stats: {len(users)} total, {uptime_vouchers} with uptime, {new_sales} newly recorded")
-        
+                uptime_users.append({
+                    'name': u.get('name'),
+                    'comment': u.get('comment', ''),
+                    'profile': u.get('profile', 'default'),
+                    'uptime_str': uptime_str,
+                    'uptime_sec': uptime_sec,
+                    'bytes_in': int(u.get('bytes-in', 0)),
+                    'bytes_out': int(u.get('bytes-out', 0)),
+                })
+
+        if not uptime_users:
+            logger.info(f"Sync Stats: {len(users)} total, 0 with uptime, 0 newly recorded")
+            return
+
+        # Fetch existing usernames for this device in ONE query
+        usernames = [u['name'] for u in uptime_users]
+        existing_res = await db.execute(
+            select(VoucherSale.username).where(
+                VoucherSale.device_id == device.id,
+                VoucherSale.username.in_(usernames)
+            )
+        )
+        existing_usernames = {row[0] for row in existing_res.all()}
+
+        new_sales = 0
+        sale_date = datetime.utcnow()
+        for u in uptime_users:
+            username = u['name']
+            if username in existing_usernames:
+                continue
+
+            price, currency = get_pricing(u['profile'])
+            sale = VoucherSale(
+                device_id=device.id,
+                site_id=device.site_id,
+                username=username,
+                profile=u['profile'],
+                comment=u['comment'],
+                uptime=u['uptime_str'],
+                uptime_sec=u['uptime_sec'],
+                bytes_total=u['bytes_in'] + u['bytes_out'],
+                price=price,
+                currency=currency,
+                created_at=sale_date
+            )
+            db.add(sale)
+            new_sales += 1
+
+        logger.info(f"Sync Stats: {len(users)} total, {len(uptime_users)} with uptime, {new_sales} newly recorded")
+
         if new_sales > 0:
             await db.commit()
             logger.info(f"Synced {new_sales} new hotspot sales for device {device.name}")
 
-            
     except Exception as e:
         logger.error(f"Sync Hotspot Sales Error: {e}")
         await db.rollback()
+    finally:
+        if connection:
+            try:
+                connection.disconnect()
+            except Exception:
+                pass
 
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])

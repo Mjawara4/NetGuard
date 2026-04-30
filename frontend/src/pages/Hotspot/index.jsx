@@ -71,12 +71,12 @@ export default function Hotspot() {
         }
     }, [reportPeriod, reportStartDate, reportEndDate]);
 
-    // Poll Dashboard and Active tabs every 10 seconds
+    // Poll Dashboard and Active tabs every 15 seconds
     useEffect(() => {
         if (!selectedDevice) return;
         if (activeTab !== 'dashboard' && activeTab !== 'active') return;
         fetchData();
-        const interval = setInterval(fetchData, 10000);
+        const interval = setInterval(fetchData, 15000);
         return () => clearInterval(interval);
     }, [selectedDevice, activeTab]);
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { Link } from 'react-router-dom';
-import { AlertCircle, CheckCircle, Server, Activity, Zap } from 'lucide-react';
+import { AlertCircle, CheckCircle, Server, Activity, Zap, RefreshCw } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { PageHeader, StatCard, Badge, Skeleton } from '../components/ui';
 import ResponsiveTable from '../components/ResponsiveTable';
@@ -12,12 +12,15 @@ export default function Dashboard() {
     const [metrics, setMetrics] = useState([]);
     const [hotspotData, setHotspotData] = useState({ count: 0, topUsers: [], health: 0 });
     const [loading, setLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState(null);
+    const [selectedRouterId, setSelectedRouterId] = useState(null);
+    const [routers, setRouters] = useState([]);
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 5000);
+        const interval = setInterval(fetchData, 15000);
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedRouterId]);
 
     const fetchData = async () => {
         try {
@@ -37,10 +40,13 @@ export default function Dashboard() {
             setAlerts(alertsRes.data);
             setDevices(devicesRes.data);
 
-            const routers = devicesRes.data.filter(d => d.device_type === 'router' && d.is_active);
-            if (routers.length > 0) {
-                const routerId = routers[0].id;
-                const metricsRes = await api.get(`/monitoring/metrics/latest?device_id=${routerId}&limit=20&metric_type=cpu_usage`);
+            const activeRouters = devicesRes.data.filter(d => d.device_type === 'router' && d.is_active);
+            setRouters(activeRouters);
+
+            // Pick router to chart: selected > first > none
+            const targetRouterId = selectedRouterId || (activeRouters[0]?.id);
+            if (targetRouterId) {
+                const metricsRes = await api.get(`/monitoring/metrics/latest?device_id=${targetRouterId}&limit=20&metric_type=cpu_usage`);
                 const realMetrics = metricsRes.data.sort((a, b) => new Date(a.time) - new Date(b.time)).map(m => ({
                     time: new Date(m.time).getTime(),
                     value: m.value
@@ -58,6 +64,7 @@ export default function Dashboard() {
             useMockMetrics();
         } finally {
             setLoading(false);
+            setLastUpdated(new Date());
         }
     };
 
@@ -68,6 +75,11 @@ export default function Dashboard() {
             value: Math.floor(Math.random() * 100) + 10
         }));
         setMetrics(mockMetrics);
+    };
+
+    const handleRefresh = () => {
+        setLoading(true);
+        fetchData();
     };
 
     const triggerAgent = async (agentName) => {
@@ -292,11 +304,39 @@ export default function Dashboard() {
 
                     {/* Traffic Chart */}
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700">
-                        <div className="flex items-center justify-between mb-8">
-                            <h2 className="text-xl font-black text-gray-900 dark:text-white">CPU Performance</h2>
-                            <div className="flex items-center gap-2">
-                                <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                                <span className="text-xs font-bold text-gray-400 uppercase">Real-time</span>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
+                            <div>
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white">CPU Performance</h2>
+                                {lastUpdated && (
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 font-bold uppercase tracking-wider mt-1">
+                                        Last updated: {lastUpdated.toLocaleTimeString()}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {routers.length > 0 && (
+                                    <select
+                                        value={selectedRouterId || ''}
+                                        onChange={(e) => setSelectedRouterId(e.target.value || null)}
+                                        className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="">All Routers (Auto)</option>
+                                        {routers.map(r => (
+                                            <option key={r.id} value={r.id}>{r.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                                <button
+                                    onClick={handleRefresh}
+                                    className="p-2 bg-gray-50 dark:bg-gray-900 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-500 hover:text-blue-600 transition-all"
+                                    title="Refresh now"
+                                >
+                                    <RefreshCw size={16} />
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
+                                    <span className="text-xs font-bold text-gray-400 uppercase">Real-time</span>
+                                </div>
                             </div>
                         </div>
                         <div className="h-64">

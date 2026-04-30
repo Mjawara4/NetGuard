@@ -96,7 +96,7 @@ export default function Devices() {
         if (selectedDevice) {
             interval = setInterval(() => {
                 fetchDeviceMetrics(selectedDevice.id);
-            }, 3000);
+            }, 10000);
         }
         return () => clearInterval(interval);
     }, [selectedDevice]);
