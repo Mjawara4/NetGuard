@@ -42,6 +42,76 @@ except Exception:
 def cache_key(device_id: str, endpoint: str) -> str:
     return f"hotspot:{device_id}:{endpoint}"
 
+# RouterOS API connection cache (shared across requests within this process)
+_router_pool_cache = {}
+_CONN_CACHE_TTL = int(os.getenv("ROUTER_CONN_CACHE_TTL", "60"))
+
+class PooledConnection:
+    """Wrapper that keeps the underlying pool alive for reuse."""
+    __slots__ = ("_pool",)
+
+    def __init__(self, pool):
+        self._pool = pool
+
+    def get_api(self):
+        return self._pool.get_api()
+
+    def disconnect(self):
+        # Intentional no-op: cache manages lifecycle
+        pass
+
+def _cache_key(ip, port):
+    return (ip, int(port))
+
+def get_api_pool(ip, username, password, port=8728):
+    key = _cache_key(ip, port)
+    now = time.time()
+    cached = _router_pool_cache.get(key)
+
+    if cached:
+        pool, last_used = cached
+        if now - last_used < _CONN_CACHE_TTL:
+            try:
+                api = pool.get_api()
+                api.get_resource('/system/resource').get()
+                _router_pool_cache[key] = (pool, now)
+                return PooledConnection(pool)
+            except Exception:
+                logger.warning(f"Stale pool for {ip}:{port}, reconnecting...")
+                try:
+                    pool.disconnect()
+                except Exception:
+                    pass
+        else:
+            try:
+                pool.disconnect()
+            except Exception:
+                pass
+
+    pool = routeros_api.RouterOsApiPool(
+        ip,
+        username=username,
+        password=password,
+        port=port,
+        plaintext_login=True,
+        use_ssl=False
+    )
+    _router_pool_cache[key] = (pool, now)
+    logger.info(f"New RouterOS API connection to {ip}:{port}")
+    return PooledConnection(pool)
+
+def _evict_pool(ip, port=8728):
+    """Forcefully close and remove a cached pool (used on protocol desync)."""
+    key = _cache_key(ip, port)
+    cached = _router_pool_cache.pop(key, None)
+    if cached:
+        pool, _ = cached
+        try:
+            pool.disconnect()
+        except Exception:
+            pass
+        logger.info(f"Evicted pool for {ip}:{port}")
+
 # Schemas
 class HotspotUser(BaseModel):
     name: str
@@ -267,29 +337,38 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-        
+
+    # Try cache first
+    key = cache_key(device_id, "users")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return [HotspotUser(**item) for item in json.loads(cached)]
+        except Exception:
+            pass
+
     try:
         # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
         db_port = getattr(device, 'ssh_port', 8728) or 8728
         port = 8728 if int(db_port) == 22 else db_port
-        
+
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         users = api.get_resource('/ip/hotspot/user').get()
-        connection.disconnect()
-        
-        return [HotspotUser(
-            name=u.get('name'), 
-            password=u.get('password'), 
+
+        result = [HotspotUser(
+            name=u.get('name'),
+            password=u.get('password'),
             profile=u.get('profile'),
             uptime=u.get('uptime'),
             bytes_in=int(u.get('bytes-in', 0)),
@@ -298,7 +377,15 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
             limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
             comment=u.get('comment')
         ) for u in users]
-        
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 15, json.dumps([r.dict() for r in result]))
+            except Exception:
+                pass
+
+        return result
+
     except Exception as e:
         logger.error(f"Hotspot API Error: {e}")
         error_msg = str(e)
@@ -396,23 +483,33 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-        
+
+    # Try cache first
+    key = cache_key(device_id, "profiles")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         profiles = api.get_resource('/ip/hotspot/user/profile').get()
         active = api.get_resource('/ip/hotspot/active').get()
-        
+
         # Calculate active users per profile
         active_per_profile = {}
         for a in active:
@@ -425,28 +522,33 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         # Enriched Profiles with user counts:
         users = api.get_resource('/ip/hotspot/user').get()
         user_to_profile = {u.get('name'): u.get('profile') for u in users}
-        
+
         profile_counts = {p.get('name'): 0 for p in profiles}
         for a in active:
             u_name = a.get('user')
             p_name = user_to_profile.get(u_name)
             if p_name in profile_counts:
                 profile_counts[p_name] += 1
-        
+
         # Parse price/currency from local database settings (Device.voucher_template)
         settings = device.voucher_template or {}
         profile_pricing = settings.get('profile_pricing', {})
         default_currency = settings.get('default_currency', 'TZS')
-        
+
         for p in profiles:
             p_name = p.get('name')
             p['active_users'] = profile_counts.get(p_name, 0)
-            
+
             pricing = profile_pricing.get(p_name, {})
             p['custom_price'] = pricing.get('price', 0)
             p['custom_currency'] = pricing.get('currency', default_currency)
 
-        connection.disconnect()
+        if redis_client:
+            try:
+                redis_client.setex(key, 15, json.dumps(profiles))
+            except Exception:
+                pass
+
         return profiles
     except Exception as e:
         logger.error(f"Hotspot Profiles Error: {e}")
@@ -554,7 +656,7 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
 
         if redis_client:
             try:
-                redis_client.setex(key, 5, json.dumps(result))
+                redis_client.setex(key, 15, json.dumps(result))
             except Exception:
                 pass
 
@@ -1003,16 +1105,11 @@ async def bulk_delete_users(
 
         # Function to (re)initialize connection and get resource
         def get_resource():
-            # Close existing if it exists
+            # Evict stale pool and force fresh connection on protocol desync
             nonlocal connection, api, resource
-            if connection:
-                try:
-                    connection.disconnect()
-                except:
-                    pass
-            
+            _evict_pool(device.ip_address, port)
+
             # Re-establish
-            port = getattr(device, 'ssh_port', 8728) or 8728
             connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
             api = connection.get_api()
             # Use binary resource for more raw control
