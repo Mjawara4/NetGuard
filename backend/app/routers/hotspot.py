@@ -17,10 +17,29 @@ import time
 import random
 import string
 import logging
+import os
+import json
+import redis
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Redis client for caching hotspot reads
+try:
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "redis"),
+        port=6379,
+        db=0,
+        decode_responses=True
+    )
+    redis_client.ping()
+except Exception:
+    redis_client = None
+    logger.warning("Redis unavailable; hotspot caching disabled.")
+
+def cache_key(device_id: str, endpoint: str) -> str:
+    return f"hotspot:{device_id}:{endpoint}"
 
 # Schemas
 class HotspotUser(BaseModel):
@@ -482,35 +501,53 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Device not found")
     
     decrypt_device_secrets(device)
-         
+
+    # Try cache first
+    key = cache_key(device_id, "summary")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         active_resource = api.get_resource('/ip/hotspot/active')
         user_resource = api.get_resource('/ip/hotspot/user')
-        
+
         active_sessions = active_resource.get()
         total_users = user_resource.get()
-        
+
         total_bytes_in = sum(int(a.get('bytes-in', 0)) for a in active_sessions)
         total_bytes_out = sum(int(a.get('bytes-out', 0)) for a in active_sessions)
-        
+
         # Profile Distribution
         profile_dist = {}
         for u in total_users:
             p = u.get('profile', 'default')
             profile_dist[p] = profile_dist.get(p, 0) + 1
-            
+
         connection.disconnect()
-        
-        return {
+
+        result = {
             "active_count": len(active_sessions),
             "total_vouchers": len(total_users),
             "total_data_mb": round((total_bytes_in + total_bytes_out) / 1024 / 1024, 2),
             "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
         }
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 5, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     except Exception as e:
         logger.error(f"Hotspot Summary Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -639,7 +676,17 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
     
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-    
+
+    # Try cache first
+    key = cache_key(device_id, "active")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return [HotspotActive(**item) for item in json.loads(cached)]
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
@@ -647,26 +694,26 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
         active = api.get_resource('/ip/hotspot/active').get()
         users = api.get_resource('/ip/hotspot/user').get()
         connection.disconnect()
-        
+
         user_limits = {
             u.get('name'): {
-                'limit-uptime': u.get('limit-uptime'), 
+                'limit-uptime': u.get('limit-uptime'),
                 'limit-bytes-total': int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None
-            } 
+            }
             for u in users
         }
-        
+
         results = []
         for a in active:
             username = a.get('user')
             uptime_str = a.get('uptime', '0s')
-            
+
             limits = user_limits.get(username, {})
             limit_str = limits.get('limit-uptime')
             limit_bytes = limits.get('limit-bytes-total')
-            
+
             remaining = "UNLIM"
-            
+
             # 1. Prefer direct router value if available
             router_time_left = a.get('session-time-left')
             if router_time_left:
@@ -690,6 +737,13 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
                 limit_uptime=limit_str,
                 limit_bytes_total=limit_bytes
             ))
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 5, json.dumps([r.dict() for r in results]))
+            except Exception:
+                pass
+
         return results
     except Exception as e:
         logger.error(f"Active Users Error: {e}")

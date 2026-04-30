@@ -72,39 +72,39 @@ export default function Reports() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <div className="max-w-7xl mx-auto">
                 <div className="mb-8">
-                    <h1 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight leading-none">
+                    <h1 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white tracking-tight leading-none">
                         Network <span className="text-blue-600">Analytics</span>
                     </h1>
-                    <p className="text-gray-500 mt-2 font-medium text-sm sm:text-base">Insights and historical telemetry data.</p>
+                    <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium text-sm sm:text-base">Insights and historical telemetry data.</p>
                 </div>
 
-                <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-8 flex flex-col sm:flex-row gap-4 items-center">
+                <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 sm:p-6 mb-8 flex flex-col sm:flex-row gap-4 items-center">
                     <div className="flex items-center gap-3 w-full sm:w-auto">
-                        <span className="font-bold text-[10px] uppercase tracking-widest text-gray-400">Device</span>
-                        <select className="flex-1 sm:w-64 bg-gray-50 border-none rounded-xl px-4 py-2.5 font-bold text-sm focus:ring-2 focus:ring-blue-500 transition-all" value={selectedDevice} onChange={e => setSelectedDevice(e.target.value)}>
+                        <span className="font-bold text-[10px] uppercase tracking-widest text-gray-400 dark:text-gray-500">Device</span>
+                        <select className="flex-1 sm:w-64 bg-gray-50 dark:bg-gray-900 border-none rounded-xl px-4 py-2.5 font-bold text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all" value={selectedDevice} onChange={e => setSelectedDevice(e.target.value)}>
                             {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                         </select>
                     </div>
-                    <div className="flex bg-gray-50 rounded-xl p-1.5 w-full sm:w-auto overflow-x-auto no-scrollbar">
-                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '1h' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`} onClick={() => setTimeRange('1h')}>1H</button>
-                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '24h' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`} onClick={() => setTimeRange('24h')}>24H</button>
-                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '7d' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`} onClick={() => setTimeRange('7d')}>7D</button>
+                    <div className="flex bg-gray-50 dark:bg-gray-900 rounded-xl p-1.5 w-full sm:w-auto overflow-x-auto no-scrollbar">
+                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '1h' ? 'bg-white dark:bg-gray-800 shadow-sm text-blue-600' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setTimeRange('1h')}>1H</button>
+                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '24h' ? 'bg-white dark:bg-gray-800 shadow-sm text-blue-600' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setTimeRange('24h')}>24H</button>
+                        <button className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${timeRange === '7d' ? 'bg-white dark:bg-gray-800 shadow-sm text-blue-600' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`} onClick={() => setTimeRange('7d')}>7D</button>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 gap-8">
                     {loading ? (
-                        <div className="bg-white rounded-3xl p-20 shadow-sm border border-gray-100 text-center">
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl p-20 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
                             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                            <p className="font-black text-gray-400 uppercase tracking-widest text-xs animate-pulse">Aggregating telemetry...</p>
+                            <p className="font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-xs animate-pulse">Aggregating telemetry...</p>
                         </div>
                     ) : (
                         <>
-                            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                <h3 className="font-black text-gray-900 uppercase tracking-widest text-[10px] mb-6 flex items-center gap-2">
+                            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[10px] mb-6 flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-blue-600"></div>
                                     Performance Thresholds (CPU %)
                                 </h3>
@@ -128,7 +128,7 @@ export default function Reports() {
                             </div>
 
                             <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-                                <h3 className="font-black text-gray-900 uppercase tracking-widest text-[10px] mb-6 flex items-center gap-2">
+                                <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[10px] mb-6 flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                                     Hotspot Data Throughput (MB)
                                 </h3>

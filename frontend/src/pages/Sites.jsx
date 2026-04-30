@@ -60,15 +60,15 @@ export default function Sites() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <div className="max-w-7xl mx-auto">
                 {/* Page Header */}
                 <div className="mb-8 sm:mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div>
-                        <h1 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight leading-none">
+                        <h1 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white tracking-tight leading-none">
                             Operational <span className="text-blue-600">Sites</span>
                         </h1>
-                        <p className="text-gray-500 mt-2 font-medium text-sm sm:text-base">Network locations and logical segmentation.</p>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium text-sm sm:text-base">Network locations and logical segmentation.</p>
                     </div>
                     <button
                         onClick={() => setShowModal(true)}
@@ -109,20 +109,20 @@ export default function Sites() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
                     {sites.map((site) => (
-                        <div key={site.id} className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                        <div key={site.id} className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
                             <div className="flex justify-between items-start mb-6">
                                 <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
                                     <MapPin size={24} />
                                 </div>
-                                <div className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${site.auto_fix_enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
+                                <div className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase ${site.auto_fix_enabled ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'}`}>
                                     AF {site.auto_fix_enabled ? 'ON' : 'OFF'}
                                 </div>
                             </div>
 
-                            <h3 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight mb-2 truncate">{site.name}</h3>
-                            <p className="text-gray-400 text-xs sm:text-sm font-medium mb-8 truncate">{site.location || 'Remote Location'}</p>
+                            <h3 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight mb-2 truncate">{site.name}</h3>
+                            <p className="text-gray-400 dark:text-gray-500 text-xs sm:text-sm font-medium mb-8 truncate">{site.location || 'Remote Location'}</p>
 
-                            <div className="pt-6 border-t border-gray-50">
+                            <div className="pt-6 border-t border-gray-50 dark:border-gray-700">
                                 <Link to="/devices" className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2 group/link">
                                     View Hardware
                                     <Plus size={14} className="group-hover/link:rotate-90 transition-transform" />
@@ -132,11 +132,11 @@ export default function Sites() {
                     ))}
                     {sites.length === 0 && (
                         <div className="col-span-full py-24 text-center">
-                            <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <MapPin size={32} className="text-gray-200" />
+                            <div className="w-20 h-20 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <MapPin size={32} className="text-gray-200 dark:text-gray-600" />
                             </div>
-                            <h3 className="text-xl font-black text-gray-900 mb-2">No Active Sites</h3>
-                            <p className="text-gray-400 font-medium max-w-xs mx-auto text-sm">Create an operational site to begin mapping your infrastructure.</p>
+                            <h3 className="text-xl font-black text-gray-900 dark:text-white mb-2">No Active Sites</h3>
+                            <p className="text-gray-400 dark:text-gray-500 font-medium max-w-xs mx-auto text-sm">Create an operational site to begin mapping your infrastructure.</p>
                         </div>
                     )}
                 </div>

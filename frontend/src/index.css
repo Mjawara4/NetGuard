@@ -6,9 +6,18 @@ body {
   background-color: #f3f4f6;
   color: #1f2937;
   touch-action: manipulation;
-  /* Improves touch response */
   -webkit-tap-highlight-color: transparent;
-  /* Removes gray highlight on tap */
+}
+
+.dark body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+@layer base {
+  *:focus-visible {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+  }
 }
 
 @layer components {
@@ -19,6 +28,14 @@ body {
   .input-field {
     @apply w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white;
   }
+
+  .page-container {
+    @apply min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12;
+  }
+
+  .content-max {
+    @apply max-w-7xl mx-auto;
+  }
 }
 
 @layer utilities {
@@ -28,8 +45,19 @@ body {
 
   .no-scrollbar {
     -ms-overflow-style: none;
-    /* IE and Edge */
     scrollbar-width: none;
-    /* Firefox */
+  }
+
+  .animate-bounce-slow {
+    animation: bounce-slow 3s infinite;
+  }
+
+  @keyframes bounce-slow {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
   }
 }
