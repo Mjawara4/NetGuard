@@ -127,7 +127,7 @@ export default function Reports() {
                                 </div>
                             </div>
 
-                            <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
+                            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
                                 <h3 className="font-black text-gray-900 dark:text-white uppercase tracking-widest text-[10px] mb-6 flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                                     Hotspot Data Throughput (MB)

@@ -162,10 +162,10 @@ export default function Devices() {
                 {/* Page Header */}
                 <div className="mb-8 sm:mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div>
-                        <h1 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight leading-none">
+                        <h1 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white tracking-tight leading-none">
                             Device <span className="text-blue-600">Inventory</span>
                         </h1>
-                        <p className="text-gray-500 mt-2 font-medium text-sm sm:text-base">Manage and monitor physical network assets.</p>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium text-sm sm:text-base">Manage and monitor physical network assets.</p>
                     </div>
                     <div className="flex gap-3">
                         <button
@@ -277,8 +277,8 @@ export default function Devices() {
                                             <button onClick={() => handleEditClick(selectedDevice)} className="p-2 hover:bg-amber-50 text-amber-500 rounded-xl transition-colors" title="Edit Device">
                                                 <Cpu size={24} /> {/* Reusing CPU icon as edit/settings placeholder or use specialized icon if imported */}
                                             </button>
-                                            <button onClick={() => setSelectedDevice(null)} className="p-2 hover:bg-gray-100 rounded-xl transition-colors">
-                                                <X size={24} className="text-gray-400" />
+                                            <button onClick={() => setSelectedDevice(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors">
+                                                <X size={24} className="text-gray-400 dark:text-gray-500" />
                                             </button>
                                         </div>
                                     </div>
@@ -341,45 +341,45 @@ export default function Devices() {
                 size="lg"
             >
                 <div className="pb-4">
-                    <p className="text-gray-500 text-xs sm:text-sm mb-6">Expand your NetGuard network by registering a new device.</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mb-6">Expand your NetGuard network by registering a new device.</p>
                     <form onSubmit={handleAdd} className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div className="sm:col-span-2">
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Name</label>
-                                <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} required placeholder="e.g. Core_Switch_01" />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} required placeholder="e.g. Core_Switch_01" />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">IP Address</label>
-                                <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold text-sm" value={newDevice.ip_address} onChange={e => setNewDevice({ ...newDevice, ip_address: e.target.value })} required placeholder="192.168.1.1" />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-mono font-bold text-sm" value={newDevice.ip_address} onChange={e => setNewDevice({ ...newDevice, ip_address: e.target.value })} required placeholder="192.168.1.1" />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Type</label>
-                                <select className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newDevice.device_type} onChange={e => setNewDevice({ ...newDevice, device_type: e.target.value })}>
+                                <select className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newDevice.device_type} onChange={e => setNewDevice({ ...newDevice, device_type: e.target.value })}>
                                     <option value="router">Router</option>
                                     <option value="switch">Switch</option>
                                     <option value="server">Server</option>
                                 </select>
                             </div>
-                            <div className="sm:col-span-2 bg-gray-50 p-6 rounded-2xl space-y-4">
+                            <div className="sm:col-span-2 bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl space-y-4">
                                 <div className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Control Credentials (Optional)</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Username</label>
-                                        <input className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="admin" value={newDevice.ssh_username || ''} onChange={e => setNewDevice({ ...newDevice, ssh_username: e.target.value })} />
+                                        <input className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="admin" value={newDevice.ssh_username || ''} onChange={e => setNewDevice({ ...newDevice, ssh_username: e.target.value })} />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Password</label>
-                                        <input type="password" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="••••••••" value={newDevice.ssh_password || ''} onChange={e => setNewDevice({ ...newDevice, ssh_password: e.target.value })} />
+                                        <input type="password" className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="••••••••" value={newDevice.ssh_password || ''} onChange={e => setNewDevice({ ...newDevice, ssh_password: e.target.value })} />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Port</label>
-                                        <input type="number" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="22" value={newDevice.ssh_port || 22} onChange={e => setNewDevice({ ...newDevice, ssh_port: parseInt(e.target.value) })} />
+                                        <input type="number" className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="22" value={newDevice.ssh_port || 22} onChange={e => setNewDevice({ ...newDevice, ssh_port: parseInt(e.target.value) })} />
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4">
-                            <button type="button" onClick={() => setShowAddModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
+                            <button type="button" onClick={() => setShowAddModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Discard</button>
                             <button type="submit" className="order-1 sm:order-2 flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Register</button>
                         </div>
                     </form>
@@ -394,45 +394,45 @@ export default function Devices() {
                 size="lg"
             >
                 <div className="pb-4">
-                    <p className="text-gray-500 text-xs sm:text-sm mb-6">Update configuration for {editDeviceData.name}</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mb-6">Update configuration for {editDeviceData.name}</p>
                     <form onSubmit={handleUpdate} className="space-y-6">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div className="sm:col-span-2">
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Name</label>
-                                <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.name || ''} onChange={e => setEditDeviceData({ ...editDeviceData, name: e.target.value })} required />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.name || ''} onChange={e => setEditDeviceData({ ...editDeviceData, name: e.target.value })} required />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">IP Address</label>
-                                <input className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-mono font-bold text-sm" value={editDeviceData.ip_address || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ip_address: e.target.value })} required />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-mono font-bold text-sm" value={editDeviceData.ip_address || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ip_address: e.target.value })} required />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Device Type</label>
-                                <select className="w-full bg-gray-50 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.device_type} onChange={e => setEditDeviceData({ ...editDeviceData, device_type: e.target.value })}>
+                                <select className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-2xl px-5 py-3.5 focus:ring-2 focus:ring-amber-500 transition-all font-bold text-sm" value={editDeviceData.device_type} onChange={e => setEditDeviceData({ ...editDeviceData, device_type: e.target.value })}>
                                     <option value="router">Router</option>
                                     <option value="switch">Switch</option>
                                     <option value="server">Server</option>
                                 </select>
                             </div>
-                            <div className="sm:col-span-2 bg-gray-50 p-6 rounded-2xl space-y-4">
+                            <div className="sm:col-span-2 bg-gray-50 dark:bg-gray-700/50 p-6 rounded-2xl space-y-4">
                                 <div className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Control Credentials</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Username</label>
-                                        <input className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_username || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_username: e.target.value })} />
+                                        <input className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_username || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_username: e.target.value })} />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Password</label>
-                                        <input type="password" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="• • • • •" value={editDeviceData.ssh_password || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_password: e.target.value })} />
+                                        <input type="password" className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" placeholder="• • • • •" value={editDeviceData.ssh_password || ''} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_password: e.target.value })} />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Port</label>
-                                        <input type="number" className="w-full bg-white border border-gray-100 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_port || 22} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_port: parseInt(e.target.value) })} />
+                                        <input type="number" className="w-full bg-white dark:bg-gray-700 dark:text-gray-200 border border-gray-100 dark:border-gray-600 rounded-xl px-4 py-2 text-xs sm:text-sm font-bold" value={editDeviceData.ssh_port || 22} onChange={e => setEditDeviceData({ ...editDeviceData, ssh_port: parseInt(e.target.value) })} />
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4">
-                            <button type="button" onClick={() => setShowEditModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
+                            <button type="button" onClick={() => setShowEditModal(false)} className="order-2 sm:order-1 flex-1 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Discard</button>
                             <button type="submit" className="order-1 sm:order-2 flex-1 px-6 py-4 bg-amber-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-amber-600 shadow-xl shadow-amber-100 transition-all active:scale-95">Save Changes</button>
                         </div>
                     </form>

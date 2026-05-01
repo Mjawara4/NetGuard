@@ -89,18 +89,18 @@ export default function Sites() {
                         <form onSubmit={handleAdd} className="space-y-6">
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Site Name</label>
-                                <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} required />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.name} onChange={e => setNewSite({ ...newSite, name: e.target.value })} required />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Physical Location</label>
-                                <input className="w-full bg-gray-50 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.location} onChange={e => setNewSite({ ...newSite, location: e.target.value })} />
+                                <input className="w-full bg-gray-50 dark:bg-gray-700 dark:text-gray-200 border-none rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" value={newSite.location} onChange={e => setNewSite({ ...newSite, location: e.target.value })} />
                             </div>
                             <div className="flex items-center gap-3">
-                                <input type="checkbox" className="w-5 h-5 rounded-lg border-gray-200 text-blue-600 focus:ring-blue-500" checked={newSite.auto_fix_enabled} onChange={e => setNewSite({ ...newSite, auto_fix_enabled: e.target.checked })} />
-                                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Enable Auto-Fix</label>
+                                <input type="checkbox" className="w-5 h-5 rounded-lg border-gray-200 dark:border-gray-600 text-blue-600 focus:ring-blue-500" checked={newSite.auto_fix_enabled} onChange={e => setNewSite({ ...newSite, auto_fix_enabled: e.target.checked })} />
+                                <label className="text-[10px] font-black text-gray-600 dark:text-gray-300 uppercase tracking-widest">Enable Auto-Fix</label>
                             </div>
                             <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                                <button type="button" onClick={() => setShowModal(false)} className="order-2 sm:order-1 flex-1 px-4 py-3 rounded-xl font-black text-xs uppercase text-gray-400 hover:bg-gray-50 transition-colors">Discard</button>
+                                <button type="button" onClick={() => setShowModal(false)} className="order-2 sm:order-1 flex-1 px-4 py-3 rounded-xl font-black text-xs uppercase text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Discard</button>
                                 <button type="submit" className="order-1 sm:order-2 flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase shadow-lg shadow-blue-100">Save Site</button>
                             </div>
                         </form>

@@ -588,7 +588,7 @@ export default function Hotspot() {
                     )}
                     {/* Print View Overlay/Content */}
                     {showPrintView && (
-                        <div className="bg-white rounded-3xl shadow-xl border border-blue-100 overflow-hidden animate-in fade-in zoom-in duration-300 mb-8 no-print">
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl border border-blue-100 dark:border-blue-900/30 overflow-hidden animate-in fade-in zoom-in duration-300 mb-8 no-print">
                             <div className="bg-blue-600 p-6 flex flex-col sm:flex-row justify-between items-center text-white gap-4">
                                 <div className="flex items-center gap-4">
                                     <div className="bg-white/20 p-2 rounded-lg">
@@ -604,12 +604,12 @@ export default function Hotspot() {
                                     <button onClick={() => window.print()} className="flex-1 sm:flex-none bg-white text-blue-600 px-6 py-2 rounded-xl font-black text-[10px] sm:text-xs uppercase shadow-lg transition-all active:scale-95">Print Now</button>
                                 </div>
                             </div>
-                            <div className="p-4 sm:p-8 bg-gray-50 grid grid-cols-2 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto max-h-[400px]">
+                            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900/50 grid grid-cols-2 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto max-h-[400px]">
                                 {generatedBatch.map((u, i) => (
-                                    <div key={i} className="bg-white p-3 sm:p-4 rounded-xl border border-gray-200 shadow-sm text-center">
-                                        <div className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Voucher</div>
-                                        <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base sm:text-lg'} font-mono font-black text-blue-600 bg-blue-50 py-1 sm:py-2 rounded-lg border border-blue-100 mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>{u.username}</div>
-                                        <div className="text-[7px] sm:text-[8px] text-gray-400 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
+                                    <div key={i} className="bg-white dark:bg-gray-800 p-3 sm:p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-center">
+                                        <div className="text-[8px] sm:text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Voucher</div>
+                                        <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base sm:text-lg'} font-mono font-black py-1 sm:py-2 rounded-lg border mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '15', borderColor: template.color_primary + '30' }}>{u.username}</div>
+                                        <div className="text-[7px] sm:text-[8px] text-gray-400 dark:text-gray-500 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
                                     </div>
                                 ))}
                             </div>
@@ -1606,14 +1606,14 @@ export default function Hotspot() {
                                             </button>
                                         </div>
                                     </form>
-                                    <div className="mt-8 pt-8 border-t border-gray-100">
+                                    <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700">
                                         <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Preview</h4>
-                                        <div className="w-48 mx-auto p-4 border border-dashed border-gray-300 rounded-lg text-center bg-gray-50">
+                                        <div className="w-48 mx-auto p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center bg-gray-50 dark:bg-gray-700/50">
                                             <div className="text-[10px] font-black uppercase tracking-widest leading-none mb-2" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                            <div className="bg-white border rounded-md py-3 mb-2 w-full flex justify-center items-center" style={{ borderColor: template.color_primary + '40', backgroundColor: template.color_primary + '10' }}>
+                                            <div className="border rounded-md py-3 mb-2 w-full flex justify-center items-center" style={{ borderColor: template.color_primary + '40', backgroundColor: template.color_primary + '15' }}>
                                                 <div className="font-mono text-xl font-black leading-none tracking-tight" style={{ color: template.color_primary }}>abc1234</div>
                                             </div>
-                                            <div className="text-[8px] font-bold text-gray-400 uppercase">{template.footer_text}</div>
+                                            <div className="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase">{template.footer_text}</div>
                                         </div>
                                     </div>
                                 </div>

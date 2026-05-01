@@ -30,13 +30,13 @@ const SalesForecast = () => {
     };
 
     if (loading) return (
-        <div className="p-8 flex justify-center items-center text-gray-500">
+        <div className="p-8 flex justify-center items-center text-gray-500 dark:text-gray-400">
             <Loader className="animate-spin mr-2" /> Loading AI Forecast...
         </div>
     );
 
     if (error) return (
-        <div className="p-8 text-center text-red-500 bg-red-50 rounded-xl border border-red-100">
+        <div className="p-8 text-center text-red-500 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800">
             <AlertCircle className="mx-auto mb-2" />
             {error}
         </div>
@@ -64,9 +64,9 @@ const SalesForecast = () => {
             </div>
 
             {/* Chart */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h4 className="font-semibold text-gray-700 mb-6 flex items-center gap-2">
-                    <Calendar size={18} className="text-gray-400" />
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                <h4 className="font-semibold text-gray-700 dark:text-gray-200 mb-6 flex items-center gap-2">
+                    <Calendar size={18} className="text-gray-400 dark:text-gray-500" />
                     Forecast Visualization
                 </h4>
                 <div className="h-[300px] w-full">
