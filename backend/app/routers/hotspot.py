@@ -197,33 +197,22 @@ def format_routeros_time(seconds: int) -> str:
     """Converts seconds back to RouterOS time string."""
     if seconds <= 0:
         return "0s"
-    
+
     periods = [
         ('d', 86400),
         ('h', 3600),
         ('m', 60),
         ('s', 1)
     ]
-    
+
     result = ""
     for suffix, count in periods:
         if seconds >= count:
             val = seconds // count
             result += f"{val}{suffix}"
             seconds %= count
-            
-    return result or "0s"
 
-def get_api_pool(ip, username, password, port=8728):
-    connection = routeros_api.RouterOsApiPool(
-        ip, 
-        username=username, 
-        password=password,
-        port=port,
-        plaintext_login=True,
-        use_ssl=False
-    )
-    return connection
+    return result or "0s"
 
 async def sync_hotspot_sales(device: Device, db: AsyncSession):
     """
@@ -279,22 +268,32 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
 
         # Fetch existing usernames for this device in ONE query
         usernames = [u['name'] for u in uptime_users]
+        # Fetch full existing records so we can backfill price=0 entries
         existing_res = await db.execute(
-            select(VoucherSale.username).where(
+            select(VoucherSale).where(
                 VoucherSale.device_id == device.id,
                 VoucherSale.username.in_(usernames)
             )
         )
-        existing_usernames = {row[0] for row in existing_res.all()}
+        existing_sales = {sale.username: sale for sale in existing_res.scalars().all()}
+        existing_usernames = set(existing_sales.keys())
 
         new_sales = 0
+        updated_prices = 0
         sale_date = datetime.utcnow()
         for u in uptime_users:
             username = u['name']
+            price, currency = get_pricing(u['profile'])
+
             if username in existing_usernames:
+                # Backfill price/currency if the record was saved with price=0
+                existing = existing_sales[username]
+                if existing.price == 0 and price > 0:
+                    existing.price = int(price)
+                    existing.currency = currency
+                    updated_prices += 1
                 continue
 
-            price, currency = get_pricing(u['profile'])
             sale = VoucherSale(
                 device_id=device.id,
                 site_id=device.site_id,
@@ -304,18 +303,18 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
                 uptime=u['uptime_str'],
                 uptime_sec=u['uptime_sec'],
                 bytes_total=u['bytes_in'] + u['bytes_out'],
-                price=price,
+                price=int(price),
                 currency=currency,
                 created_at=sale_date
             )
             db.add(sale)
             new_sales += 1
 
-        logger.info(f"Sync Stats: {len(users)} total, {len(uptime_users)} with uptime, {new_sales} newly recorded")
+        logger.info(f"Sync Stats: {len(users)} total, {len(uptime_users)} with uptime, {new_sales} newly recorded, {updated_prices} prices backfilled")
 
-        if new_sales > 0:
+        if new_sales > 0 or updated_prices > 0:
             await db.commit()
-            logger.info(f"Synced {new_sales} new hotspot sales for device {device.name}")
+            logger.info(f"Synced {new_sales} new + {updated_prices} updated sales for device {device.name}")
 
     except Exception as e:
         logger.error(f"Sync Hotspot Sales Error: {e}")
@@ -574,26 +573,25 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
     
     decrypt_device_secrets(device)
     try:
-        # Update local database instead of MikroTik (RouterOS might not support comments on profiles via API)
         import copy
+        from sqlalchemy.orm.attributes import flag_modified
         hs_settings = copy.deepcopy(device.voucher_template) or {}
         if 'profile_pricing' not in hs_settings:
             hs_settings['profile_pricing'] = {}
-            
-        # Update specific profile pricing
+
         hs_settings['profile_pricing'][profile_name] = {
             "price": settings.price,
             "currency": settings.currency
         }
-        
-        # Also update global default currency if provided
+
         if settings.currency:
             hs_settings['default_currency'] = settings.currency
 
         device.voucher_template = hs_settings
+        flag_modified(device, 'voucher_template')
         db.add(device)
         await db.commit()
-        
+
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Update Profile Settings Error: {e}")
