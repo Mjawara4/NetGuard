@@ -22,6 +22,7 @@ export default function Hotspot() {
     const [reportPage, setReportPage] = useState(1);
     const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
     const [userSearch, setUserSearch] = useState('');
@@ -57,12 +58,19 @@ export default function Hotspot() {
         fetchDevices();
     }, []);
 
-    // Fetch data when device or tab changes
+    // On device select: prefetch all common tabs in parallel so switching is instant
+    useEffect(() => {
+        if (selectedDevice) {
+            prefetchAll(selectedDevice);
+        }
+    }, [selectedDevice]);
+
+    // Fetch data when tab changes (show stale data immediately, refresh silently)
     useEffect(() => {
         if (selectedDevice) {
             fetchData();
         }
-    }, [selectedDevice, activeTab]);
+    }, [activeTab]);
 
     // Fetch data when report filters change
     useEffect(() => {
@@ -115,6 +123,49 @@ export default function Hotspot() {
         }
     };
 
+    const buildBatchHistory = (data) => {
+        return [...new Set(data.filter(u => u.comment).map(u => u.comment))].map(c => {
+            const batchUsers = data.filter(u => u.comment === c);
+            const dateMatch = c.match(/\|\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/);
+            return {
+                id: c,
+                name: c,
+                count: batchUsers.length,
+                used: batchUsers.filter(u => u.uptime && u.uptime !== '0s').length,
+                profile: batchUsers[0].profile,
+                date: dateMatch ? dateMatch[1] : null,
+                data: batchUsers,
+            };
+        });
+    };
+
+    // Fire all common tab requests in parallel as soon as a device is selected.
+    // Data lands in state silently — by the time the user clicks a tab it's ready.
+    const prefetchAll = async (deviceId) => {
+        try {
+            const [summaryRes, systemRes, usersRes, activeRes, profilesRes, templateRes] = await Promise.allSettled([
+                api.get(`/hotspot/${deviceId}/summary`),
+                api.get(`/hotspot/${deviceId}/system-info`),
+                api.get(`/hotspot/${deviceId}/users`),
+                api.get(`/hotspot/${deviceId}/active`),
+                api.get(`/hotspot/${deviceId}/profiles`),
+                api.get(`/hotspot/${deviceId}/voucher-template`),
+            ]);
+            if (summaryRes.status === 'fulfilled') setDashboardData(summaryRes.value.data);
+            if (systemRes.status === 'fulfilled') setSystemInfo(systemRes.value.data);
+            if (usersRes.status === 'fulfilled') {
+                setUsers(usersRes.value.data);
+                setBatchHistory(buildBatchHistory(usersRes.value.data));
+            }
+            if (activeRes.status === 'fulfilled') setActiveSessions(activeRes.value.data);
+            if (profilesRes.status === 'fulfilled') setProfiles(profilesRes.value.data);
+            if (templateRes.status === 'fulfilled' && templateRes.value.data) setTemplate(templateRes.value.data);
+            setHealthStatus('online');
+        } catch (e) {
+            console.error('Prefetch error', e);
+        }
+    };
+
     const saveTemplate = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -130,9 +181,21 @@ export default function Hotspot() {
 
     const fetchData = async () => {
         if (!selectedDevice) return;
-        setLoading(true);
-        try {
+        // Show existing stale data while refreshing; only block on first load (no data yet)
+        const alreadyHasData = {
+            dashboard: !!dashboardData,
+            users: users.length > 0,
+            history: batchHistory.length > 0,
+            active: activeSessions.length > 0,
+            logs: logs.length > 0,
+            reports: !!reportData,
+            profiles: profiles.length > 0,
+        }[activeTab] ?? false;
 
+        if (!alreadyHasData) setLoading(true);
+        else setIsRefreshing(true);
+
+        try {
             if (activeTab === 'dashboard') {
                 const [summaryRes, systemRes] = await Promise.all([
                     api.get(`/hotspot/${selectedDevice}/summary`),
@@ -147,19 +210,7 @@ export default function Hotspot() {
                 setHealthStatus('online');
             } else if (activeTab === 'history') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users`);
-                // Extract unique batches from comments
-                const batches = [...new Set(res.data.filter(u => u.comment).map(u => u.comment))].map(c => {
-                    const batchUsers = res.data.filter(u => u.comment === c);
-                    return {
-                        id: c,
-                        name: c,
-                        count: batchUsers.length,
-                        used: batchUsers.filter(u => u.uptime && u.uptime !== '0s').length,
-                        profile: batchUsers[0].profile,
-                        data: batchUsers // Keep for re-print
-                    };
-                });
-                setBatchHistory(batches);
+                setBatchHistory(buildBatchHistory(res.data));
                 setHealthStatus('online');
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active`);
@@ -174,7 +225,6 @@ export default function Hotspot() {
                 if (reportPeriod) params.append('period', reportPeriod);
                 if (reportStartDate) params.append('start_date', reportStartDate);
                 if (reportEndDate) params.append('end_date', reportEndDate);
-
                 const [reportRes, templateRes] = await Promise.all([
                     api.get(`/hotspot/${selectedDevice}/reports?${params.toString()}`),
                     api.get(`/hotspot/${selectedDevice}/voucher-template`)
@@ -198,12 +248,15 @@ export default function Hotspot() {
             if (activeTab !== 'templates') setHealthStatus('offline');
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
     };
 
     const handleReprint = (batch) => {
+        const firstUser = batch.data[0];
+        const timeLimit = firstUser?.limit_uptime || batchForm.time_limit || '';
         setGeneratedBatch(batch.data.map(u => ({ username: u.name, password: u.password })));
-        setBatchForm({ ...batchForm, profile: batch.profile });
+        setBatchForm({ ...batchForm, profile: batch.profile, time_limit: timeLimit });
         setShowPrintView(true);
     };
 
@@ -403,7 +456,7 @@ export default function Hotspot() {
                             className="bg-white dark:bg-gray-800 p-3 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-all active:scale-95 flex-shrink-0"
                             title="Refresh Data"
                         >
-                            <RefreshCw size={22} className={loading ? 'animate-spin text-blue-600' : ''} />
+                            <RefreshCw size={22} className={(loading || isRefreshing) ? 'animate-spin text-blue-600' : ''} />
                         </button>
                     </div>
                 </div>
@@ -862,86 +915,88 @@ export default function Hotspot() {
                     {/* Batch History Tab */}
                     {activeTab === 'history' && !showPrintView && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            {/* Header */}
                             <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
                                 <div>
                                     <h2 className="text-xl font-black text-gray-900 dark:text-white">Batch History</h2>
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Manage and re-print previously generated voucher batches.</p>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Re-print or delete previously generated voucher batches.</p>
                                 </div>
-                                <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
-                                    {batchHistory.length} Total Batches
+                                <div className="flex items-center gap-3">
+                                    <div className="text-right">
+                                        <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Total Unused</div>
+                                        <div className="font-black text-emerald-600 text-lg">{batchHistory.reduce((s, b) => s + (b.count - b.used), 0)}</div>
+                                    </div>
+                                    <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
+                                        {batchHistory.length} Batches
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                <ResponsiveTable
-                                    data={batchHistory}
-                                    columns={[
-                                        {
-                                            header: 'Batch ID / Comment',
-                                            accessor: 'name',
-                                            render: (b) => <div className="font-bold text-gray-900 dark:text-white uppercase text-sm">{b.name}</div>
-                                        },
-                                        {
-                                            header: 'Profile',
-                                            accessor: 'profile',
-                                            render: (b) => <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-black uppercase">{b.profile}</span>
-                                        },
-                                        {
-                                            header: 'Quantity',
-                                            accessor: 'count',
-                                            render: (b) => (
-                                                <div className="flex flex-col">
-                                                    <div className="font-black text-gray-700 dark:text-gray-200">{b.count} Vouchers</div>
-                                                    <div className="text-[10px] font-bold text-gray-400 uppercase">{b.used} Used</div>
+                            {/* Batch Cards */}
+                            {batchHistory.length === 0 ? (
+                                <div className="bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 p-12 text-center text-gray-400 text-sm font-bold">
+                                    No batches found. Generate vouchers from the Generator tab.
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {batchHistory.map((b) => {
+                                        const unused = b.count - b.used;
+                                        const usedPct = b.count > 0 ? Math.round((b.used / b.count) * 100) : 0;
+                                        return (
+                                            <div key={b.id} className="bg-white dark:bg-gray-800 rounded-[28px] border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-4">
+                                                {/* Top row: profile + date */}
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-wide">{b.profile}</span>
+                                                    {b.date && <span className="text-[10px] text-gray-400 font-bold">{b.date}</span>}
                                                 </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Manage',
-                                            accessor: 'actions',
-                                            render: (b) => (
-                                                <div className="flex gap-2 justify-end">
+
+                                                {/* Counts */}
+                                                <div className="grid grid-cols-3 gap-2 text-center">
+                                                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-2">
+                                                        <div className="text-[9px] font-black uppercase text-gray-400">Total</div>
+                                                        <div className="font-black text-gray-900 dark:text-white text-lg leading-none mt-0.5">{b.count}</div>
+                                                    </div>
+                                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-2">
+                                                        <div className="text-[9px] font-black uppercase text-emerald-500">Unused</div>
+                                                        <div className="font-black text-emerald-600 text-lg leading-none mt-0.5">{unused}</div>
+                                                    </div>
+                                                    <div className="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-2">
+                                                        <div className="text-[9px] font-black uppercase text-orange-400">Used</div>
+                                                        <div className="font-black text-orange-500 text-lg leading-none mt-0.5">{b.used}</div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Progress bar */}
+                                                <div>
+                                                    <div className="flex justify-between text-[9px] font-black uppercase text-gray-400 mb-1">
+                                                        <span>Usage</span><span>{usedPct}%</span>
+                                                    </div>
+                                                    <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
+                                                        <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style={{ width: `${usedPct}%` }} />
+                                                    </div>
+                                                </div>
+
+                                                {/* Actions */}
+                                                <div className="flex gap-2 pt-1">
                                                     <button
                                                         onClick={() => handleReprint(b)}
-                                                        className="px-4 py-1.5 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100"
+                                                        className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100 dark:shadow-blue-900/20 transition-all active:scale-95"
                                                     >
-                                                        Re-Print
+                                                        <Printer size={13} /> Re-Print
                                                     </button>
                                                     <button
                                                         onClick={() => handleBulkDeleteByComment(b.name)}
-                                                        className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100"
+                                                        className="p-2.5 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                                                        title="Delete all vouchers in this batch"
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
                                                 </div>
-                                            )
-                                        }
-                                    ]}
-                                    renderCard={(b) => (
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <span className="font-black text-gray-900 dark:text-white uppercase text-sm">{b.name}</span>
-                                                <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg text-[10px] font-black">{b.profile}</span>
                                             </div>
-                                            <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-2xl">
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold uppercase text-[9px]">Total</span>
-                                                    <span className="font-black text-gray-900 dark:text-white">{b.count}</span>
-                                                </div>
-                                                <div className="flex flex-col items-end">
-                                                    <span className="font-bold uppercase text-[9px]">Used</span>
-                                                    <span className="font-black text-blue-600">{b.used}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2 font-black text-[10px] uppercase tracking-widest pt-2">
-                                                <button onClick={() => handleReprint(b)} className="flex-1 bg-blue-600 text-white py-3 rounded-2xl shadow-lg shadow-blue-50 dark:shadow-blue-900/20">Re-Print Batch</button>
-                                                <button onClick={() => handleBulkDeleteByComment(b.name)} className="bg-red-50 dark:bg-red-900/20 text-red-500 px-4 rounded-2xl"><Trash2 size={16} /></button>
-                                            </div>
-                                        </div>
-                                    )}
-                                    emptyMessage="No batches found with comments."
-                                />
-                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
