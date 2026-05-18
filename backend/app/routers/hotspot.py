@@ -17,10 +17,100 @@ import time
 import random
 import string
 import logging
+import re
+import os
+import json
+import redis
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Redis client for caching hotspot reads
+try:
+    redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "redis"),
+        port=6379,
+        db=0,
+        decode_responses=True
+    )
+    redis_client.ping()
+except Exception:
+    redis_client = None
+    logger.warning("Redis unavailable; hotspot caching disabled.")
+
+def cache_key(device_id: str, endpoint: str) -> str:
+    return f"hotspot:{device_id}:{endpoint}"
+
+# RouterOS API connection cache (shared across requests within this process)
+_router_pool_cache = {}
+_CONN_CACHE_TTL = int(os.getenv("ROUTER_CONN_CACHE_TTL", "60"))
+
+class PooledConnection:
+    """Wrapper that keeps the underlying pool alive for reuse."""
+    __slots__ = ("_pool",)
+
+    def __init__(self, pool):
+        self._pool = pool
+
+    def get_api(self):
+        return self._pool.get_api()
+
+    def disconnect(self):
+        # Intentional no-op: cache manages lifecycle
+        pass
+
+def _cache_key(ip, port):
+    return (ip, int(port))
+
+def get_api_pool(ip, username, password, port=8728):
+    key = _cache_key(ip, port)
+    now = time.time()
+    cached = _router_pool_cache.get(key)
+
+    if cached:
+        pool, last_used = cached
+        if now - last_used < _CONN_CACHE_TTL:
+            try:
+                api = pool.get_api()
+                api.get_resource('/system/resource').get()
+                _router_pool_cache[key] = (pool, now)
+                return PooledConnection(pool)
+            except Exception:
+                logger.warning(f"Stale pool for {ip}:{port}, reconnecting...")
+                try:
+                    pool.disconnect()
+                except Exception:
+                    pass
+        else:
+            try:
+                pool.disconnect()
+            except Exception:
+                pass
+
+    pool = routeros_api.RouterOsApiPool(
+        ip,
+        username=username,
+        password=password,
+        port=port,
+        plaintext_login=True,
+        use_ssl=False
+    )
+    _router_pool_cache[key] = (pool, now)
+    logger.info(f"New RouterOS API connection to {ip}:{port}")
+    return PooledConnection(pool)
+
+def _evict_pool(ip, port=8728):
+    """Forcefully close and remove a cached pool (used on protocol desync)."""
+    key = _cache_key(ip, port)
+    cached = _router_pool_cache.pop(key, None)
+    if cached:
+        pool, _ = cached
+        try:
+            pool.disconnect()
+        except Exception:
+            pass
+        logger.info(f"Evicted pool for {ip}:{port}")
 
 # Schemas
 class HotspotUser(BaseModel):
@@ -107,59 +197,46 @@ def format_routeros_time(seconds: int) -> str:
     """Converts seconds back to RouterOS time string."""
     if seconds <= 0:
         return "0s"
-    
+
     periods = [
         ('d', 86400),
         ('h', 3600),
         ('m', 60),
         ('s', 1)
     ]
-    
+
     result = ""
     for suffix, count in periods:
         if seconds >= count:
             val = seconds // count
             result += f"{val}{suffix}"
             seconds %= count
-            
-    return result or "0s"
 
-def get_api_pool(ip, username, password, port=8728):
-    connection = routeros_api.RouterOsApiPool(
-        ip, 
-        username=username, 
-        password=password,
-        port=port,
-        plaintext_login=True,
-        use_ssl=False
-    )
-    return connection
+    return result or "0s"
 
 async def sync_hotspot_sales(device: Device, db: AsyncSession):
     """
     Syncs sold/used vouchers from MikroTik to the local VoucherSale table.
     A voucher is considered 'sold' if uptime > 0.
+    Optimized to fetch existing records in bulk and commit inserts in one transaction.
     """
+    connection = None
     try:
-        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
         db_port = getattr(device, 'ssh_port', 8728) or 8728
         port = 8728 if int(db_port) == 22 else db_port
-        
+
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
-        # Use standard resource (binary can sometimes have unexpected key names)
+
         users_resource = api.get_resource('/ip/hotspot/user')
         users = users_resource.get()
         logger.info(f"Sync: Found {len(users)} total hotspot users on device {device.name}")
-        connection.disconnect()
 
-        
         # Build price map
         hs_settings = device.voucher_template or {}
         profile_pricing = hs_settings.get('profile_pricing', {})
         default_currency = hs_settings.get('default_currency', 'TZS')
-        
+
         def get_pricing(p_name):
             if p_name in profile_pricing:
                 return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
@@ -169,63 +246,85 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
                 return float(match.group(1)), default_currency
             return 0, default_currency
 
-        # Find users with uptime
-        new_sales = 0
-        uptime_vouchers = 0
+        # Collect users with uptime > 0
+        uptime_users = []
         for u in users:
             uptime_str = u.get('uptime', '0s')
             uptime_sec = parse_routeros_time(uptime_str)
-            
             if uptime_sec > 0:
-                uptime_vouchers += 1
-                username = u.get('name')
-                comment = u.get('comment', '')
-                prof_name = u.get('profile', 'default')
-                
-                # Check for existing record to avoid duplicates
-                stmt = select(VoucherSale).where(VoucherSale.device_id == device.id, VoucherSale.username == username)
-                res = await db.execute(stmt)
-                existing = res.scalars().first()
-                
-                if not existing:
-                    price, currency = get_pricing(prof_name)
-                    
-                    # Try to parse creation date from comment: "Batch-pref | YYYY-MM-DD HH:MM:SS"
-                    # UPDATE: User requested to track sale based on Usage Date (Now), not creation date.
-                    sale_date = datetime.utcnow()
-                    # if '|' in comment:
-                    #     try:
-                    #         date_str = comment.split('|')[-1].strip()
-                    #         sale_date = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
-                    #     except:
-                    #         pass
-                    
-                    sale = VoucherSale(
-                        device_id=device.id,
-                        site_id=device.site_id,
-                        username=username,
-                        profile=prof_name,
-                        comment=comment,
-                        uptime=uptime_str,
-                        uptime_sec=uptime_sec,
-                        bytes_total=int(u.get('bytes-in', 0)) + int(u.get('bytes-out', 0)),
-                        price=price,
-                        currency=currency,
-                        created_at=sale_date
-                    )
-                    db.add(sale)
-                    new_sales += 1
-        
-        logger.info(f"Sync Stats: {len(users)} total, {uptime_vouchers} with uptime, {new_sales} newly recorded")
-        
-        if new_sales > 0:
-            await db.commit()
-            logger.info(f"Synced {new_sales} new hotspot sales for device {device.name}")
+                uptime_users.append({
+                    'name': u.get('name'),
+                    'comment': u.get('comment', ''),
+                    'profile': u.get('profile', 'default'),
+                    'uptime_str': uptime_str,
+                    'uptime_sec': uptime_sec,
+                    'bytes_in': int(u.get('bytes-in', 0)),
+                    'bytes_out': int(u.get('bytes-out', 0)),
+                })
 
-            
+        if not uptime_users:
+            logger.info(f"Sync Stats: {len(users)} total, 0 with uptime, 0 newly recorded")
+            return
+
+        # Fetch existing usernames for this device in ONE query
+        usernames = [u['name'] for u in uptime_users]
+        # Fetch full existing records so we can backfill price=0 entries
+        existing_res = await db.execute(
+            select(VoucherSale).where(
+                VoucherSale.device_id == device.id,
+                VoucherSale.username.in_(usernames)
+            )
+        )
+        existing_sales = {sale.username: sale for sale in existing_res.scalars().all()}
+        existing_usernames = set(existing_sales.keys())
+
+        new_sales = 0
+        updated_prices = 0
+        sale_date = datetime.utcnow()
+        for u in uptime_users:
+            username = u['name']
+            price, currency = get_pricing(u['profile'])
+
+            if username in existing_usernames:
+                # Backfill price/currency if the record was saved with price=0
+                existing = existing_sales[username]
+                if existing.price == 0 and price > 0:
+                    existing.price = int(price)
+                    existing.currency = currency
+                    updated_prices += 1
+                continue
+
+            sale = VoucherSale(
+                device_id=device.id,
+                site_id=device.site_id,
+                username=username,
+                profile=u['profile'],
+                comment=u['comment'],
+                uptime=u['uptime_str'],
+                uptime_sec=u['uptime_sec'],
+                bytes_total=u['bytes_in'] + u['bytes_out'],
+                price=int(price),
+                currency=currency,
+                created_at=sale_date
+            )
+            db.add(sale)
+            new_sales += 1
+
+        logger.info(f"Sync Stats: {len(users)} total, {len(uptime_users)} with uptime, {new_sales} newly recorded, {updated_prices} prices backfilled")
+
+        if new_sales > 0 or updated_prices > 0:
+            await db.commit()
+            logger.info(f"Synced {new_sales} new + {updated_prices} updated sales for device {device.name}")
+
     except Exception as e:
         logger.error(f"Sync Hotspot Sales Error: {e}")
         await db.rollback()
+    finally:
+        if connection:
+            try:
+                connection.disconnect()
+            except Exception:
+                pass
 
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
@@ -237,29 +336,38 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-        
+
+    # Try cache first
+    key = cache_key(device_id, "users")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return [HotspotUser(**item) for item in json.loads(cached)]
+        except Exception:
+            pass
+
     try:
         # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
         db_port = getattr(device, 'ssh_port', 8728) or 8728
         port = 8728 if int(db_port) == 22 else db_port
-        
+
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         users = api.get_resource('/ip/hotspot/user').get()
-        connection.disconnect()
-        
-        return [HotspotUser(
-            name=u.get('name'), 
-            password=u.get('password'), 
+
+        result = [HotspotUser(
+            name=u.get('name'),
+            password=u.get('password'),
             profile=u.get('profile'),
             uptime=u.get('uptime'),
             bytes_in=int(u.get('bytes-in', 0)),
@@ -268,7 +376,15 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
             limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
             comment=u.get('comment')
         ) for u in users]
-        
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 15, json.dumps([r.dict() for r in result]))
+            except Exception:
+                pass
+
+        return result
+
     except Exception as e:
         logger.error(f"Hotspot API Error: {e}")
         error_msg = str(e)
@@ -366,23 +482,33 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-        
+
+    # Try cache first
+    key = cache_key(device_id, "profiles")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         profiles = api.get_resource('/ip/hotspot/user/profile').get()
         active = api.get_resource('/ip/hotspot/active').get()
-        
+
         # Calculate active users per profile
         active_per_profile = {}
         for a in active:
@@ -395,28 +521,33 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         # Enriched Profiles with user counts:
         users = api.get_resource('/ip/hotspot/user').get()
         user_to_profile = {u.get('name'): u.get('profile') for u in users}
-        
+
         profile_counts = {p.get('name'): 0 for p in profiles}
         for a in active:
             u_name = a.get('user')
             p_name = user_to_profile.get(u_name)
             if p_name in profile_counts:
                 profile_counts[p_name] += 1
-        
+
         # Parse price/currency from local database settings (Device.voucher_template)
         settings = device.voucher_template or {}
         profile_pricing = settings.get('profile_pricing', {})
         default_currency = settings.get('default_currency', 'TZS')
-        
+
         for p in profiles:
             p_name = p.get('name')
             p['active_users'] = profile_counts.get(p_name, 0)
-            
+
             pricing = profile_pricing.get(p_name, {})
             p['custom_price'] = pricing.get('price', 0)
             p['custom_currency'] = pricing.get('currency', default_currency)
 
-        connection.disconnect()
+        if redis_client:
+            try:
+                redis_client.setex(key, 15, json.dumps(profiles))
+            except Exception:
+                pass
+
         return profiles
     except Exception as e:
         logger.error(f"Hotspot Profiles Error: {e}")
@@ -442,26 +573,25 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
     
     decrypt_device_secrets(device)
     try:
-        # Update local database instead of MikroTik (RouterOS might not support comments on profiles via API)
         import copy
+        from sqlalchemy.orm.attributes import flag_modified
         hs_settings = copy.deepcopy(device.voucher_template) or {}
         if 'profile_pricing' not in hs_settings:
             hs_settings['profile_pricing'] = {}
-            
-        # Update specific profile pricing
+
         hs_settings['profile_pricing'][profile_name] = {
             "price": settings.price,
             "currency": settings.currency
         }
-        
-        # Also update global default currency if provided
+
         if settings.currency:
             hs_settings['default_currency'] = settings.currency
 
         device.voucher_template = hs_settings
+        flag_modified(device, 'voucher_template')
         db.add(device)
         await db.commit()
-        
+
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Update Profile Settings Error: {e}")
@@ -482,35 +612,53 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
         raise HTTPException(status_code=404, detail="Device not found")
     
     decrypt_device_secrets(device)
-         
+
+    # Try cache first
+    key = cache_key(device_id, "summary")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         active_resource = api.get_resource('/ip/hotspot/active')
         user_resource = api.get_resource('/ip/hotspot/user')
-        
+
         active_sessions = active_resource.get()
         total_users = user_resource.get()
-        
+
         total_bytes_in = sum(int(a.get('bytes-in', 0)) for a in active_sessions)
         total_bytes_out = sum(int(a.get('bytes-out', 0)) for a in active_sessions)
-        
+
         # Profile Distribution
         profile_dist = {}
         for u in total_users:
             p = u.get('profile', 'default')
             profile_dist[p] = profile_dist.get(p, 0) + 1
-            
+
         connection.disconnect()
-        
-        return {
+
+        result = {
             "active_count": len(active_sessions),
             "total_vouchers": len(total_users),
             "total_data_mb": round((total_bytes_in + total_bytes_out) / 1024 / 1024, 2),
             "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
         }
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 15, json.dumps(result))
+            except Exception:
+                pass
+
+        return result
     except Exception as e:
         logger.error(f"Hotspot Summary Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -639,7 +787,17 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
     
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-    
+
+    # Try cache first
+    key = cache_key(device_id, "active")
+    if redis_client:
+        try:
+            cached = redis_client.get(key)
+            if cached:
+                return [HotspotActive(**item) for item in json.loads(cached)]
+        except Exception:
+            pass
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
@@ -647,26 +805,26 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
         active = api.get_resource('/ip/hotspot/active').get()
         users = api.get_resource('/ip/hotspot/user').get()
         connection.disconnect()
-        
+
         user_limits = {
             u.get('name'): {
-                'limit-uptime': u.get('limit-uptime'), 
+                'limit-uptime': u.get('limit-uptime'),
                 'limit-bytes-total': int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None
-            } 
+            }
             for u in users
         }
-        
+
         results = []
         for a in active:
             username = a.get('user')
             uptime_str = a.get('uptime', '0s')
-            
+
             limits = user_limits.get(username, {})
             limit_str = limits.get('limit-uptime')
             limit_bytes = limits.get('limit-bytes-total')
-            
+
             remaining = "UNLIM"
-            
+
             # 1. Prefer direct router value if available
             router_time_left = a.get('session-time-left')
             if router_time_left:
@@ -690,6 +848,13 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
                 limit_uptime=limit_str,
                 limit_bytes_total=limit_bytes
             ))
+
+        if redis_client:
+            try:
+                redis_client.setex(key, 5, json.dumps([r.dict() for r in results]))
+            except Exception:
+                pass
+
         return results
     except Exception as e:
         logger.error(f"Active Users Error: {e}")
@@ -938,16 +1103,11 @@ async def bulk_delete_users(
 
         # Function to (re)initialize connection and get resource
         def get_resource():
-            # Close existing if it exists
+            # Evict stale pool and force fresh connection on protocol desync
             nonlocal connection, api, resource
-            if connection:
-                try:
-                    connection.disconnect()
-                except:
-                    pass
-            
+            _evict_pool(device.ip_address, port)
+
             # Re-establish
-            port = getattr(device, 'ssh_port', 8728) or 8728
             connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
             api = connection.get_api()
             # Use binary resource for more raw control

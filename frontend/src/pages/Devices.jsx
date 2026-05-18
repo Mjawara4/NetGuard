@@ -96,7 +96,7 @@ export default function Devices() {
         if (selectedDevice) {
             interval = setInterval(() => {
                 fetchDeviceMetrics(selectedDevice.id);
-            }, 3000);
+            }, 10000);
         }
         return () => clearInterval(interval);
     }, [selectedDevice]);
@@ -157,7 +157,7 @@ export default function Devices() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <div className="max-w-7xl mx-auto">
                 {/* Page Header */}
                 <div className="mb-8 sm:mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -180,9 +180,9 @@ export default function Devices() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 sm:gap-10">
                     <div className={`${selectedDevice ? 'hidden lg:block' : 'block'} lg:col-span-2 space-y-8`}>
                         {/* Device List Table */}
-                        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="p-8 border-b border-gray-50">
-                                <h2 className="text-xl font-black text-gray-900">Manage Devices</h2>
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                            <div className="p-8 border-b border-gray-50 dark:border-gray-700">
+                                <h2 className="text-xl font-black text-gray-900 dark:text-white">Manage Devices</h2>
                             </div>
                             <div className="overflow-hidden">
                                 <ResponsiveTable
@@ -193,8 +193,8 @@ export default function Devices() {
                                             accessor: 'name',
                                             render: (device) => (
                                                 <div onClick={() => openDetails(device)} className="cursor-pointer">
-                                                    <div className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm">{device.name}</div>
-                                                    <div className="text-[10px] text-gray-400 font-mono">{device.ip_address}</div>
+                                                    <div className="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm">{device.name}</div>
+                                                    <div className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">{device.ip_address}</div>
                                                 </div>
                                             )
                                         },
@@ -204,7 +204,7 @@ export default function Devices() {
                                             render: (device) => (
                                                 <div className="flex items-center gap-2">
                                                     <Server size={14} className="text-gray-400" />
-                                                    <span className="text-[10px] font-black text-gray-500 uppercase">{device.device_type}</span>
+                                                    <span className="text-[10px] font-black text-gray-500 dark:text-gray-400 uppercase">{device.device_type}</span>
                                                 </div>
                                             )
                                         },
@@ -213,7 +213,7 @@ export default function Devices() {
                                             accessor: 'is_active',
                                             render: (device) => (
                                                 <div className="flex items-center gap-2">
-                                                    <div className={`w-2 h-2 rounded-full ${device.is_active ? 'bg-emerald-500' : 'bg-red-500 anim-pulse'}`}></div>
+                                                    <div className={`w-2 h-2 rounded-full ${device.is_active ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></div>
                                                     <span className={`text-[10px] font-black uppercase ${device.is_active ? 'text-emerald-600' : 'text-red-600'}`}>
                                                         {device.is_active ? 'On' : 'Off'}
                                                     </span>
@@ -236,13 +236,13 @@ export default function Devices() {
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
                                                     <Server size={16} className="text-blue-500" />
-                                                    <span className="font-bold text-gray-900 uppercase text-sm">{device.name}</span>
+                                                    <span className="font-bold text-gray-900 dark:text-white uppercase text-sm">{device.name}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <div className={`w-2 h-2 rounded-full ${device.is_active ? 'bg-emerald-500' : 'bg-red-500 anim-pulse'}`}></div>
                                                 </div>
                                             </div>
-                                            <div className="flex justify-between items-center text-xs text-gray-500">
+                                            <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
                                                 <span className="font-mono">{device.ip_address}</span>
                                                 <span className="uppercase font-bold">{device.device_type}</span>
                                             </div>
@@ -262,11 +262,11 @@ export default function Devices() {
                         {/* Device Details Info Panel */}
                         {selectedDevice ? (
                             <div className="space-y-6 sticky top-8">
-                                <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 animate-in slide-in-from-right-10 lg:slide-in-from-right-0 duration-500">
+                                <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 animate-in slide-in-from-right-10 lg:slide-in-from-right-0 duration-500">
                                     <div className="flex justify-between items-start mb-6">
                                         <div>
-                                            <h3 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight uppercase leading-tight">{selectedDevice.name}</h3>
-                                            <p className="text-gray-400 font-mono text-xs sm:text-sm">{selectedDevice.ip_address}</p>
+                                            <h3 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight uppercase leading-tight">{selectedDevice.name}</h3>
+                                            <p className="text-gray-400 dark:text-gray-500 font-mono text-xs sm:text-sm">{selectedDevice.ip_address}</p>
                                         </div>
                                         <div className="flex gap-2">
                                             {selectedDevice.device_type === 'router' && (
@@ -284,48 +284,48 @@ export default function Devices() {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-8">
-                                        <div className="bg-gray-50 p-4 rounded-2xl">
+                                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <Cpu size={14} className="text-blue-500" />
-                                                <span className="text-[10px] font-black text-gray-400 uppercase">CPU</span>
+                                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">CPU</span>
                                             </div>
-                                            <div className="text-lg sm:text-xl font-black text-gray-900">{deviceMetrics.cpu_usage ? `${deviceMetrics.cpu_usage.value.toFixed(1)}%` : 'N/A'}</div>
+                                            <div className="text-lg sm:text-xl font-black text-gray-900 dark:text-white">{deviceMetrics.cpu_usage ? `${deviceMetrics.cpu_usage.value.toFixed(1)}%` : 'N/A'}</div>
                                         </div>
-                                        <div className="bg-gray-50 p-4 rounded-2xl">
+                                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <HardDrive size={14} className="text-purple-500" />
-                                                <span className="text-[10px] font-black text-gray-400 uppercase">Memory</span>
+                                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">Memory</span>
                                             </div>
-                                            <div className="text-lg sm:text-xl font-black text-gray-900">{deviceMetrics.memory_usage ? `${deviceMetrics.memory_usage.value.toFixed(1)}%` : 'N/A'}</div>
+                                            <div className="text-lg sm:text-xl font-black text-gray-900 dark:text-white">{deviceMetrics.memory_usage ? `${deviceMetrics.memory_usage.value.toFixed(1)}%` : 'N/A'}</div>
                                         </div>
-                                        <div className="bg-gray-50 p-4 rounded-2xl col-span-2">
+                                        <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-2xl col-span-2">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <Activity size={14} className="text-emerald-500" />
-                                                <span className="text-[10px] font-black text-gray-400 uppercase">Uptime</span>
+                                                <span className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase">Uptime</span>
                                             </div>
-                                            <div className="text-base sm:text-lg font-black text-gray-900 leading-tight">{deviceMetrics.uptime_status?.meta_data?.uptime_str || 'N/A'}</div>
+                                            <div className="text-base sm:text-lg font-black text-gray-900 dark:text-white leading-tight">{deviceMetrics.uptime_status?.meta_data?.uptime_str || 'N/A'}</div>
                                         </div>
                                     </div>
 
-                                    <h4 className="text-[10px] font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <h4 className="text-[10px] font-black text-gray-900 dark:text-white uppercase tracking-widest mb-4 flex items-center gap-2">
                                         <Wifi size={16} className="text-blue-500" />
                                         Linked Clients ({deviceMetrics.connected_clients ? parseInt(deviceMetrics.connected_clients.value) : 0})
                                     </h4>
 
                                     <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                                         {deviceMetrics.connected_clients?.meta_data?.clients?.map((client, idx) => (
-                                            <div key={idx} className="p-3 bg-gray-50 rounded-xl flex justify-between items-center text-[10px] sm:text-xs">
-                                                <div className="font-bold text-gray-700 truncate max-w-[120px]">{client.hostname || 'Unknown'}</div>
-                                                <div className="font-mono text-gray-400">{client.ip}</div>
+                                            <div key={idx} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-xl flex justify-between items-center text-[10px] sm:text-xs">
+                                                <div className="font-bold text-gray-700 dark:text-gray-300 truncate max-w-[120px]">{client.hostname || 'Unknown'}</div>
+                                                <div className="font-mono text-gray-400 dark:text-gray-500">{client.ip}</div>
                                             </div>
-                                        )) || <div className="text-center py-6 text-gray-400 text-sm font-medium italic">No data.</div>}
+                                        )) || <div className="text-center py-6 text-gray-400 dark:text-gray-500 text-sm font-medium italic">No data.</div>}
                                     </div>
                                 </div>
                             </div>
                         ) : (
-                            <div className="bg-white p-12 rounded-3xl border border-dashed border-gray-200 text-center text-gray-400 flex flex-col items-center justify-center sticky top-8 h-[500px]">
+                            <div className="bg-white dark:bg-gray-800 p-12 rounded-3xl border border-dashed border-gray-200 dark:border-gray-700 text-center text-gray-400 dark:text-gray-500 flex flex-col items-center justify-center sticky top-8 h-[500px]">
                                 <Server size={48} className="mb-4 opacity-20" />
-                                <p className="font-bold text-lg text-gray-900">Select Entity</p>
+                                <p className="font-bold text-lg text-gray-900 dark:text-white">Select Entity</p>
                                 <p className="text-sm">Click a device to view deep metrics.</p>
                             </div>
                         )}
