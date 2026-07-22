@@ -8,7 +8,7 @@ import json
 import redis
 from app.core.database import get_db
 from app.models import Metric, Alert, Incident, AutoFixAction, AlertStatus, User, Device, Site, APIKey, UserRole
-from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse, DashboardStatsResponse
+from app.schemas.monitoring import MetricCreate, MetricResponse, AlertResponse, IncidentResponse, IncidentCreate, AlertCreate, AlertUpdate, AutoFixActionCreate, AutoFixActionResponse, DashboardStatsResponse, AgentLogCreate, AgentLogResponse
 from app.auth.deps import get_authorized_actor, get_current_user
 from uuid import UUID
 from datetime import datetime, timezone
@@ -130,11 +130,34 @@ async def get_latest_metrics(request: Request, device_id: str, metric_type: Opti
     if not dev_res.scalars().first():
          raise HTTPException(status_code=404, detail="Device not found")
          
+    # When no specific metric_type requested, use DISTINCT ON to get the latest
+    # reading for EACH metric type in a single query (avoids 20 rows of one type)
+    # Time-bounded to last 24h to avoid scanning all 21M rows / 15GB of chunks.
+    if not metric_type:
+        from sqlalchemy import text
+        stmt = text("""
+            SELECT DISTINCT ON (metric_type) *
+            FROM metrics
+            WHERE device_id = :device_id
+              AND time >= NOW() - INTERVAL '24 hours'
+            ORDER BY metric_type, time DESC
+        """)
+        result = await db.execute(stmt, {"device_id": str(device_id)})
+        rows = result.mappings().all()
+        metrics = []
+        for row in rows:
+            metrics.append(Metric(
+                time=row['time'],
+                device_id=row['device_id'],
+                metric_type=row['metric_type'],
+                value=row['value'],
+                unit=row['unit'],
+                meta_data=row['meta_data']
+            ))
+        return metrics
+
     query = select(Metric).where(Metric.device_id == UUID(device_id))
-    
-    if metric_type:
-        query = query.where(Metric.metric_type == metric_type)
-        
+    query = query.where(Metric.metric_type == metric_type)
     result = await db.execute(query.order_by(desc(Metric.time)).limit(limit))
     return result.scalars().all()
 
@@ -190,14 +213,20 @@ async def get_historical_metrics(request: Request, device_id: str, start_time: s
         return []
 
 @router.get("/alerts", response_model=List[AlertResponse])
-async def get_alerts(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def get_alerts(device_id: Optional[str] = None, status: Optional[str] = None, skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
-        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED)
     elif isinstance(actor, APIKey) and not actor.organization_id:
-        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
+        stmt = select(Alert).where(Alert.status != AlertStatus.ARCHIVED)
     else:
-        stmt = select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id, Alert.status != AlertStatus.ARCHIVED).order_by(desc(Alert.created_at)).offset(skip).limit(limit)
-    
+        stmt = select(Alert).join(Device).join(Site).where(Site.organization_id == actor.organization_id, Alert.status != AlertStatus.ARCHIVED)
+
+    if device_id:
+        stmt = stmt.where(Alert.device_id == UUID(device_id))
+    if status:
+        stmt = stmt.where(Alert.status == status)
+
+    stmt = stmt.order_by(desc(Alert.created_at)).offset(skip).limit(limit)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -253,6 +282,29 @@ async def get_incidents(db: AsyncSession = Depends(get_db), actor = Depends(get_
     result = await db.execute(stmt)
     return result.scalars().all()
 
+@router.post("/incidents", response_model=IncidentResponse)
+async def create_incident(incident: IncidentCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    # Check alert exists
+    alert_res = await db.execute(select(Alert).where(Alert.id == incident.alert_id))
+    alert_obj = alert_res.scalars().first()
+    if not alert_obj:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Check no existing incident for this alert
+    existing_res = await db.execute(select(Incident).where(Incident.alert_id == incident.alert_id))
+    if existing_res.scalars().first():
+        raise HTTPException(status_code=409, detail="Incident already exists for this alert")
+
+    new_incident = Incident(
+        alert_id=incident.alert_id,
+        summary=incident.summary,
+        root_cause=incident.root_cause
+    )
+    db.add(new_incident)
+    await db.commit()
+    await db.refresh(new_incident)
+    return new_incident
+
 @router.patch("/alerts/{alert_id}", response_model=AlertResponse)
 async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     # Verify ownership via device -> site
@@ -270,6 +322,8 @@ async def update_alert(alert_id: str, update: AlertUpdate, db: AsyncSession = De
         raise HTTPException(status_code=404, detail="Alert not found")
         
     alert_obj.status = update.status
+    if update.resolution_summary is not None:
+        alert_obj.resolution_summary = update.resolution_summary
     if update.status in [AlertStatus.RESOLVED, AlertStatus.AUTO_FIXED]:
         alert_obj.resolved_at = datetime.utcnow()
         
@@ -342,7 +396,10 @@ async def get_dashboard_stats(request: Request, db: AsyncSession = Depends(get_d
 
     if router_ids:
         # 2. Single query to get latest metric per router per type using window function
+        # Time-bounded to last 24h to avoid scanning all 21M rows across 15GB of chunks
         metric_types = ['status', 'hotspot_users', 'hotspot_traffic']
+        from datetime import timedelta
+        cutoff = datetime.utcnow() - timedelta(hours=24)
         subq = select(
             Metric,
             func.row_number().over(
@@ -351,7 +408,8 @@ async def get_dashboard_stats(request: Request, db: AsyncSession = Depends(get_d
             ).label("rn")
         ).where(
             Metric.device_id.in_(router_ids),
-            Metric.metric_type.in_(metric_types)
+            Metric.metric_type.in_(metric_types),
+            Metric.time >= cutoff
         ).subquery()
 
         latest_query = select(subq).where(subq.c.rn == 1)
@@ -409,3 +467,81 @@ async def get_dashboard_stats(request: Request, db: AsyncSession = Depends(get_d
             pass
 
     return response
+
+@router.post("/agent-logs", response_model=AgentLogResponse)
+async def create_agent_log(log: AgentLogCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    from app.models.monitoring import AgentLog
+    new_log = AgentLog(
+        agent_name=log.agent_name,
+        level=log.level,
+        message=log.message
+    )
+    db.add(new_log)
+    await db.commit()
+    await db.refresh(new_log)
+    return new_log
+
+@router.get("/agent-logs", response_model=List[AgentLogResponse])
+async def get_agent_logs(agent_name: Optional[str] = None, limit: int = 100, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    from app.models.monitoring import AgentLog
+    stmt = select(AgentLog)
+    if agent_name:
+        stmt = stmt.where(AgentLog.agent_name == agent_name)
+    stmt = stmt.order_by(desc(AgentLog.created_at)).limit(limit)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.get("/wg-status")
+async def get_wg_status(actor = Depends(get_authorized_actor)):
+    """Run `wg show wg0` on the backend host and return parsed peer data."""
+    import subprocess
+    import re
+    from datetime import datetime, timezone
+
+    try:
+        result = subprocess.run(
+            ["wg", "show", "wg0"],
+            capture_output=True, text=True, timeout=5
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="wireguard-tools not installed on backend")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"wg show error: {e}")
+
+    if result.returncode != 0:
+        raise HTTPException(status_code=503, detail=f"wg show failed: {result.stderr.strip()}")
+
+    peers = {}
+    current = None
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        m = re.match(r'^peer:\s+(\S+)', line)
+        if m:
+            current = m.group(1)
+            peers[current] = {"public_key": current, "endpoint": None,
+                              "allowed_ips": None, "handshake_age_seconds": None}
+            continue
+        if not current:
+            continue
+        if line.startswith("endpoint:"):
+            peers[current]["endpoint"] = line.split(":", 1)[1].strip()
+        elif line.startswith("allowed ips:"):
+            peers[current]["allowed_ips"] = line.split(":", 1)[1].strip()
+        elif line.startswith("latest handshake:"):
+            hs = line.split(":", 1)[1].strip()
+            if hs == "(none)" or not hs:
+                peers[current]["handshake_age_seconds"] = 9999
+                continue
+            total = 0
+            for val, unit in re.findall(r'(\d+)\s+(year|month|week|day|hour|minute|second)', hs):
+                val = int(val)
+                if "year" in unit:    total += val * 365 * 86400
+                elif "month" in unit: total += val * 30 * 86400
+                elif "week" in unit:  total += val * 7 * 86400
+                elif "day" in unit:   total += val * 86400
+                elif "hour" in unit:  total += val * 3600
+                elif "minute" in unit: total += val * 60
+                elif "second" in unit: total += val
+            peers[current]["handshake_age_seconds"] = total
+
+    return {"peers": list(peers.values()), "timestamp": datetime.now(timezone.utc).isoformat()}

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event, BigInteger
 
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 import enum
@@ -143,3 +143,21 @@ class VoucherSale(Base):
 
     device = relationship("Device")
     site = relationship("Site")
+
+class VoucherBatch(Base):
+    __tablename__ = "voucher_batches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    batch_name = Column(String, nullable=False)  # e.g. "Batch-user | 2024-01-01 10:00:00"
+    prefix = Column(String, nullable=False)
+    profile = Column(String, nullable=False)
+    time_limit = Column(String, nullable=True)
+    data_limit = Column(String, nullable=True)
+    count = Column(Integer, nullable=False)
+    vouchers = Column(JSONB, nullable=False, default=list)  # [{"username": "...", "password": "..."}, ...]
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    device = relationship("Device")
+    organization = relationship("Organization")

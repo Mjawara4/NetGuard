@@ -1,17 +1,9 @@
 import time
 import requests
 import os
-import json
-from retry_utils import retry_with_backoff
-
-API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
-
-API_KEY = os.getenv("NETGUARD_API_KEY")
-
 import logging
 import sys
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -21,8 +13,12 @@ logging.basicConfig(
 logger = logging.getLogger("diagnoser-agent")
 
 API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
-
 API_KEY = os.getenv("NETGUARD_API_KEY")
+CPU_THRESHOLD = float(os.getenv("CPU_THRESHOLD", "80"))
+MEMORY_THRESHOLD = float(os.getenv("MEMORY_THRESHOLD", "85"))
+HOTSPOT_USER_THRESHOLD = int(os.getenv("HOTSPOT_USER_THRESHOLD", "80"))
+WG_OFFLINE_THRESHOLD = int(os.getenv("WG_OFFLINE_THRESHOLD", "180"))
+WG_ONLINE_THRESHOLD = int(os.getenv("WG_ONLINE_THRESHOLD", "60"))
 
 if not API_KEY:
     logger.critical("FATAL: NETGUARD_API_KEY env var not set.")
@@ -31,126 +27,163 @@ if not API_KEY:
 def get_headers():
     return {"X-API-Key": API_KEY}
 
-# Mocked analysis
-def analyze_metrics():
-    # In real world: Query TimescaleDB for last 1 min metrics
-    # Here: We will just alert on random devices if we assume we have access to them?
-    # Better: The API should expose "devices with issues".
-    # For MVP: I will just Create Alerts for devices that I know exist.
-    
+def get_latest_metric(device_id, metric_type):
     try:
-        # Get devices with retry
-        try:
-            resp = requests.get(
-                f"{API_URL}/inventory/devices",
-                headers=get_headers(),
-                timeout=10
-            )
-            resp.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to fetch devices: {e}")
-            return
-        devices = resp.json()
-        
-        for device in devices:
-            # Query latest status metric
-            try:
-                m_resp = requests.get(
-                    f"{API_URL}/monitoring/metrics/latest?device_id={device['id']}&metric_type=uptime_status&limit=1",
-                    headers=get_headers(),
-                    timeout=10
-                )
-                if m_resp.status_code == 200:
-                    metrics = m_resp.json()
-                    if metrics and len(metrics) > 0:
-                        latest_status = metrics[0]['value']
-                        
-                        # Check if offline
-                        if latest_status == 0.0:
-                             # CHECK IF ALERT ALREADY EXISTS
-                             existing = requests.get(
-                                 f"{API_URL}/monitoring/alerts?device_id={device['id']}",
-                                 headers=get_headers(),
-                                 timeout=10
-                             )
-                             already_alerted = False
-                             if existing.status_code == 200:
-                                 for a in existing.json():
-                                     if a['rule_name'] == 'Device Offline' and a['status'] == 'open':
-                                         already_alerted = True
-                                         break
-                             
-                             if not already_alerted:
-                                 alert_payload = {
-                                     "device_id": device['id'],
-                                     "rule_name": "Device Offline",
-                                     "severity": "critical",
-                                     "message": f"Device {device['name']} is not responding to ping.",
-                                     "status": "open"
-                                 }
-                                 requests.post(
-                                     f"{API_URL}/monitoring/alerts",
-                                     json=alert_payload,
-                                     headers=get_headers(),
-                                     timeout=10
-                                 )
-                                 logger.warning(f"Created alert (OFFLINE) for {device['name']}")
-                             
-            except Exception as e_status:
-                 logger.error(f"Status check failed: {e_status}")
-
-            # CPU Check
-            try:
-                c_resp = requests.get(
-                    f"{API_URL}/monitoring/metrics/latest?device_id={device['id']}&metric_type=cpu_usage&limit=1",
-                    headers=get_headers(),
-                    timeout=10
-                )
-                if c_resp.status_code == 200:
-                    metrics = c_resp.json()
-                    if metrics and len(metrics) > 0:
-                        cpu = metrics[0]['value']
-                        if cpu > 80:
-                             # CHECK IF ALERT ALREADY EXISTS
-                             existing = requests.get(
-                                 f"{API_URL}/monitoring/alerts?device_id={device['id']}",
-                                 headers=get_headers(),
-                                 timeout=10
-                             )
-                             already_alerted = False
-                             if existing.status_code == 200:
-                                 for a in existing.json():
-                                     if a['rule_name'] == 'High CPU' and a['status'] == 'open':
-                                         already_alerted = True
-                                         break
-                             
-                             if not already_alerted:
-                                 alert_payload = {
-                                     "device_id": device['id'],
-                                     "rule_name": "High CPU",
-                                     "severity": "critical",
-                                     "message": f"High CPU usage detected: {cpu}%",
-                                     "status": "open"
-                                 }
-                                 requests.post(f"{API_URL}/monitoring/alerts", json=alert_payload, headers=get_headers())
-                                 logger.warning(f"Created alert (HIGH CPU) for {device['name']}")
-            except Exception as e_cpu:
-                 logger.error(f"CPU check failed: {e_cpu}")
-            except Exception as e_inner:
-                logger.error(f"Error checking device {device['name']}: {e_inner}")
-                  
+        r = requests.get(
+            f"{API_URL}/monitoring/metrics/latest",
+            params={"device_id": device_id, "metric_type": metric_type, "limit": 1},
+            headers=get_headers(), timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if data:
+                return float(data[0]['value'])
     except Exception as e:
-        logger.exception(f"Diagnoser error: {e}")
+        logger.error(f"Metric fetch failed ({metric_type}): {e}")
+    return None
+
+def get_open_alerts(device_id):
+    """Fetch all open alerts for a device, return as list."""
+    try:
+        r = requests.get(
+            f"{API_URL}/monitoring/alerts",
+            params={"device_id": device_id, "status": "open"},
+            headers=get_headers(), timeout=10
+        )
+        if r.status_code == 200:
+            return r.json()
+    except Exception as e:
+        logger.error(f"Alert fetch failed: {e}")
+    return []
+
+def has_open_alert(open_alerts, rule_name):
+    return any(a['rule_name'] == rule_name for a in open_alerts)
+
+def find_open_alert_id(open_alerts, rule_name):
+    for a in open_alerts:
+        if a['rule_name'] == rule_name:
+            return a['id']
+    return None
+
+def create_alert(device_id, rule_name, severity, message):
+    try:
+        r = requests.post(
+            f"{API_URL}/monitoring/alerts",
+            json={"device_id": device_id, "rule_name": rule_name, "severity": severity, "message": message},
+            headers=get_headers(), timeout=10
+        )
+        if r.status_code in (200, 201):
+            logger.warning(f"Alert created [{severity.upper()}] {rule_name}: {message}")
+        else:
+            logger.error(f"Failed to create alert: {r.status_code} {r.text}")
+    except Exception as e:
+        logger.error(f"Alert create error: {e}")
+
+def resolve_alert(alert_id, rule_name):
+    try:
+        requests.patch(
+            f"{API_URL}/monitoring/alerts/{alert_id}",
+            json={"status": "resolved", "resolution_summary": f"Auto-resolved: condition cleared"},
+            headers=get_headers(), timeout=10
+        )
+        logger.info(f"Auto-resolved alert: {rule_name} ({alert_id})")
+    except Exception as e:
+        logger.error(f"Alert resolve error: {e}")
+
+def analyze_metrics():
+    try:
+        resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers(), timeout=10)
+        resp.raise_for_status()
+        devices = resp.json()
+    except Exception as e:
+        logger.error(f"Failed to fetch devices: {e}")
+        return
+
+    for device in devices:
+        device_id = device['id']
+        name = device['name']
+        open_alerts = get_open_alerts(device_id)
+
+        # --- AUTO-RESOLVE PASS ---
+        uptime = get_latest_metric(device_id, 'uptime_status')
+        if uptime == 1.0:
+            alert_id = find_open_alert_id(open_alerts, 'Device Offline')
+            if alert_id:
+                resolve_alert(alert_id, 'Device Offline')
+                open_alerts = [a for a in open_alerts if a['id'] != alert_id]
+
+        wg_age = get_latest_metric(device_id, 'wg_handshake_age')
+        if wg_age is not None and wg_age < WG_ONLINE_THRESHOLD:
+            alert_id = find_open_alert_id(open_alerts, 'WireGuard Peer Offline')
+            if alert_id:
+                resolve_alert(alert_id, 'WireGuard Peer Offline')
+                open_alerts = [a for a in open_alerts if a['id'] != alert_id]
+
+        # --- OFFLINE CHECK ---
+        try:
+            if uptime == 0.0:
+                if not has_open_alert(open_alerts, 'Device Offline'):
+                    create_alert(device_id, 'Device Offline', 'critical',
+                                 f"Device {name} is not responding to ping.")
+                continue  # skip other checks if offline
+        except Exception as e:
+            logger.error(f"Offline check error for {name}: {e}")
+
+        # --- CPU CHECK ---
+        try:
+            cpu = get_latest_metric(device_id, 'cpu_usage')
+            if cpu is not None and cpu > CPU_THRESHOLD:
+                if not has_open_alert(open_alerts, 'High CPU'):
+                    create_alert(device_id, 'High CPU', 'critical',
+                                 f"High CPU usage detected on {name}: {cpu:.1f}%")
+        except Exception as e:
+            logger.error(f"CPU check error for {name}: {e}")
+
+        # --- MEMORY CHECK ---
+        try:
+            mem = get_latest_metric(device_id, 'memory_usage')
+            if mem is not None and mem > MEMORY_THRESHOLD:
+                if not has_open_alert(open_alerts, 'High Memory Usage'):
+                    create_alert(device_id, 'High Memory Usage', 'warning',
+                                 f"High memory usage on {name}: {mem:.1f}%")
+        except Exception as e:
+            logger.error(f"Memory check error for {name}: {e}")
+
+        # --- HOTSPOT CAPACITY CHECK ---
+        try:
+            hs_users = get_latest_metric(device_id, 'hotspot_users')
+            if hs_users is not None and hs_users > HOTSPOT_USER_THRESHOLD:
+                if not has_open_alert(open_alerts, 'Hotspot Capacity'):
+                    create_alert(device_id, 'Hotspot Capacity', 'warning',
+                                 f"Hotspot near capacity on {name}: {int(hs_users)} active sessions")
+        except Exception as e:
+            logger.error(f"Hotspot check error for {name}: {e}")
+
+        # --- WIREGUARD PEER DOWN CHECK ---
+        try:
+            if wg_age is not None and wg_age > WG_OFFLINE_THRESHOLD:
+                if not has_open_alert(open_alerts, 'WireGuard Peer Offline'):
+                    create_alert(device_id, 'WireGuard Peer Offline', 'critical',
+                                 f"WireGuard peer {name} last handshake {int(wg_age)}s ago (threshold: {WG_OFFLINE_THRESHOLD}s)")
+        except Exception as e:
+            logger.error(f"WireGuard check error for {name}: {e}")
+
+        # --- CLIENT DROP CHECK ---
+        try:
+            clients = get_latest_metric(device_id, 'connected_clients')
+            if clients is not None and clients == 0 and uptime == 1.0:
+                if not has_open_alert(open_alerts, 'Client Drop Detected'):
+                    create_alert(device_id, 'Client Drop Detected', 'warning',
+                                 f"All DHCP clients disappeared on {name} while device is online")
+        except Exception as e:
+            logger.error(f"Client drop check error for {name}: {e}")
 
 def run_agent():
-    logger.info("Starting Diagnoser Agent...")
-    # Login removed
-    pass
-        
+    logger.info("Starting Enhanced Diagnoser Agent...")
     while True:
         analyze_metrics()
         logger.info("Diagnosis cycle complete.")
-        time.sleep(5)
+        time.sleep(30)
 
 if __name__ == "__main__":
     run_agent()

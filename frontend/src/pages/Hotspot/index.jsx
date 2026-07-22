@@ -26,6 +26,8 @@ export default function Hotspot() {
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
     const [userSearch, setUserSearch] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [isSearching, setIsSearching] = useState(false);
     const [logSearch, setLogSearch] = useState('');
     const [logFilter, setLogFilter] = useState('all');
     const [reportSearch, setReportSearch] = useState('');
@@ -79,6 +81,33 @@ export default function Hotspot() {
         }
     }, [reportPeriod, reportStartDate, reportEndDate]);
 
+    // Search fallback: if local filter returns nothing, query router directly
+    useEffect(() => {
+        if (!selectedDevice || !userSearch.trim() || activeTab !== 'users') {
+            setSearchResults([]);
+            return;
+        }
+        const q = userSearch.toLowerCase().trim();
+        const filtered = users.filter(u => (u.name || '').toLowerCase().includes(q) || (u.comment || '').toLowerCase().includes(q));
+        if (filtered.length > 0) {
+            setSearchResults([]);
+            return;
+        }
+        // Local filter empty — search router directly
+        const timer = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const res = await api.get(`/hotspot/${selectedDevice}/users/search?name=${encodeURIComponent(q)}`);
+                setSearchResults(Array.isArray(res.data) ? res.data : [res.data]);
+            } catch (e) {
+                setSearchResults([]);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [userSearch, selectedDevice, activeTab, users]);
+
     // Poll Dashboard and Active tabs every 15 seconds
     useEffect(() => {
         if (!selectedDevice) return;
@@ -124,19 +153,33 @@ export default function Hotspot() {
     };
 
     const buildBatchHistory = (data) => {
-        return [...new Set(data.filter(u => u.comment).map(u => u.comment))].map(c => {
-            const batchUsers = data.filter(u => u.comment === c);
-            const dateMatch = c.match(/\|\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/);
+        // Group vouchers by their comment (Batch-{prefix} | {datetime})
+        // Strips seconds so vouchers created within the same minute group together
+        const groupMap = new Map();
+        data.filter(u => u.comment).forEach(u => {
+            const c = u.comment;
+            const key = c.replace(/(\d{2}:\d{2}):\d{2}$/, '$1');
+            if (!groupMap.has(key)) groupMap.set(key, []);
+            groupMap.get(key).push(u);
+        });
+
+        return [...groupMap.entries()].map(([key, batchUsers]) => {
+            const dateMatch = key.match(/\|\s*(\d{4}-\d{2}-\d{2}[\sT]+\d{2}:\d{2})/);
+            const prefixMatch = key.match(/^Batch-(.+?)\s*\|/i);
+            const displayName = prefixMatch ? prefixMatch[1].trim() : key.split('|')[0].trim();
+            const firstUser = batchUsers[0];
             return {
-                id: c,
-                name: c,
+                id: key,
+                name: key,
+                displayName,
                 count: batchUsers.length,
                 used: batchUsers.filter(u => u.uptime && u.uptime !== '0s').length,
-                profile: batchUsers[0].profile,
+                profile: firstUser.profile,
+                timeLimit: firstUser['limit-uptime'] || firstUser.limit_uptime || '',
                 date: dateMatch ? dateMatch[1] : null,
                 data: batchUsers,
             };
-        });
+        }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     };
 
     // Fire all common tab requests in parallel as soon as a device is selected.
@@ -146,8 +189,8 @@ export default function Hotspot() {
             const [summaryRes, systemRes, usersRes, activeRes, profilesRes, templateRes] = await Promise.allSettled([
                 api.get(`/hotspot/${deviceId}/summary`),
                 api.get(`/hotspot/${deviceId}/system-info`),
-                api.get(`/hotspot/${deviceId}/users`),
-                api.get(`/hotspot/${deviceId}/active`),
+                api.get(`/hotspot/${deviceId}/users?limit=0`), // Fetch ALL users for batch history
+                api.get(`/hotspot/${deviceId}/active?limit=200`),
                 api.get(`/hotspot/${deviceId}/profiles`),
                 api.get(`/hotspot/${deviceId}/voucher-template`),
             ]);
@@ -205,15 +248,16 @@ export default function Hotspot() {
                 setSystemInfo(systemRes.data);
                 setHealthStatus('online');
             } else if (activeTab === 'users') {
-                const res = await api.get(`/hotspot/${selectedDevice}/users`);
+                const res = await api.get(`/hotspot/${selectedDevice}/users?limit=200`);
                 setUsers(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'history') {
-                const res = await api.get(`/hotspot/${selectedDevice}/users`);
+                const res = await api.get(`/hotspot/${selectedDevice}/users?limit=0`);
+                setUsers(res.data);
                 setBatchHistory(buildBatchHistory(res.data));
                 setHealthStatus('online');
             } else if (activeTab === 'active') {
-                const res = await api.get(`/hotspot/${selectedDevice}/active`);
+                const res = await api.get(`/hotspot/${selectedDevice}/active?limit=200`);
                 setActiveSessions(res.data);
                 setHealthStatus('online');
             } else if (activeTab === 'logs') {
@@ -253,8 +297,7 @@ export default function Hotspot() {
     };
 
     const handleReprint = (batch) => {
-        const firstUser = batch.data[0];
-        const timeLimit = firstUser?.limit_uptime || batchForm.time_limit || '';
+        const timeLimit = batch.timeLimit || batch.data[0]?.['limit-uptime'] || batch.data[0]?.limit_uptime || batchForm.time_limit || '';
         setGeneratedBatch(batch.data.map(u => ({ username: u.name, password: u.password })));
         setBatchForm({ ...batchForm, profile: batch.profile, time_limit: timeLimit });
         setShowPrintView(true);
@@ -810,9 +853,21 @@ export default function Hotspot() {
                                     </div>
                                 </div>
                             </div>
+                            {/* Search status indicator */}
+                            {userSearch.trim() && (
+                                <div className="px-6 pt-3">
+                                    {isSearching ? (
+                                        <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest animate-pulse">Searching router...</span>
+                                    ) : searchResults.length > 0 ? (
+                                        <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">{searchResults.length} result(s) found on router</span>
+                                    ) : (
+                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">No results in first {users.length} vouchers — searched router directly</span>
+                                    )}
+                                </div>
+                            )}
                             <div className="overflow-hidden">
                                 <ResponsiveTable
-                                    data={users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || (u.comment || '').toLowerCase().includes(userSearch.toLowerCase()))}
+                                    data={searchResults.length > 0 ? searchResults : users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || (u.comment || '').toLowerCase().includes(userSearch.toLowerCase()))}
                                     columns={[
                                         {
                                             header: 'Identity',
@@ -944,11 +999,19 @@ export default function Hotspot() {
                                         const usedPct = b.count > 0 ? Math.round((b.used / b.count) * 100) : 0;
                                         return (
                                             <div key={b.id} className="bg-white dark:bg-gray-800 rounded-[28px] border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-4">
-                                                {/* Top row: profile + date */}
+                                                {/* Batch name headline */}
                                                 <div className="flex items-start justify-between gap-2">
-                                                    <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-wide">{b.profile}</span>
-                                                    {b.date && <span className="text-[10px] text-gray-400 font-bold">{b.date}</span>}
+                                                    <div>
+                                                        <div className="text-[9px] font-black uppercase text-gray-400 tracking-widest mb-0.5">Batch</div>
+                                                        <div className="text-base font-black text-gray-900 dark:text-white tracking-tight truncate max-w-[160px]">{b.displayName}</div>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-wide block mb-1">{b.profile}</span>
+                                                        {b.timeLimit && <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-lg text-[9px] font-black uppercase block">{b.timeLimit}</span>}
+                                                    </div>
                                                 </div>
+
+                                                {b.date && <div className="text-[9px] text-gray-400 dark:text-gray-500 font-bold -mt-2">{b.date}</div>}
 
                                                 {/* Counts */}
                                                 <div className="grid grid-cols-3 gap-2 text-center">
@@ -982,7 +1045,7 @@ export default function Hotspot() {
                                                         onClick={() => handleReprint(b)}
                                                         className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100 dark:shadow-blue-900/20 transition-all active:scale-95"
                                                     >
-                                                        <Printer size={13} /> Re-Print
+                                                        <Printer size={13} /> Re-Print ({b.count})
                                                     </button>
                                                     <button
                                                         onClick={() => handleBulkDeleteByComment(b.name)}
@@ -1311,7 +1374,7 @@ export default function Hotspot() {
                                         <div className="flex justify-between items-center p-2">
                                             <div>
                                                 <p className="font-black text-gray-900 dark:text-white uppercase text-sm">{r.username}</p>
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile} • {r.uptime}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile || '—'}{(r.uptime && r.uptime !== '0s') ? ` • ${r.uptime}` : ''}</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="font-black text-emerald-600">{r.price.toLocaleString()} {r.currency}</p>
@@ -1330,14 +1393,16 @@ export default function Hotspot() {
                                     <h4 className="font-black uppercase text-xs tracking-widest">Real-time Recording (Recommended)</h4>
                                 </div>
                                 <p className="text-xs font-medium text-gray-600 dark:text-gray-300 leading-relaxed">
-                                    For 100% accuracy, add this script to your Hotspot User Profile (Login Script).
-                                    This records the sale the exact second a user logs in.
+                                    Add this script to your MikroTik Hotspot Server's <strong>On Login</strong> field. It records the sale the moment a user logs in, with the correct profile and price.
                                 </p>
                                 <div className="bg-gray-900 rounded-2xl p-4 relative group">
-                                    <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto">
-                                        {`/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data="{\\"device_id\\": \\"${selectedDevice}\\", \\"username\\": \\"$user\\", \\"profile\\": \\"$profile\\", \\"comment\\": \\"$comment\\", \\"uptime\\": \\"$uptime\\"}" http-header-field="Content-Type: application/json" keep-result=no`}
+                                    <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto whitespace-pre">
+                                        {`:local userProfile [/ip hotspot user get [find name=$user] profile];\n:local postData ("{\\"device_id\\": \\"${selectedDevice}\\", \\"username\\": \\"" . $user . "\\", \\"profile\\": \\"" . $userProfile . "\\", \\"comment\\": \\"" . $comment . "\\"}");\n/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data=$postData http-header-field="Content-Type: application/json" keep-result=no;`}
                                     </pre>
                                 </div>
+                                <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium leading-relaxed">
+                                    ⚠️ The <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">$profile</code> variable is not reliably available in MikroTik login scripts — the first line explicitly looks up the user's profile from the router's user table to guarantee accuracy.
+                                </p>
                             </div>
                         </div>
                     )}
@@ -1498,7 +1563,7 @@ export default function Hotspot() {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
                                             <div>
                                                 <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Token Quantity</label>
-                                                <input type="number" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black text-xl dark:text-gray-200" value={batchForm.qty} onChange={e => setBatchForm({ ...batchForm, qty: parseInt(e.target.value) })} min="1" max="500" required />
+                                                <input type="number" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black text-xl dark:text-gray-200" value={batchForm.qty} onChange={e => setBatchForm({ ...batchForm, qty: parseInt(e.target.value) })} min="1" max="1000" required />
                                             </div>
                                             <div>
                                                 <div className="flex justify-between items-center mb-3">

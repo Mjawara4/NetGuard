@@ -43,6 +43,7 @@ class Alert(Base):
     severity = Column(String, default=AlertSeverity.WARNING)
     status = Column(String, default=AlertStatus.OPEN)
     message = Column(Text, nullable=False)
+    resolution_summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
     

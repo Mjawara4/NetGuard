@@ -36,6 +36,23 @@ def get_headers():
 
 import openai
 
+def parse_json(text: str):
+    """Extract and parse the first JSON object from text, stripping markdown fences if needed."""
+    import re
+    text = text.strip()
+    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'```\s*$', '', text, flags=re.MULTILINE)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        m = re.search(r'\{.*\}', text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                return None
+    return None
+
 def ask_llm(alert, device_info):
     """
     Constructs a prompt and queries the LLM for a remediation strategy.

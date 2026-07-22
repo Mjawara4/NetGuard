@@ -1,7 +1,7 @@
 requests==2.31.0
 psutil==5.9.8
 openai
-google-generativeai
+google-genai
 paramiko
 redis
 routeros-api

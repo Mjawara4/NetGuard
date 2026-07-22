@@ -9,7 +9,7 @@ from alembic import context
 from app.core.config import settings
 from app.core.database import Base
 # Ensure all models are imported so they are registered in metadata
-from app.models import User, APIKey, Device, Site, Metric, Alert 
+from app.models import User, APIKey, Device, Site, Metric, Alert, VoucherBatch 
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

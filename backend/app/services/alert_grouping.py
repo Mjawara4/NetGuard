@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.models import Alert, Incident, AlertStatus
-from app.core.database import SessionLocal
+from app.core.database import AsyncSessionLocal
 from datetime import datetime, timedelta
 import os
 import openai
@@ -16,7 +16,7 @@ async def process_alert_grouping(alert_id: str):
     """
     Background task to group alerts into incidents.
     """
-    async with SessionLocal() as db:
+    async with AsyncSessionLocal() as db:
         try:
             # 1. Fetch the new alert
             result = await db.execute(select(Alert).where(Alert.id == alert_id))

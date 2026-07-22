@@ -179,6 +179,12 @@ def get_mikrotik_stats(device_ip, username, password, port=8728):
 
     try:
         api = get_api_connection(device_ip, username, password, port)
+        metrics.append({
+            "metric_type": "api_reachable",
+            "value": 1.0,
+            "unit": "status",
+            "meta_data": None
+        })
 
         # 1. System Resources
         resource = api.get_resource('/system/resource')
@@ -275,12 +281,42 @@ def get_mikrotik_stats(device_ip, username, password, port=8728):
         except Exception as e_hotspot:
             logger.error(f"Failed to fetch hotspot stats: {e_hotspot}")
 
+        # 4. Interface stats (rx/tx bytes)
+        try:
+            iface_res = api.get_resource('/interface')
+            interfaces = iface_res.get()
+            for iface in interfaces:
+                if iface.get('running') == 'true':
+                    iname = iface.get('name', 'unknown')
+                    rx = int(iface.get('rx-byte', 0))
+                    tx = int(iface.get('tx-byte', 0))
+                    metrics.append({
+                        "metric_type": "interface_rx_bytes",
+                        "value": float(rx),
+                        "unit": "bytes",
+                        "meta_data": {"interface": iname}
+                    })
+                    metrics.append({
+                        "metric_type": "interface_tx_bytes",
+                        "value": float(tx),
+                        "unit": "bytes",
+                        "meta_data": {"interface": iname}
+                    })
+        except Exception as e_iface:
+            logger.error(f"Interface stats failed: {e_iface}")
+
         return metrics
 
     except Exception as e:
         logger.error(f"MikroTik Connection Failed for {device_ip}: {e}")
         evict_api_connection(device_ip, port)
-        return []
+        metrics.append({
+            "metric_type": "api_reachable",
+            "value": 0.0,
+            "unit": "status",
+            "meta_data": None
+        })
+        return metrics
 
 def wait_for_trigger(seconds):
     try:

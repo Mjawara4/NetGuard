@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from typing import List
@@ -67,41 +67,32 @@ async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db)
 
 @router.get("/devices", response_model=List[DeviceResponse])
 async def get_devices(
-    db: AsyncSession = Depends(get_db), 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
     from app.models.core import decrypt_device_secrets
-    
+
+    base_query = select(Device)
+
     if isinstance(actor, APIKey):
         if actor.organization_id:
-            # Filter by API key's org
-            result = await db.execute(select(Device).join(Site).where(Site.organization_id == actor.organization_id))
-        else:
-            # Global API key sees all
-            result = await db.execute(select(Device))
-        devices = result.scalars().all()
-        for d in devices:
-            decrypt_device_secrets(d)
-        return devices
+            base_query = select(Device).join(Site).where(Site.organization_id == actor.organization_id)
+        # else global API key sees all
+    else:
+        current_user = actor
+        if current_user.role != UserRole.SUPER_ADMIN:
+            if current_user.organization_id:
+                base_query = select(Device).join(Site).where(Site.organization_id == current_user.organization_id)
+            else:
+                return []
 
-    current_user = actor
-    # Super Admin sees all
-    if current_user.role == UserRole.SUPER_ADMIN:
-        result = await db.execute(select(Device))
-        devices = result.scalars().all()
-        for d in devices:
-            decrypt_device_secrets(d)
-        return devices
-
-    # Filter by user's org via Site
-    if current_user.organization_id:
-        result = await db.execute(select(Device).join(Site).where(Site.organization_id == current_user.organization_id))
-        devices = result.scalars().all()
-        for d in devices:
-            decrypt_device_secrets(d)
-        return devices
-    
-    return []
+    result = await db.execute(base_query.offset(skip).limit(limit))
+    devices = result.scalars().all()
+    for d in devices:
+        decrypt_device_secrets(d)
+    return devices
 
 @router.get("/devices/{device_id}", response_model=DeviceResponse)
 async def get_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

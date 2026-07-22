@@ -123,9 +123,14 @@ services:
 
   classic-fix-agent:
     build: ./agents
-    command: python fix_agent.py
+    command: >
+      sh -c 'sleep 5;
+      ip route add 10.13.13.0/24 via 172.25.0.100 || true;
+      python fix_agent.py'
     volumes:
       - ./agents:/app
+    cap_add:
+      - NET_ADMIN
     env_file:
       - .env.production
     environment:
@@ -137,6 +142,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      wireguard:
+        condition: service_started
     networks:
       - netguard-net
     restart: unless-stopped
@@ -160,6 +167,55 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  reporter-agent:
+    build: ./agents
+    command: python reporter_agent.py
+    volumes:
+      - ./agents:/app
+    env_file:
+      - .env.production
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=${NETGUARD_API_KEY:-agent-secret-key-123}
+      - PYTHONUNBUFFERED=1
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - netguard-net
+    restart: unless-stopped
+
+  wg-agent:
+    build: ./agents
+    command: >
+      sh -c 'sleep 5;
+      ip route add 10.13.13.0/24 via 172.25.0.100 || true;
+      python wg_agent.py'
+    volumes:
+      - ./agents:/app
+    cap_add:
+      - NET_ADMIN
+    env_file:
+      - .env.production
+    environment:
+      - API_URL=http://backend:8000/api/v1
+      - NETGUARD_API_KEY=${NETGUARD_API_KEY:-agent-secret-key-123}
+      - PYTHONUNBUFFERED=1
+      - WG_CHECK_INTERVAL=30
+      - WG_FAIL_THRESHOLD=3
+    depends_on:
+      backend:
+        condition: service_healthy
+      wireguard:
+        condition: service_started
     networks:
       - netguard-net
     restart: unless-stopped

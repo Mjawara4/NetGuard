@@ -24,36 +24,40 @@ export default function Dashboard() {
 
     const fetchData = async () => {
         try {
-            try {
-                const statsRes = await api.get('/monitoring/dashboard-stats');
-                setHotspotData({
-                    count: statsRes.data.active_users,
-                    topUsers: statsRes.data.top_consumption,
-                    health: statsRes.data.system_health
-                });
-            } catch (e) {
-                console.error("Failed to fetch dashboard stats", e);
+            // Fetch all independent data sources in parallel
+            const [statsResult, alertsResult, devicesResult] = await Promise.allSettled([
+                api.get('/monitoring/dashboard-stats'),
+                api.get('/monitoring/alerts'),
+                api.get('/inventory/devices'),
+            ]);
+
+            if (statsResult.status === 'fulfilled') {
+                const s = statsResult.value.data;
+                setHotspotData({ count: s.active_users, topUsers: s.top_consumption, health: s.system_health });
             }
 
-            const alertsRes = await api.get('/monitoring/alerts');
-            const devicesRes = await api.get('/inventory/devices');
-            setAlerts(alertsRes.data);
-            setDevices(devicesRes.data);
+            const alertsData = alertsResult.status === 'fulfilled' ? alertsResult.value.data : [];
+            const devicesData = devicesResult.status === 'fulfilled' ? devicesResult.value.data : [];
+            setAlerts(alertsData);
+            setDevices(devicesData);
 
-            const activeRouters = devicesRes.data.filter(d => d.device_type === 'router' && d.is_active);
+            const activeRouters = devicesData.filter(d => d.device_type === 'router' && d.is_active);
             setRouters(activeRouters);
 
-            // Pick router to chart: selected > first > none
-            const targetRouterId = selectedRouterId || (activeRouters[0]?.id);
+            // Fetch metrics for selected router (depends on devices result)
+            const targetRouterId = selectedRouterId || activeRouters[0]?.id;
             if (targetRouterId) {
-                const metricsRes = await api.get(`/monitoring/metrics/latest?device_id=${targetRouterId}&limit=20&metric_type=cpu_usage`);
-                const realMetrics = metricsRes.data.sort((a, b) => new Date(a.time) - new Date(b.time)).map(m => ({
-                    time: new Date(m.time).getTime(),
-                    value: m.value
-                }));
-                if (realMetrics.length > 0) {
-                    setMetrics(realMetrics);
-                } else {
+                try {
+                    const metricsRes = await api.get(`/monitoring/metrics/latest?device_id=${targetRouterId}&limit=20&metric_type=cpu_usage`);
+                    const realMetrics = metricsRes.data
+                        .sort((a, b) => new Date(a.time) - new Date(b.time))
+                        .map(m => ({ time: new Date(m.time).getTime(), value: m.value }));
+                    if (realMetrics.length > 0) {
+                        setMetrics(realMetrics);
+                    } else {
+                        useMockMetrics();
+                    }
+                } catch {
                     useMockMetrics();
                 }
             } else {

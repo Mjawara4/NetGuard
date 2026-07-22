@@ -62,9 +62,10 @@ class AlertResponse(AlertBase):
     id: UUID4
     device_id: UUID4
     status: AlertStatus
+    resolution_summary: Optional[str] = None
     created_at: datetime
     resolved_at: Optional[datetime] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -105,6 +106,11 @@ class AutoFixActionResponse(AutoFixActionCreate):
         from_attributes = True
 
 # Incident
+class IncidentCreate(BaseModel):
+    alert_id: UUID4
+    summary: Optional[str] = None
+    root_cause: Optional[str] = None
+
 class IncidentResponse(BaseModel):
     id: UUID4
     alert_id: UUID4
@@ -128,3 +134,15 @@ class DashboardStatsResponse(BaseModel):
     system_health: float # Percentage
     active_users: int
     top_consumption: List[HotspotUser]
+
+# AgentLog
+class AgentLogCreate(BaseModel):
+    agent_name: str
+    level: str = "INFO"
+    message: str
+
+class AgentLogResponse(AgentLogCreate):
+    id: UUID4
+    created_at: datetime
+    class Config:
+        from_attributes = True

@@ -1,14 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, Depends, HTTPException, Security, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse
 import io
 import csv
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
-from app.models import Device, User, Site, APIKey, UserRole, VoucherSale
+from app.models import Device, User, Site, APIKey, UserRole, VoucherSale, VoucherBatch
 from app.models.core import decrypt_device_secrets
 import routeros_api
 from uuid import UUID
@@ -21,6 +21,7 @@ import re
 import os
 import json
 import redis
+import redis.exceptions
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,41 @@ except Exception:
 
 def cache_key(device_id: str, endpoint: str) -> str:
     return f"hotspot:{device_id}:{endpoint}"
+
+
+def invalidate_hotspot_cache(device_id: str, endpoints: List[str] = None):
+    """Invalidate Redis cache for specific hotspot endpoints."""
+    if not redis_client:
+        return
+    if endpoints is None:
+        endpoints = ["users", "active", "profiles", "summary"]
+    for ep in endpoints:
+        try:
+            redis_client.delete(cache_key(device_id, ep))
+        except redis.exceptions.RedisError as e:
+            logger.warning(f"Redis cache invalidation failed for {ep}: {e}")
+
+
+def _redis_setex(key: str, ttl: int, value: str):
+    """Set Redis key with TTL, logging errors instead of silently ignoring."""
+    if not redis_client:
+        return
+    try:
+        redis_client.setex(key, ttl, value)
+    except redis.exceptions.RedisError as e:
+        logger.warning(f"Redis cache write failed for {key}: {e}")
+
+
+def _redis_get(key: str) -> Optional[str]:
+    """Get Redis key, logging errors instead of silently ignoring."""
+    if not redis_client:
+        return None
+    try:
+        return redis_client.get(key)
+    except redis.exceptions.RedisError as e:
+        logger.warning(f"Redis cache read failed for {key}: {e}")
+        return None
+
 
 # RouterOS API connection cache (shared across requests within this process)
 _router_pool_cache = {}
@@ -237,9 +273,14 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
         profile_pricing = hs_settings.get('profile_pricing', {})
         default_currency = hs_settings.get('default_currency', 'TZS')
 
+        # Build case-insensitive lookup index
+        profile_pricing_lower = {k.lower(): v for k, v in profile_pricing.items()}
+
         def get_pricing(p_name):
-            if p_name in profile_pricing:
-                return profile_pricing[p_name]['price'], profile_pricing[p_name]['currency']
+            key = (p_name or '').lower()
+            if key in profile_pricing_lower:
+                entry = profile_pricing_lower[key]
+                return entry['price'], entry['currency']
             import re
             match = re.search(r'(\d+)$', p_name or '')
             if match:
@@ -286,11 +327,24 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
             price, currency = get_pricing(u['profile'])
 
             if username in existing_usernames:
-                # Backfill price/currency if the record was saved with price=0
                 existing = existing_sales[username]
+                changed = False
+                # Backfill price/currency if the record was saved with price=0
                 if existing.price == 0 and price > 0:
                     existing.price = int(price)
                     existing.currency = currency
+                    changed = True
+                # Backfill profile name if the record was saved with empty profile
+                if not existing.profile and u['profile']:
+                    existing.profile = u['profile']
+                    changed = True
+                # Keep uptime and bytes current (real-time push records start at 0s)
+                if u['uptime_sec'] > (existing.uptime_sec or 0):
+                    existing.uptime = u['uptime_str']
+                    existing.uptime_sec = u['uptime_sec']
+                    existing.bytes_total = u['bytes_in'] + u['bytes_out']
+                    changed = True
+                if changed:
                     updated_prices += 1
                 continue
 
@@ -312,6 +366,31 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
 
         logger.info(f"Sync Stats: {len(users)} total, {len(uptime_users)} with uptime, {new_sales} newly recorded, {updated_prices} prices backfilled")
 
+        # Secondary pass: recover profile for orphaned DB records (recorded with empty profile,
+        # session ended so they no longer appear in uptime_users) using the full router user list.
+        orphaned_res = await db.execute(
+            select(VoucherSale).where(
+                VoucherSale.device_id == device.id,
+                VoucherSale.profile == ''
+            )
+        )
+        orphaned_sales = {sale.username: sale for sale in orphaned_res.scalars().all()}
+        if orphaned_sales:
+            router_user_map = {u.get('name'): u.get('profile', '') for u in users}
+            profile_recovered = 0
+            for username, sale in orphaned_sales.items():
+                router_profile = router_user_map.get(username, '')
+                if router_profile:
+                    sale.profile = router_profile
+                    p, c = get_pricing(router_profile)
+                    if sale.price == 0 and p > 0:
+                        sale.price = int(p)
+                        sale.currency = c
+                    profile_recovered += 1
+            if profile_recovered > 0:
+                new_sales += profile_recovered  # ensure commit fires
+                logger.info(f"Recovered profile for {profile_recovered} orphaned records on {device.name}")
+
         if new_sales > 0 or updated_prices > 0:
             await db.commit()
             logger.info(f"Synced {new_sales} new + {updated_prices} updated sales for device {device.name}")
@@ -328,7 +407,15 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
 
 
 @router.get("/{device_id}/users", response_model=List[HotspotUser])
-async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def get_hotspot_users(
+    device_id: str,
+    limit: int = Query(200, ge=0, le=5000),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None, description="Filter by username prefix"),
+    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor)
+):
     # Fetch device with visibility check
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(Device).where(Device.id == UUID(device_id))
@@ -345,15 +432,22 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
 
-    # Try cache first
+    # Try cache first (unless refresh requested)
     key = cache_key(device_id, "users")
-    if redis_client:
-        try:
-            cached = redis_client.get(key)
-            if cached:
-                return [HotspotUser(**item) for item in json.loads(cached)]
-        except Exception:
-            pass
+    if not refresh:
+        cached = _redis_get(key)
+        if cached:
+            try:
+                result = [HotspotUser(**item) for item in json.loads(cached)]
+                # Apply pagination and search to cached data
+                if search:
+                    result = [u for u in result if search.lower() in (u.name or '').lower()]
+                # Apply pagination (limit=0 means return all)
+                if limit == 0:
+                    return result[offset:]
+                return result[offset:offset + limit]
+            except Exception as e:
+                logger.warning(f"Failed to deserialize cached users: {e}")
 
     try:
         # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
@@ -377,13 +471,17 @@ async def get_hotspot_users(device_id: str, db: AsyncSession = Depends(get_db), 
             comment=u.get('comment')
         ) for u in users]
 
-        if redis_client:
-            try:
-                redis_client.setex(key, 15, json.dumps([r.dict() for r in result]))
-            except Exception:
-                pass
+        # Cache full result before pagination/search
+        _redis_setex(key, 15, json.dumps([r.model_dump() for r in result]))
 
-        return result
+        # Apply search filter
+        if search:
+            result = [u for u in result if search.lower() in (u.name or '').lower()]
+
+        # Apply pagination (limit=0 means return all)
+        if limit == 0:
+            return result[offset:]
+        return result[offset:offset + limit]
 
     except Exception as e:
         logger.error(f"Hotspot API Error: {e}")
@@ -403,31 +501,32 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
          raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-         
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         # Check if exists
         existing = api.get_resource('/ip/hotspot/user').get(name=user.name)
         if existing:
              raise HTTPException(status_code=400, detail="User already exists")
-             
+
         api.get_resource('/ip/hotspot/user').add(
-            name=user.name, 
-            password=user.password, 
+            name=user.name,
+            password=user.password,
             profile=user.profile
         )
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
         return {"status": "success"}
     except Exception as e:
         if "User already exists" in str(e): raise e
@@ -469,13 +568,19 @@ async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = 
 
         resource.remove(id=uid)
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Delete User Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/profiles", response_model=List[dict])
-async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def get_hotspot_profiles(
+    device_id: str,
+    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor)
+):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(Device).where(Device.id == UUID(device_id))
     elif isinstance(actor, APIKey) and not actor.organization_id:
@@ -493,13 +598,13 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
 
     # Try cache first
     key = cache_key(device_id, "profiles")
-    if redis_client:
-        try:
-            cached = redis_client.get(key)
-            if cached:
+    if not refresh:
+        cached = _redis_get(key)
+        if cached:
+            try:
                 return json.loads(cached)
-        except Exception:
-            pass
+            except Exception as e:
+                logger.warning(f"Failed to deserialize cached profiles: {e}")
 
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -508,18 +613,9 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
 
         profiles = api.get_resource('/ip/hotspot/user/profile').get()
         active = api.get_resource('/ip/hotspot/active').get()
-
-        # Calculate active users per profile
-        active_per_profile = {}
-        for a in active:
-            # Active sessions don't explicitly show profile, we need to match user to profile
-            # However, for simplicity and performance, most MikroTik admins name users after profiles or used fixed profiles.
-            # A more robust way is to fetch users and join, but let's try a heuristic or just return the base stats first.
-            pass
-
-        # Let's just return the profiles for now, but enriched if we can.
-        # Enriched Profiles with user counts:
         users = api.get_resource('/ip/hotspot/user').get()
+
+        # Build user-to-profile mapping
         user_to_profile = {u.get('name'): u.get('profile') for u in users}
 
         profile_counts = {p.get('name'): 0 for p in profiles}
@@ -534,21 +630,22 @@ async def get_hotspot_profiles(device_id: str, db: AsyncSession = Depends(get_db
         profile_pricing = settings.get('profile_pricing', {})
         default_currency = settings.get('default_currency', 'TZS')
 
+        # Build serializable result dicts (RouterOS API objects may not be JSON-serializable)
+        result = []
         for p in profiles:
             p_name = p.get('name')
-            p['active_users'] = profile_counts.get(p_name, 0)
-
             pricing = profile_pricing.get(p_name, {})
-            p['custom_price'] = pricing.get('price', 0)
-            p['custom_currency'] = pricing.get('currency', default_currency)
+            result.append({
+                "name": p_name,
+                "rate-limit": p.get('rate-limit'),
+                "shared-users": p.get('shared-users'),
+                "active_users": profile_counts.get(p_name, 0),
+                "custom_price": pricing.get('price', 0),
+                "custom_currency": pricing.get('currency', default_currency),
+            })
 
-        if redis_client:
-            try:
-                redis_client.setex(key, 15, json.dumps(profiles))
-            except Exception:
-                pass
-
-        return profiles
+        _redis_setex(key, 15, json.dumps(result))
+        return result
     except Exception as e:
         logger.error(f"Hotspot Profiles Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -590,6 +687,19 @@ async def update_profile_settings(device_id: str, profile_name: str, settings: P
         device.voucher_template = hs_settings
         flag_modified(device, 'voucher_template')
         db.add(device)
+
+        # Backfill any existing sale records that were recorded with price=0 for this profile
+        if settings.price > 0:
+            await db.execute(
+                update(VoucherSale)
+                .where(
+                    VoucherSale.device_id == UUID(device_id),
+                    VoucherSale.profile == profile_name,
+                    VoucherSale.price == 0
+                )
+                .values(price=int(settings.price), currency=settings.currency)
+            )
+
         await db.commit()
 
         return {"status": "success"}
@@ -615,13 +725,12 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
 
     # Try cache first
     key = cache_key(device_id, "summary")
-    if redis_client:
+    cached = _redis_get(key)
+    if cached:
         try:
-            cached = redis_client.get(key)
-            if cached:
-                return json.loads(cached)
-        except Exception:
-            pass
+            return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Failed to deserialize cached summary: {e}")
 
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -652,11 +761,7 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
             "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
         }
 
-        if redis_client:
-            try:
-                redis_client.setex(key, 15, json.dumps(result))
-            except Exception:
-                pass
+        _redis_setex(key, 15, json.dumps(result))
 
         return result
     except Exception as e:
@@ -732,6 +837,7 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
             
         api.get_resource('/ip/hotspot/user/profile').add(**params)
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["profiles"])
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -744,59 +850,68 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
-        
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         # In RouterOS API, removing by name usually requires finding the .id first or using the name if the library supports it
         # routeros-api's remove() typically takes an id.
         resource = api.get_resource('/ip/hotspot/user/profile')
         profile = resource.get(name=profile_name)
         if not profile:
              raise HTTPException(status_code=404, detail="Profile not found")
-             
+
         resource.remove(id=profile[0]['id'])
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["profiles"])
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{device_id}/active", response_model=List[HotspotActive])
-async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def get_active_users(
+    device_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor)
+):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(Device).where(Device.id == UUID(device_id))
     elif isinstance(actor, APIKey) and not actor.organization_id:
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     # Decrypt device secrets (required for async SQLAlchemy)
     decrypt_device_secrets(device)
 
     # Try cache first
     key = cache_key(device_id, "active")
-    if redis_client:
-        try:
-            cached = redis_client.get(key)
-            if cached:
-                return [HotspotActive(**item) for item in json.loads(cached)]
-        except Exception:
-            pass
+    if not refresh:
+        cached = _redis_get(key)
+        if cached:
+            try:
+                result = [HotspotActive(**item) for item in json.loads(cached)]
+                return result[offset:offset + limit]
+            except Exception as e:
+                logger.warning(f"Failed to deserialize cached active: {e}")
 
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
@@ -849,13 +964,8 @@ async def get_active_users(device_id: str, db: AsyncSession = Depends(get_db), a
                 limit_bytes_total=limit_bytes
             ))
 
-        if redis_client:
-            try:
-                redis_client.setex(key, 5, json.dumps([r.dict() for r in results]))
-            except Exception:
-                pass
-
-        return results
+        _redis_setex(key, 5, json.dumps([r.model_dump() for r in results]))
+        return results[offset:offset + limit]
     except Exception as e:
         logger.error(f"Active Users Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -883,6 +993,7 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
         api = connection.get_api()
         api.get_resource('/ip/hotspot/active').remove(id=active_id)
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["active", "summary"])
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -911,9 +1022,9 @@ async def update_voucher_template(device_id: str, template: VoucherTemplate, db:
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     
-    device.voucher_template = template.dict()
+    device.voucher_template = template.model_dump()
     await db.commit()
-    
+
     return {"status": "saved", "template": template}
 
 @router.get("/{device_id}/voucher-template", response_model=VoucherTemplate)
@@ -963,9 +1074,10 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         generated = []
         max_attempts = batch.qty * 3 # Allow for more collisions
         attempts = 0
-        
+        batch_comment = f"Batch-{batch.prefix or 'auto'} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
         logger.info(f"Starting batch generation: qty={batch.qty}, random={batch.random_mode}, format={batch.format}")
-        
+
         while len(generated) < batch.qty and attempts < max_attempts:
             attempts += 1
             if batch.random_mode:
@@ -980,7 +1092,7 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                     length = batch.length if batch.length else 8
                     num_len = length // 2
                     char_len = length - num_len
-                    
+
                     letters = ''.join(random.choices(string.ascii_lowercase, k=char_len))
                     numbers = ''.join(random.choices(string.digits, k=num_len))
                     username = f"{letters}{numbers}"
@@ -990,13 +1102,13 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                 suffix = ''.join(random.choices(string.digits, k=suffix_len))
                 username = f"{batch.prefix}{suffix}"
                 password = ''.join(random.choices(string.digits, k=4)) # Simple 4 digit password
-            
+
             try:
                 params = {
                     'name': username,
                     'password': password,
                     'profile': batch.profile or 'default',
-                    'comment': f"Batch-{batch.prefix or 'auto'} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    'comment': batch_comment
                 }
                 if batch.time_limit:
                     params['limit-uptime'] = batch.time_limit
@@ -1013,12 +1125,155 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                 
         logger.info(f"Batch generation complete: {len(generated)}/{batch.qty} created in {attempts} attempts")
         connection.disconnect()
+        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
+
+        # Persist batch to database for history/reprint
+        try:
+            # Get organization_id from device via site
+            site_res = await db.execute(select(Site).where(Site.id == device.site_id))
+            site = site_res.scalars().first()
+            org_id = site.organization_id if site else None
+
+            if org_id:
+                voucher_batch = VoucherBatch(
+                    device_id=device.id,
+                    organization_id=org_id,
+                    batch_name=batch_comment,
+                    prefix=batch.prefix or 'auto',
+                    profile=batch.profile or 'default',
+                    time_limit=batch.time_limit,
+                    data_limit=batch.data_limit,
+                    count=len(generated),
+                    vouchers=generated,
+                    created_at=datetime.utcnow()
+                )
+                db.add(voucher_batch)
+                await db.commit()
+                logger.info(f"Persisted batch {batch_comment} with {len(generated)} vouchers to database")
+        except Exception as db_err:
+            logger.warning(f"Failed to persist batch to database: {db_err}")
+            await db.rollback()
+
         return generated
     except Exception as e:
         logger.error(f"Batch Gen Error: {e}", exc_info=True)
         if 'connection' in locals() and connection:
             connection.disconnect()
         raise HTTPException(status_code=500, detail=f"Failed to generate vouchers: {str(e)}")
+
+@router.get("/{device_id}/batches")
+async def get_voucher_batches(
+    device_id: str,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor)
+):
+    """Fetch persisted voucher batch history from the database."""
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    try:
+        stmt = select(VoucherBatch).where(
+            VoucherBatch.device_id == device.id
+        ).order_by(VoucherBatch.created_at.desc()).limit(limit).offset(offset)
+        res = await db.execute(stmt)
+        batches = res.scalars().all()
+
+        return [
+            {
+                "id": str(b.id),
+                "name": b.batch_name,
+                "displayName": b.prefix,
+                "count": b.count,
+                "profile": b.profile,
+                "timeLimit": b.time_limit or '',
+                "date": b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else None,
+                "vouchers": b.vouchers,
+                "data": b.vouchers,  # For backwards compat with frontend handleReprint
+            }
+            for b in batches
+        ]
+    except Exception as e:
+        logger.error(f"Get Batches Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{device_id}/users/search")
+async def search_hotspot_user(
+    device_id: str,
+    name: str = Query(..., description="Username or partial name to search for"),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor)
+):
+    """Search for a specific voucher by name on the router, bypassing pagination limits."""
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == UUID(device_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == UUID(device_id))
+    else:
+        query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
+
+    res = await db.execute(query)
+    device = res.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    decrypt_device_secrets(device)
+
+    try:
+        port = getattr(device, 'ssh_port', 8728) or 8728
+        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
+        api = connection.get_api()
+
+        resource = api.get_resource('/ip/hotspot/user')
+        # Try exact match first, then partial
+        users = resource.get(name=name)
+        if not users:
+            # Fallback: get all and filter client-side
+            all_users = resource.get()
+            name_lower = name.lower()
+            users = [u for u in all_users if name_lower in (u.get('name') or '').lower()]
+
+        connection.disconnect()
+
+        if not users:
+            raise HTTPException(status_code=404, detail="Voucher not found")
+
+        return [
+            HotspotUser(
+                name=u.get('name'),
+                password=u.get('password'),
+                profile=u.get('profile'),
+                uptime=u.get('uptime'),
+                bytes_in=int(u.get('bytes-in', 0)),
+                bytes_out=int(u.get('bytes-out', 0)),
+                limit_uptime=u.get('limit-uptime'),
+                limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
+                comment=u.get('comment')
+            )
+            for u in users
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Search User Error: {e}")
+        error_msg = str(e)
+        if "Authentication failed" in error_msg:
+            raise HTTPException(status_code=401, detail="Router Authentication Failed.")
+        if "timed out" in error_msg or "time out" in error_msg:
+            raise HTTPException(status_code=504, detail="Router Connection Timed Out.")
+        raise HTTPException(status_code=500, detail=f"Router Error: {error_msg}")
+
 @router.delete("/{device_id}/users/bulk")
 async def bulk_delete_users(
     device_id: str, 
@@ -1148,10 +1403,11 @@ async def bulk_delete_users(
             
         if connection:
             connection.disconnect()
-        
+
         if failed_count > 0:
             logger.warning(f"Bulk delete partial completion. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}")
-            
+
+        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
         return {"status": "success", "count": deleted_count, "failed": failed_count}
     except Exception as e:
         logger.error(f"Bulk Delete Error: {e}")
@@ -1216,11 +1472,12 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
 
 @router.get("/{device_id}/reports")
 async def get_hotspot_reports(
-    device_id: str, 
+    device_id: str,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     period: Optional[str] = None,
-    db: AsyncSession = Depends(get_db), 
+    background_tasks: BackgroundTasks = None,
+    db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
@@ -1229,17 +1486,19 @@ async def get_hotspot_reports(
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     decrypt_device_secrets(device)
-         
+
     try:
-        # 1. Sync latest sales before reporting
-        await sync_hotspot_sales(device, db)
+        # 1. Trigger sales sync in background (non-blocking)
+        if background_tasks:
+            background_tasks.add_task(sync_hotspot_sales, device, db)
+        # If background_tasks is not available, skip sync to avoid blocking
         
         # 2. Query the persistent VoucherSale table
         from sqlalchemy import and_, func
@@ -1406,43 +1665,44 @@ async def record_hotspot_sale(
     res = await db.execute(stmt)
     existing = res.scalars().first()
     
-    if existing:
-        return {"status": "already_recorded"}
-
-    # Determine price and currency
+    # Determine price and currency from profile pricing map or regex heuristic
     hs_settings = device.voucher_template or {}
     profile_pricing = hs_settings.get('profile_pricing', {})
     default_currency = hs_settings.get('default_currency', 'TZS')
-    
-    logger.info(f"Record Sale Debug: Device={device.name}, Profile='{sale.profile}', PricingMap={profile_pricing}")
-    
+
     price = 0
     currency = default_currency
-    
-    if sale.profile in profile_pricing:
-        price = profile_pricing[sale.profile]['price']
-        currency = profile_pricing[sale.profile]['currency']
-        logger.info(f"Price matched via map: {price} {currency}")
+
+    profile_pricing_lower = {k.lower(): v for k, v in profile_pricing.items()}
+    profile_key = (sale.profile or '').lower()
+    if profile_key in profile_pricing_lower:
+        entry = profile_pricing_lower[profile_key]
+        price = entry['price']
+        currency = entry['currency']
+        logger.info(f"Record Sale: Device={device.name}, Profile='{sale.profile}', price={price} {currency} (from map)")
     else:
-        # Try finding ANY digits in the string (e.g. "3-Hours" -> 3, "User500" -> 500)
         match = re.search(r'(\d+)', sale.profile or '')
         if match:
             price = float(match.group(1))
-            logger.info(f"Price matched via regex (heuristic): {price}")
+            logger.info(f"Record Sale: Device={device.name}, Profile='{sale.profile}', price={price} (regex heuristic)")
         else:
-            # Fallback: Try finding any digits? usage might be risky "User1" -> 1
-            # Let's log that we failed
-            logger.warning(f"Price resolution failed for profile '{sale.profile}'. No map match and no regex match.")
+            logger.warning(f"Record Sale: Price resolution failed for profile '{sale.profile}' on device {device.name}.")
 
-    # Parse creation date from comment if possible
-    # UPDATE: User requested to track sale based on Usage Date (Now), not creation date.
+    if existing:
+        changed = False
+        if existing.price == 0 and price > 0:
+            existing.price = int(price)
+            existing.currency = currency
+            changed = True
+        if not existing.profile and sale.profile:
+            existing.profile = sale.profile
+            changed = True
+        if changed:
+            await db.commit()
+            logger.info(f"Record Sale: Backfilled existing record (username={sale.username}, price={price}, profile={sale.profile})")
+        return {"status": "already_recorded"}
+
     sale_date = datetime.utcnow()
-    # if sale.comment and "|" in sale.comment:
-    #     try:
-    #         date_part = sale.comment.split("|")[-1].strip()
-    #         sale_date = datetime.strptime(date_part, "%Y-%m-%d %H:%M:%S")
-    #     except:
-    #         pass
 
     new_sale = VoucherSale(
         device_id=sale.device_id,
@@ -1453,12 +1713,12 @@ async def record_hotspot_sale(
         uptime=sale.uptime,
         uptime_sec=parse_routeros_time(sale.uptime),
         bytes_total=sale.bytes,
-        price=price,
+        price=int(price),
         currency=currency,
         created_at=sale_date
     )
-    
+
     db.add(new_sale)
     await db.commit()
-    
+
     return {"status": "recorded", "id": str(new_sale.id)}

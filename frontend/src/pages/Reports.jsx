@@ -48,14 +48,17 @@ export default function Reports() {
             const startStr = start.toISOString();
             const endStr = end.toISOString();
 
-            // Fetch CPU
-            const cpuRes = await api.get(`/monitoring/metrics/history?device_id=${selectedDevice}&metric_type=cpu_usage&start_time=${startStr}&end_time=${endStr}`);
-            const trafficRes = await api.get(`/monitoring/metrics/history?device_id=${selectedDevice}&metric_type=hotspot_traffic&start_time=${startStr}&end_time=${endStr}`);
+            // Fetch all metric series in parallel
+            const [cpuRes, trafficRes, clientsRes] = await Promise.all([
+                api.get(`/monitoring/metrics/history?device_id=${selectedDevice}&metric_type=cpu_usage&start_time=${startStr}&end_time=${endStr}`),
+                api.get(`/monitoring/metrics/history?device_id=${selectedDevice}&metric_type=hotspot_traffic&start_time=${startStr}&end_time=${endStr}`),
+                api.get(`/monitoring/metrics/history?device_id=${selectedDevice}&metric_type=connected_clients&start_time=${startStr}&end_time=${endStr}`),
+            ]);
 
             setMetrics({
                 cpu: formatData(cpuRes.data),
                 traffic: formatData(trafficRes.data),
-                clients: [] // Omitted for brevity
+                clients: formatData(clientsRes.data),
             });
         } catch (e) {
             console.error("Failed to fetch reports", e);

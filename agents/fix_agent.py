@@ -1,12 +1,11 @@
 import time
 import requests
 import os
-import paramiko
 import logging
 import sys
+import routeros_api
 from datetime import datetime, timezone
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -17,6 +16,11 @@ logger = logging.getLogger("fix-agent")
 
 API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
 API_KEY = os.getenv("NETGUARD_API_KEY")
+SSH_USER = os.getenv("SSH_USER", "admin")
+SSH_PASSWORD = os.getenv("SSH_PASSWORD", "admin")
+VERIFY_WAIT_SECONDS = int(os.getenv("FIX_VERIFY_WAIT", "30"))
+CPU_THRESHOLD = float(os.getenv("CPU_THRESHOLD", "80"))
+HOTSPOT_KICK_THRESHOLD = int(os.getenv("HOTSPOT_KICK_THRESHOLD", "50"))
 
 if not API_KEY:
     logger.critical("FATAL: NETGUARD_API_KEY env var not set.")
@@ -25,105 +29,184 @@ if not API_KEY:
 def get_headers():
     return {"X-API-Key": API_KEY}
 
-def execute_ssh_command(host, command):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    # Credentials from env (Default to admin/admin for MVP demo)
-    user = os.getenv("SSH_USER", "admin")
-    password = os.getenv("SSH_PASSWORD", "admin")
-    key_path = os.getenv("SSH_KEY_PATH")
-    
+def connect_routeros(ip, username, password, port=8728):
+    """Open a plain RouterOS API connection and return the api object."""
+    pool = routeros_api.RouterOsApiPool(
+        ip,
+        username=username,
+        password=password,
+        port=port,
+        plaintext_login=True,
+        use_ssl=False
+    )
+    return pool, pool.get_api()
+
+def attempt_high_cpu_fix(device) -> tuple:
+    """
+    Attempt to reduce CPU on a MikroTik device via RouterOS API.
+    Returns (success: bool, log: str)
+    """
+    ip = device.get('ip_address')
+    user = device.get('ssh_username') or SSH_USER
+    pwd = device.get('ssh_password') or SSH_PASSWORD
+    port_raw = int(device.get('ssh_port', 8728))
+    port = 8728 if port_raw == 22 else port_raw
+    log_lines = []
+
+    pool = None
     try:
-        connect_kwargs = {"username": user}
-        # Simplify key handling for MVP
-        if key_path and os.path.exists(key_path):
-            connect_kwargs["key_filename"] = key_path
-        else:
-            connect_kwargs["password"] = password
-            
-        logger.info(f"Connecting to {host} as {user}...")
-        ssh.connect(host, **connect_kwargs, timeout=10)
-        
-        stdin, stdout, stderr = ssh.exec_command(command)
-        output = stdout.read().decode()
-        error = stderr.read().decode()
-        ssh.close()
-        
-        if error:
-            logger.warning(f"SSH Stderr: {error}")
-            
-        return output
+        pool, api = connect_routeros(ip, user, pwd, port)
+        log_lines.append(f"Connected to {ip}:{port}")
+
+        # Step 1: re-check current CPU — might have self-resolved
+        res = api.get_resource('/system/resource').get()
+        if res:
+            cpu_now = float(res[0].get('cpu-load', 100))
+            log_lines.append(f"Current CPU: {cpu_now}%")
+            if cpu_now < CPU_THRESHOLD:
+                return True, f"CPU self-resolved ({cpu_now}%). " + "; ".join(log_lines)
+
+        # Step 2: if hotspot has many active sessions, kick the heaviest one
+        try:
+            active_res = api.get_resource('/ip/hotspot/active')
+            active_users = active_res.get()
+            log_lines.append(f"Hotspot active sessions: {len(active_users)}")
+            if len(active_users) > HOTSPOT_KICK_THRESHOLD:
+                # Sort by bytes consumed descending and remove top user
+                top = sorted(active_users, key=lambda u: int(u.get('bytes-in', 0)) + int(u.get('bytes-out', 0)), reverse=True)
+                if top:
+                    victim = top[0]
+                    victim_id = victim.get('.id')
+                    victim_user = victim.get('user', 'unknown')
+                    active_res.remove(id=victim_id)
+                    log_lines.append(f"Removed heaviest hotspot session: {victim_user} (id={victim_id})")
+        except Exception as e_hs:
+            log_lines.append(f"Hotspot kick skipped: {e_hs}")
+
+        # Step 3: restart hotspot service to clear stuck sessions
+        try:
+            hs = api.get_resource('/ip/hotspot')
+            hotspots = hs.get()
+            if hotspots:
+                hs_id = hotspots[0].get('.id')
+                hs.set(id=hs_id, **{'disabled': 'yes'})
+                time.sleep(2)
+                hs.set(id=hs_id, **{'disabled': 'no'})
+                log_lines.append("Restarted hotspot service")
+        except Exception as e_restart:
+            log_lines.append(f"Hotspot restart skipped: {e_restart}")
+
+        return True, "; ".join(log_lines)
+
     except Exception as e:
-        logger.error(f"SSH Failed connecting to {host}: {e}")
-        return None
+        return False, f"RouterOS connection failed: {e}"
+    finally:
+        if pool:
+            try:
+                pool.disconnect()
+            except Exception:
+                pass
+
+def get_latest_metric(device_id, metric_type) -> float | None:
+    """Fetch the most recent value of a metric for a device."""
+    try:
+        resp = requests.get(
+            f"{API_URL}/monitoring/metrics/latest",
+            params={"device_id": device_id, "metric_type": metric_type, "limit": 1},
+            headers=get_headers(),
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data:
+                return float(data[0]['value'])
+    except Exception as e:
+        logger.error(f"Failed to fetch metric {metric_type} for {device_id}: {e}")
+    return None
+
+def log_fix_action(alert_id, action_type, status, log_output):
+    try:
+        requests.post(
+            f"{API_URL}/monitoring/alerts/{alert_id}/fix-actions",
+            json={"action_type": action_type, "status": status, "log_output": log_output},
+            headers=get_headers(),
+            timeout=10
+        )
+    except Exception as e:
+        logger.error(f"Failed to log fix action: {e}")
+
+def update_alert(alert_id, status, resolution_summary=None):
+    try:
+        requests.patch(
+            f"{API_URL}/monitoring/alerts/{alert_id}",
+            json={"status": status, "resolution_summary": resolution_summary},
+            headers=get_headers(),
+            timeout=10
+        )
+    except Exception as e:
+        logger.error(f"Failed to update alert {alert_id}: {e}")
 
 def run_agent():
-    logger.info("Starting Classic Fix Agent (REAL SSH MODE)...")
-    
-    # Pre-check SSH credentials
-    logger.info(f"SSH User: {os.getenv('SSH_USER', 'admin')}")
-    
+    logger.info("Starting Classic Fix Agent (RouterOS API mode)...")
+
     while True:
         try:
-             # fetch open alerts
-             resp = requests.get(
-                 f"{API_URL}/monitoring/alerts",
-                 headers=get_headers(),
-                 timeout=10
-             )
-             if resp.status_code == 200:
-                 alerts = resp.json()
-                 for alert in alerts:
-                     if alert['status'] == 'open' and alert['severity'] == 'critical':
-                         
-                         # Check if it's "High CPU"
-                         if "High CPU" in alert['message']:
-                             logger.info(f"Processing High CPU Alert {alert['id']}...")
-                             
-                             # Fetch device info to get IP
-                             dev_resp = requests.get(
-                                 f"{API_URL}/inventory/devices",
-                                 headers=get_headers(),
-                                 timeout=10
-                             )
-                             devices = dev_resp.json() if dev_resp.status_code == 200 else []
-                             device = next((d for d in devices if d['id'] == alert['device_id']), None)
-                             
-                             if device and device.get('ip_address'):
-                                 logger.info(f"Attempting SSH connection to {device['ip_address']} to investigate...")
-                                 
-                                 # REAL FIX ACTION: Run 'uptime' or 'top' to verify
-                                 # In a real scenario, we might run 'service restart'
-                                 output = execute_ssh_command(device['ip_address'], "uptime")
-                                 
-                                 if output:
-                                     logger.info(f"SSH Success! Uptime: {output.strip()}")
-                                     logger.info("Simulating remediation: Restarting high load process...")
-                                     time.sleep(2) # Simulate work
-                                     
-                                     # Resolve Alert
-                                     try:
-                                         requests.patch(
-                                             f"{API_URL}/monitoring/alerts/{alert['id']}",
-                                             json={"status": "resolved", "resolution_summary": "Auto-fixed by Classic Agent (Uptime Check Passed)"},
-                                             headers=get_headers(),
-                                             timeout=10
-                                         )
-                                         logger.info(f"ALERT FIXED: {alert['message']}")
-                                     except Exception as ex:
-                                         logger.error(f"Failed to update alert status: {ex}")
-                                 else:
-                                     logger.error("Failed to connect via SSH. Cannot fix.")
-                             else:
-                                 logger.warning("Device not found or no IP address.")
+            resp = requests.get(
+                f"{API_URL}/monitoring/alerts",
+                params={"status": "open"},
+                headers=get_headers(),
+                timeout=10
+            )
+            if resp.status_code != 200:
+                logger.error(f"Failed to fetch alerts: {resp.status_code}")
+                time.sleep(10)
+                continue
 
-                         # Fallback fallback logic strictly for demo if needed
-                         # ...
-                         
+            alerts = [a for a in resp.json() if a['status'] == 'open' and a['severity'] == 'critical']
+
+            if not alerts:
+                time.sleep(10)
+                continue
+
+            # Fetch all devices once per cycle
+            dev_resp = requests.get(f"{API_URL}/inventory/devices", headers=get_headers(), timeout=10)
+            devices = {d['id']: d for d in (dev_resp.json() if dev_resp.status_code == 200 else [])}
+
+            for alert in alerts:
+                alert_id = alert['id']
+                device = devices.get(alert['device_id'])
+
+                if not device:
+                    logger.warning(f"Device not found for alert {alert_id}")
+                    continue
+
+                if "High CPU" in alert.get('message', '') or alert.get('rule_name') == 'High CPU':
+                    logger.info(f"Attempting High CPU fix on {device['name']} ({device['ip_address']})")
+                    success, fix_log = attempt_high_cpu_fix(device)
+
+                    log_fix_action(alert_id, "ROUTER_CPU_FIX", "success" if success else "failed", fix_log)
+                    logger.info(f"Fix attempt: success={success} | {fix_log}")
+
+                    if success:
+                        # Wait for monitor agent to push a fresh metric then verify
+                        logger.info(f"Waiting {VERIFY_WAIT_SECONDS}s to verify CPU improvement...")
+                        time.sleep(VERIFY_WAIT_SECONDS)
+                        cpu_after = get_latest_metric(alert['device_id'], 'cpu_usage')
+                        if cpu_after is not None and cpu_after < CPU_THRESHOLD:
+                            logger.info(f"CPU dropped to {cpu_after}% — marking alert auto_fixed")
+                            update_alert(alert_id, "auto_fixed",
+                                         f"CPU reduced to {cpu_after}% after RouterOS remediation. {fix_log}")
+                        else:
+                            current = f"{cpu_after}%" if cpu_after is not None else "unknown"
+                            logger.warning(f"CPU still high ({current}) after fix — leaving alert open")
+                            log_fix_action(alert_id, "VERIFY_FAILED", "failed",
+                                           f"CPU still at {current} after remediation. Manual review needed.")
+                    else:
+                        logger.error(f"Fix failed: {fix_log}")
+
         except Exception as e:
             logger.exception(f"Fix loop error: {e}")
-            
+
         time.sleep(10)
 
 if __name__ == "__main__":
