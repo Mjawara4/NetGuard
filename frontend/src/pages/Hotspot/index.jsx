@@ -23,6 +23,8 @@ export default function Hotspot() {
     const [healthStatus, setHealthStatus] = useState('unknown');
     const [loading, setLoading] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [prefetching, setPrefetching] = useState(false);
+    const [dataFreshness, setDataFreshness] = useState({});
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileForm, setProfileForm] = useState({ name: '', rateLimit: '1M/1M', sharedUsers: 1 });
     const [userSearch, setUserSearch] = useState('');
@@ -147,9 +149,15 @@ export default function Hotspot() {
         try {
             const res = await api.get(`/hotspot/${deviceId}/voucher-template`);
             if (res.data) setTemplate(res.data);
+            setDataFreshness(prev => ({ ...prev, templates: Date.now() }));
         } catch (e) {
             console.error("Failed to fetch template:", e);
         }
+    };
+
+    const refreshCurrentTab = () => {
+        setDataFreshness(prev => ({ ...prev, [activeTab]: 0 }));
+        fetchData();
     };
 
     const buildBatchHistory = (data) => {
@@ -182,14 +190,17 @@ export default function Hotspot() {
         }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     };
 
-    // Fire all common tab requests in parallel as soon as a device is selected.
+    // Fire all tab requests in parallel as soon as a device is selected.
     // Data lands in state silently — by the time the user clicks a tab it's ready.
     const prefetchAll = async (deviceId) => {
+        setPrefetching(true);
+        const now = Date.now();
         try {
+            // Phase 1: fetch the fast/common tabs first
             const [summaryRes, systemRes, usersRes, activeRes, profilesRes, templateRes] = await Promise.allSettled([
                 api.get(`/hotspot/${deviceId}/summary`),
                 api.get(`/hotspot/${deviceId}/system-info`),
-                api.get(`/hotspot/${deviceId}/users?limit=0`), // Fetch ALL users for batch history
+                api.get(`/hotspot/${deviceId}/users?limit=200`),
                 api.get(`/hotspot/${deviceId}/active?limit=200`),
                 api.get(`/hotspot/${deviceId}/profiles`),
                 api.get(`/hotspot/${deviceId}/voucher-template`),
@@ -203,9 +214,35 @@ export default function Hotspot() {
             if (activeRes.status === 'fulfilled') setActiveSessions(activeRes.value.data);
             if (profilesRes.status === 'fulfilled') setProfiles(profilesRes.value.data);
             if (templateRes.status === 'fulfilled' && templateRes.value.data) setTemplate(templateRes.value.data);
+
+            // Phase 2: fetch heavier tabs in background so they are ready when clicked
+            const [logsRes, reportsRes, allUsersRes] = await Promise.allSettled([
+                api.get(`/hotspot/${deviceId}/logs`),
+                api.get(`/hotspot/${deviceId}/reports`),
+                api.get(`/hotspot/${deviceId}/users?limit=0`), // full list for batch history accuracy
+            ]);
+            if (logsRes.status === 'fulfilled') setLogs(logsRes.value.data);
+            if (reportsRes.status === 'fulfilled') setReportData(reportsRes.value.data);
+            if (allUsersRes.status === 'fulfilled') {
+                setUsers(allUsersRes.value.data);
+                setBatchHistory(buildBatchHistory(allUsersRes.value.data));
+            }
+
+            setDataFreshness({
+                dashboard: now,
+                users: now,
+                history: now,
+                active: now,
+                logs: now,
+                reports: now,
+                profiles: now,
+                templates: now,
+            });
             setHealthStatus('online');
         } catch (e) {
             console.error('Prefetch error', e);
+        } finally {
+            setPrefetching(false);
         }
     };
 
@@ -224,7 +261,8 @@ export default function Hotspot() {
 
     const fetchData = async () => {
         if (!selectedDevice) return;
-        // Show existing stale data while refreshing; only block on first load (no data yet)
+
+        const FRESHNESS_MS = 30000; // 30 seconds
         const alreadyHasData = {
             dashboard: !!dashboardData,
             users: users.length > 0,
@@ -233,7 +271,16 @@ export default function Hotspot() {
             logs: logs.length > 0,
             reports: !!reportData,
             profiles: profiles.length > 0,
+            templates: !!template.header_text,
         }[activeTab] ?? false;
+
+        const lastFetch = dataFreshness[activeTab];
+        const isFresh = lastFetch && (Date.now() - lastFetch) < FRESHNESS_MS;
+
+        // If prefetched data is fresh and present, render instantly without network round-trip
+        if (alreadyHasData && isFresh) {
+            return;
+        }
 
         if (!alreadyHasData) setLoading(true);
         else setIsRefreshing(true);
@@ -287,6 +334,8 @@ export default function Hotspot() {
             } else if (activeTab === 'templates') {
                 await fetchTemplate(selectedDevice);
             }
+
+            setDataFreshness(prev => ({ ...prev, [activeTab]: Date.now() }));
         } catch (e) {
             console.error(e);
             if (activeTab !== 'templates') setHealthStatus('offline');
@@ -495,13 +544,20 @@ export default function Hotspot() {
                             {devices.map(d => <option key={d.id} value={d.id}>{d.name} ({d.ip_address})</option>)}
                         </select>
                         <button
-                            onClick={fetchData}
+                            onClick={refreshCurrentTab}
                             className="bg-white dark:bg-gray-800 p-3 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-all active:scale-95 flex-shrink-0"
                             title="Refresh Data"
                         >
-                            <RefreshCw size={22} className={(loading || isRefreshing) ? 'animate-spin text-blue-600' : ''} />
+                            <RefreshCw size={22} className={(loading || isRefreshing || prefetching) ? 'animate-spin text-blue-600' : ''} />
                         </button>
                     </div>
+                    {prefetching && (
+                        <div className="no-print mt-3 flex justify-end">
+                            <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                                <RefreshCw size={12} className="animate-spin" /> Preloading all tabs...
+                            </span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Navigation Bar */}

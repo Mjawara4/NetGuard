@@ -783,18 +783,27 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="Device not found")
     
     decrypt_device_secrets(device)
-         
+
+    # Try cache first
+    key = cache_key(device_id, "system-info")
+    cached = _redis_get(key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Failed to deserialize cached system-info: {e}")
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         resource = api.get_resource('/system/resource')
         info = resource.get()[0]
-        
+
         connection.disconnect()
-        
-        return {
+
+        result = {
             "cpu_load": info.get('cpu-load'),
             "free_memory": int(info.get('free-memory', 0)) / 1024 / 1024,
             "total_memory": int(info.get('total-memory', 0)) / 1024 / 1024,
@@ -802,6 +811,9 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
             "version": info.get('version'),
             "board_name": info.get('board-name')
         }
+
+        _redis_setex(key, 30, json.dumps(result))
+        return result
     except Exception as e:
         logger.error(f"Router System Info Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1428,28 +1440,37 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         raise HTTPException(status_code=404, detail="Device not found")
     
     decrypt_device_secrets(device)
-         
+
+    # Try cache first
+    key = cache_key(device_id, "logs")
+    cached = _redis_get(key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Failed to deserialize cached logs: {e}")
+
     try:
         port = getattr(device, 'ssh_port', 8728) or 8728
         connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
         api = connection.get_api()
-        
+
         # Fetch recent logs (last 500 to ensure we find enough hotspot entries)
         log_resource = api.get_resource('/log')
         all_logs = log_resource.get()
-        
+
         connection.disconnect()
-        
+
         # Filter for logs containing 'hotspot' topic
         hotspot_logs = [l for l in all_logs if 'hotspot' in l.get('topics', '').lower()]
-        
+
         # Return last 100 logs, reversed (newest first)
         results = []
         for l in reversed(hotspot_logs[-100:]):
             # Extract time and make it clear
             # RouterOS usually provides 'time' as HH:MM:SS or MMM/DD HH:MM:SS
             raw_time = l.get('time', 'unknown')
-            
+
             # Identify user if possible from message
             msg = l.get('message', '')
             user_info = "system"
@@ -1459,12 +1480,14 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
                 match = re.search(r'user\s+([^\s\(]+)', msg)
                 if match:
                     user_info = match.group(1)
-            
+
             results.append({
                 "time": raw_time,
                 "user_info": user_info,
                 "message": msg
             })
+
+        _redis_setex(key, 30, json.dumps(results))
         return results
     except Exception as e:
         logger.error(f"Router Logs Error: {e}")
@@ -1494,17 +1517,27 @@ async def get_hotspot_reports(
 
     decrypt_device_secrets(device)
 
+    # Try cache first (cache key includes filters)
+    cache_params = f"{period or ''}:{start_date or ''}:{end_date or ''}"
+    key = cache_key(device_id, f"reports:{cache_params}")
+    cached = _redis_get(key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception as e:
+            logger.warning(f"Failed to deserialize cached reports: {e}")
+
     try:
         # 1. Trigger sales sync in background (non-blocking)
         if background_tasks:
             background_tasks.add_task(sync_hotspot_sales, device, db)
         # If background_tasks is not available, skip sync to avoid blocking
-        
+
         # 2. Query the persistent VoucherSale table
         from sqlalchemy import and_, func
-        
+
         stmt = select(VoucherSale).where(VoucherSale.device_id == device.id)
-        
+
         # Handle period presets
         from datetime import timedelta
         now = datetime.utcnow()
@@ -1520,7 +1553,7 @@ async def get_hotspot_reports(
                 start_dt = datetime.strptime(start_date, '%Y-%m-%d')
                 stmt = stmt.where(VoucherSale.created_at >= start_dt)
             except: pass
-            
+
         if end_date:
             try:
                 # End date inclusive (until end of day)
@@ -1530,19 +1563,19 @@ async def get_hotspot_reports(
 
         # Sort by most recent
         stmt = stmt.order_by(VoucherSale.created_at.desc())
-        
+
         res = await db.execute(stmt)
         all_sales = res.scalars().all()
-        
+
         report_data = []
         total_revenue = {} # Per currency
         total_sold = 0
-        
+
         for sale in all_sales:
             total_sold += 1
             curr = sale.currency or "TZS"
             total_revenue[curr] = total_revenue.get(curr, 0) + sale.price
-            
+
             report_data.append({
                 "username": sale.username,
                 "profile": sale.profile,
@@ -1560,7 +1593,7 @@ async def get_hotspot_reports(
             day_str = sale.created_at.strftime('%Y-%m-%d')
             if day_str not in daily_stats:
                 daily_stats[day_str] = {"count": 0, "revenue": {}}
-            
+
             daily_stats[day_str]["count"] += 1
             c = sale.currency or "TZS"
             daily_stats[day_str]["revenue"][c] = daily_stats[day_str]["revenue"].get(c, 0) + sale.price
@@ -1574,7 +1607,7 @@ async def get_hotspot_reports(
             c = sale.currency or "TZS"
             profile_stats[p]["revenue"][c] = profile_stats[p]["revenue"].get(c, 0) + sale.price
 
-        return {
+        result = {
             "status": "success",
             "period": period or f"{start_date} to {end_date}",
             "total_sold": total_sold,
@@ -1583,6 +1616,9 @@ async def get_hotspot_reports(
             "daily_stats": sorted([{"date": k, **v} for k, v in daily_stats.items()], key=lambda x: x['date'], reverse=True),
             "profile_stats": sorted([{"profile": k, **v} for k, v in profile_stats.items()], key=lambda x: x['count'], reverse=True)
         }
+
+        _redis_setex(key, 60, json.dumps(result))
+        return result
     except Exception as e:
         logger.error(f"Hotspot Report Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
