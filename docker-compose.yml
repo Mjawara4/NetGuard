@@ -162,6 +162,8 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - LLM_API_KEY=${OPENAI_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - KIMI_API_KEY=${KIMI_API_KEY}
       - SSH_USER=${SSH_USER:-admin}
       - SSH_PASSWORD=${SSH_PASSWORD:-admin}
     depends_on:
@@ -186,6 +188,7 @@ services:
       - LLM_API_KEY=${LLM_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - KIMI_API_KEY=${KIMI_API_KEY}
     depends_on:
       backend:
         condition: service_healthy
