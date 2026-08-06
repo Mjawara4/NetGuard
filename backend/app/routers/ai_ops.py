@@ -5,16 +5,13 @@ from app.core.database import get_db
 from app.core.config import settings
 import os
 import logging
-import openai
+
+from app.core.llm_client import chat_completion
 
 # Configure Logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Configuration
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-LLM_API_KEY = os.getenv("GEMINI_API_KEY") if LLM_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY")
 
 class ChatRequest(BaseModel):
     query: str
@@ -48,17 +45,21 @@ def ask_llm_intent(user_query: str, organization_id: str):
     """
     Asks the LLM to determine if the user wants to querying DATA (SQL) or performing an ACTION (Command).
     """
-    if not LLM_API_KEY:
+    if not (
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("KIMI_API_KEY")
+    ):
         return None, "Error: LLM API Key not configured.", None
 
     schema = get_db_schema_context()
-    
+
     system_prompt = f"""
     You are a Network Operations Assistant for "NetGuard".
-    
+
     Database Schema:
     {schema}
-    
+
     User Query: "{user_query}"
     Organization ID: {organization_id}
 
@@ -71,62 +72,44 @@ def ask_llm_intent(user_query: str, organization_id: str):
        - Metrics (cpu, memory, latency history)
        - Alerts (active, past, critical issues)
        - Hotspot Sales (revenue, vouchers, user sessions)
-       
+
     2. **Device Actions**: You can perform these specific actions via SSH:
        - Reboot a device
        - Restart a service (nginx, docker, wireguard)
        - Reset persistent issues
 
     INTENT CATEGORIES:
-    
+
     Type 1: SQL (Data Retrieval)
     - Output: {{ "type": "SQL", "content": "VALID_POSTGRES_SQL" }}
     - Rule: ALWAYS enforce `organization_id = '{organization_id}'` in WHERE clauses.
-    
+
     Type 2: ACTION (State Change)
     - Output: {{ "type": "ACTION", "action": "reboot|restart_service", "target_device_name": "fuzzy_match_name", "command": "shell_command" }}
     - Rule: Only allow safe, recognized actions.
-    
+
     Type 3: HELP (Out of Scope / Clarity Needed)
     - Use this if the user asks about:
       - Things outside of network management (e.g., "write a poem", "weather forecast")
       - Features NetGuard doesn't have (e.g., "order pizza")
       - Vague requests where you don't know if they want data or action.
     - Output: {{ "type": "HELP", "message": "A friendly message explaining what you CAN do (Data & Actions) and asking them to rephrase." }}
-    
+
     Output strictly JSON.
     """
 
     try:
         import json
-        response_text = ""
-        
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=system_prompt
-            )
-            response_text = resp.text
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": system_prompt}],
-                response_format={"type": "json_object"}
-            )
-            response_text = completion.choices[0].message.content
+        response_text = chat_completion(system_prompt, response_format="json_object")
+        if not response_text:
+            return None, "LLM Error: No response from provider.", None
 
-        # Clean JSON
         response_text = response_text.replace("```json", "").replace("```", "").strip()
         data = json.loads(response_text)
         return data, None
-
     except Exception as e:
         logger.error(f"LLM Intent Error: {e}")
-        return None, f"LLM Error: {str(e)}"
+        return None, f"LLM Error: {str(e)}", None
 
 
 def explain_result(user_query, result_data, total_count):
@@ -155,23 +138,11 @@ def explain_result(user_query, result_data, total_count):
     """
     
     try:
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=prompt
-            )
-            return resp.text.strip()
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return completion.choices[0].message.content.strip()
-            
+        response_text = chat_completion(prompt)
+        if not response_text:
+            return f"Found {total_count} records, but could not summarize them due to an error."
+        return response_text.strip()
+
     except Exception as e:
         logger.error(f"Explanation Error: {e}")
         return f"Found {total_count} records, but could not summarize them due to an error."
