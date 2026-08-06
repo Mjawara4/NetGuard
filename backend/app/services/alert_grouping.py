@@ -4,13 +4,11 @@ from app.models import Alert, Incident, AlertStatus
 from app.core.database import AsyncSessionLocal
 from datetime import datetime, timedelta
 import os
-import openai
 import logging
 
-logger = logging.getLogger(__name__)
+from app.core.llm_client import chat_completion
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-LLM_API_KEY = os.getenv("GEMINI_API_KEY") if LLM_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY")
+logger = logging.getLogger(__name__)
 
 async def process_alert_grouping(alert_id: str):
     """
@@ -73,54 +71,40 @@ async def process_alert_grouping(alert_id: str):
             logger.error(f"Error in alert grouping: {e}")
 
 async def rename_incident_with_ai(incident_id, db: AsyncSession):
-    if not LLM_API_KEY:
+    if not (
+        os.getenv("OPENAI_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("KIMI_API_KEY")
+    ):
         return
 
     # Fetch incident and alerts
     inc_res = await db.execute(select(Incident).where(Incident.id == incident_id))
     incident = inc_res.scalars().first()
-    
+
     # Get alerts
     alerts_res = await db.execute(select(Alert).where(Alert.incident_id == incident_id))
     alerts = alerts_res.scalars().all()
-    
+
     if len(alerts) < 2:
-        return # Not enough context yet
+        return  # Not enough context yet
 
     alerts_summary = "\n".join([f"- {a.rule_name}: {a.message} ({a.created_at})" for a in alerts])
 
     prompt = f"""
     Analyze these network alerts grouped into an incident:
     {alerts_summary}
-    
+
     Generate a concise, professional Incident Title (max 5 words) and a 1-sentence Description.
     Format: Title | Description
     """
-    
-    try:
-        response_text = ""
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=prompt
-            )
-            response_text = resp.text
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            response_text = completion.choices[0].message.content
 
-        if "|" in response_text:
+    try:
+        response_text = chat_completion(prompt)
+        if response_text and "|" in response_text:
             title, desc = response_text.split("|", 1)
             incident.name = title.strip()
             incident.description = desc.strip()
             await db.commit()
-            
     except Exception as e:
         logger.error(f"AI Incident Renaming Failed: {e}")
