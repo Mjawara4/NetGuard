@@ -4,16 +4,13 @@ from app.models import User
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import get_db
-import os
 import logging
-import openai
 from datetime import datetime, timedelta
+
+from app.core.llm_client import chat_completion
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-LLM_API_KEY = os.getenv("GEMINI_API_KEY") if LLM_PROVIDER == "gemini" else os.getenv("OPENAI_API_KEY")
 
 @router.get("/predictions")
 async def get_sales_prediction(
@@ -24,9 +21,6 @@ async def get_sales_prediction(
     """
     Predicts sales for the next N days based on historical data using AI.
     """
-    if not LLM_API_KEY:
-        return {"error": "LLM API Key not configured"}
-
     # 1. Fetch Historical Data (Last 30 days) - FILTERED BY ORG
     try:
         query = text("""
@@ -70,34 +64,13 @@ async def get_sales_prediction(
     
     try:
         import json
-        response_text = ""
-        
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(
-                model='gemini-2.5-flash-lite',
-                contents=system_prompt
-            )
-            response_text = resp.text
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a forecasting algorithm. Output JSON only."},
-                    {"role": "user", "content": system_prompt}
-                ],
-                response_format={"type": "json_object"}
-            )
-            response_text = completion.choices[0].message.content
+        response_text = chat_completion(system_prompt, response_format="json_object")
+        if not response_text:
+            raise ValueError("No response from LLM provider")
 
-        # Clean JSON
         response_text = response_text.replace("```json", "").replace("```", "").strip()
         data = json.loads(response_text)
         return data
-
     except Exception as e:
         logger.error(f"AI Prediction Error: {e}")
         # Fallback Mock Data if AI fails
