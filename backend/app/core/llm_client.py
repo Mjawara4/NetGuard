@@ -57,7 +57,7 @@ def chat_completion(prompt: str, response_format: str | None = None) -> str | No
         if provider == "kimi":
             client = openai.OpenAI(
                 api_key=api_key,
-                base_url="https://api.moonshot.cn/v1",
+                base_url="https://api.moonshot.ai/v1",
             )
             kwargs = {
                 "model": "kimi-k2.5",
