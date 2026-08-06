@@ -4,6 +4,7 @@ import requests
 import logging
 import sys
 from log_utils import post_agent_log
+from llm_client import chat_completion
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,8 +16,6 @@ logger = logging.getLogger("reporter-agent")
 
 API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
 API_KEY = os.getenv("NETGUARD_API_KEY")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").lower()
-LLM_API_KEY = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 if not API_KEY:
     logger.critical("FATAL: NETGUARD_API_KEY env var not set.")
@@ -53,37 +52,32 @@ def get_existing_incident_alert_ids():
 
 def generate_summary_llm(alert):
     """Try LLM summary generation. Returns (summary, root_cause) or (None, None)."""
-    if not LLM_API_KEY:
+    if not (
+        os.getenv("LLM_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("KIMI_API_KEY")
+    ):
         return None, None
+
     prompt = (
         f"Network alert resolved. Rule: {alert['rule_name']}. "
         f"Message: {alert['message']}. Status: {alert['status']}. "
         f"Provide a one-sentence summary and one-sentence root cause analysis. "
-        f"Output JSON: {{\"summary\": \"...\", \"root_cause\": \"...\"}}"
+        f'Output JSON: {{"summary": "...", "root_cause": "..."}}'
     )
+
     try:
-        if LLM_PROVIDER == "gemini":
-            from google import genai
-            client = genai.Client(api_key=LLM_API_KEY)
-            resp = client.models.generate_content(model='gemini-2.5-flash-lite', contents=prompt)
-            import json, re
-            text = re.sub(r'^```(?:json)?\s*', '', resp.text.strip(), flags=re.MULTILINE)
-            text = re.sub(r'```\s*$', '', text, flags=re.MULTILINE)
-            data = json.loads(text)
-            return data.get('summary'), data.get('root_cause')
-        elif LLM_PROVIDER == "openai":
-            import openai
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
-            import json
-            data = json.loads(completion.choices[0].message.content)
-            return data.get('summary'), data.get('root_cause')
+        response_text = chat_completion(prompt, response_format="json_object")
+        if not response_text:
+            return None, None
+
+        import json
+        data = json.loads(response_text)
+        return data.get("summary"), data.get("root_cause")
     except Exception as e:
         logger.warning(f"LLM summary failed: {e}")
+
     return None, None
 
 def generate_summary_template(alert):
