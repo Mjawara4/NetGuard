@@ -18,7 +18,7 @@ logger = logging.getLogger("ai-fix-agent")
 # Configuration
 API_URL = os.getenv("API_URL", "http://backend:8000/api/v1")
 API_KEY = os.getenv("NETGUARD_API_KEY")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower() # openai, gemini, anthropic
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
 
 # Determine LLM Key based on provider
 LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -27,6 +27,8 @@ if not LLM_API_KEY:
         LLM_API_KEY = os.getenv("OPENAI_API_KEY")
     elif LLM_PROVIDER == "gemini":
         LLM_API_KEY = os.getenv("GEMINI_API_KEY")
+    elif LLM_PROVIDER == "kimi":
+        LLM_API_KEY = os.getenv("KIMI_API_KEY")
 
 if not LLM_API_KEY:
     logger.warning("LLM Key not found. AI Agent will function in fallback-only mode.")
@@ -34,7 +36,6 @@ if not LLM_API_KEY:
 def get_headers():
     return {"X-API-Key": API_KEY}
 
-import openai
 
 def parse_json(text: str):
     """Extract and parse the first JSON object from text, stripping markdown fences if needed."""
@@ -99,45 +100,12 @@ def ask_llm(alert, device_info):
 
     try:
         logger.info(f"Querying {LLM_PROVIDER} for alert {alert['id']}...")
-        
-        response_text = ""
-        
-        if LLM_PROVIDER == "gemini":
-            try:
-                from google import genai
-                client = genai.Client(api_key=LLM_API_KEY)
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash-lite',
-                    contents=system_prompt
-                )
-                decision = parse_json(response.text)
-                if decision:
-                    return decision
-                else:
-                    logger.error(f"Gemini output could not be parsed as JSON: {response.text}")
-                    return None
-            except Exception as e:
-                logger.error(f"Gemini Error: {e}")
-                return None
-            
-        elif LLM_PROVIDER == "openai":
-            client = openai.OpenAI(api_key=LLM_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a network automation assistant. Output JSON only."},
-                    {"role": "user", "content": system_prompt}
-                ],
-                response_format={"type": "json_object"}
-            )
-            response_text = completion.choices[0].message.content
-            
-        else:
-            logger.error(f"Unknown provider: {LLM_PROVIDER}")
+
+        response_text = chat_completion(system_prompt, response_format="json_object")
+        if not response_text:
             return None
 
-        # Parse JSON
-        decision = json.loads(response_text)
+        decision = parse_json(response_text)
         return decision
 
     except Exception as e:
@@ -145,6 +113,7 @@ def ask_llm(alert, device_info):
         return None
 
 import paramiko
+from llm_client import chat_completion
 
 def execute_ssh_command(host, command):
     ssh = paramiko.SSHClient()
