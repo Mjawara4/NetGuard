@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
@@ -231,16 +231,17 @@ async def get_alerts(device_id: Optional[str] = None, status: Optional[str] = No
     return result.scalars().all()
 
 @router.post("/alerts", response_model=AlertResponse)
-async def create_alert(alert: AlertCreate, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+async def create_alert(alert: AlertCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     new_alert = Alert(**alert.dict())
     db.add(new_alert)
     await db.commit()
     await db.refresh(new_alert)
     
     # Trigger Intelligent Grouping
+    import asyncio
     from app.services.alert_grouping import process_alert_grouping
-    background_tasks.add_task(process_alert_grouping, str(new_alert.id))
-    
+    asyncio.create_task(process_alert_grouping(str(new_alert.id)))
+
     return new_alert
 
 @router.post("/alerts/clear", response_model=dict)
