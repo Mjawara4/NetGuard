@@ -45,19 +45,6 @@ def cache_key(device_id: str, endpoint: str) -> str:
     return f"hotspot:{device_id}:{endpoint}"
 
 
-def invalidate_hotspot_cache(device_id: str, endpoints: List[str] = None):
-    """Invalidate Redis cache for specific hotspot endpoints."""
-    if not redis_client:
-        return
-    if endpoints is None:
-        endpoints = ["users", "active", "profiles", "summary"]
-    for ep in endpoints:
-        try:
-            redis_client.delete(cache_key(device_id, ep))
-        except redis.exceptions.RedisError as e:
-            logger.warning(f"Redis cache invalidation failed for {ep}: {e}")
-
-
 def _redis_setex(key: str, ttl: int, value: str):
     """Set Redis key with TTL, logging errors instead of silently ignoring."""
     if not redis_client:
@@ -500,7 +487,7 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
             profile=user.profile
         )
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
+        hotspot_cache.invalidate(device_id, "users")
         return {"status": "success"}
     except Exception as e:
         if "User already exists" in str(e): raise e
@@ -542,7 +529,7 @@ async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = 
 
         resource.remove(id=uid)
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
+        hotspot_cache.invalidate(device_id, "users")
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Delete User Error: {e}")
@@ -826,7 +813,7 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
             
         api.get_resource('/ip/hotspot/user/profile').add(**params)
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["profiles"])
+        hotspot_cache.invalidate(device_id, "profiles")
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -862,7 +849,7 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
 
         resource.remove(id=profile[0]['id'])
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["profiles"])
+        hotspot_cache.invalidate(device_id, "profiles")
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -974,7 +961,7 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
         api = connection.get_api()
         api.get_resource('/ip/hotspot/active').remove(id=active_id)
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["active", "summary"])
+        hotspot_cache.invalidate(device_id, "active")
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1106,7 +1093,7 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
                 
         logger.info(f"Batch generation complete: {len(generated)}/{batch.qty} created in {attempts} attempts")
         connection.disconnect()
-        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
+        hotspot_cache.invalidate(device_id, "users")
 
         # Persist batch to database for history/reprint
         try:
@@ -1388,7 +1375,7 @@ async def bulk_delete_users(
         if failed_count > 0:
             logger.warning(f"Bulk delete partial completion. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}")
 
-        invalidate_hotspot_cache(device_id, ["users", "summary", "active"])
+        hotspot_cache.invalidate(device_id, "users")
         return {"status": "success", "count": deleted_count, "failed": failed_count}
     except Exception as e:
         logger.error(f"Bulk Delete Error: {e}")
