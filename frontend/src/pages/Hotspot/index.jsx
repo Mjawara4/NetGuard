@@ -13,6 +13,11 @@ const voucherJobStorageKey = (deviceId) => `hotspot_voucher_job_${deviceId}`;
 
 const VOUCHER_JOB_POLL_MS = 3000;
 
+// A poll that fails this many times in a row for a reason other than a
+// confirmed 404 (a real network/server problem, not "the job is gone") is
+// treated as unrecoverable -- see pollVoucherJob's catch block.
+const MAX_TRANSIENT_POLL_FAILURES = 3;
+
 export default function Hotspot() {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [devices, setDevices] = useState([]);
@@ -61,6 +66,9 @@ export default function Hotspot() {
     // page reload / screen lock via the device-scoped localStorage key below.
     const [voucherJob, setVoucherJob] = useState(null); // { job_id, status, count, created, vouchers }
     const pollIntervalRef = useRef(null);
+    // Consecutive poll failures that were NOT a confirmed "job is gone" (404)
+    // -- see pollVoucherJob's catch block.
+    const pollFailureCountRef = useRef(0);
 
     // Template State
     const [template, setTemplate] = useState({
@@ -343,12 +351,17 @@ export default function Hotspot() {
                 const res = await api.get(`/hotspot/${selectedDevice}/users?limit=200`);
                 setUsers(res.data);
             } else if (activeTab === 'history') {
-                const [usersRes, batchesRes] = await Promise.all([
+                // allSettled, not all: a /batches hiccup shouldn't also throw
+                // away a perfectly good /users result (and vice versa).
+                const [usersRes, batchesRes] = await Promise.allSettled([
                     api.get(`/hotspot/${selectedDevice}/users?limit=0`),
                     api.get(`/hotspot/${selectedDevice}/batches`),
                 ]);
-                setUsers(usersRes.data);
-                setBatchHistory(buildBatchHistoryFromBatches(batchesRes.data, usersRes.data));
+                const usersList = usersRes.status === 'fulfilled' ? usersRes.value.data : users;
+                if (usersRes.status === 'fulfilled') setUsers(usersList);
+                if (batchesRes.status === 'fulfilled') {
+                    setBatchHistory(buildBatchHistoryFromBatches(batchesRes.value.data, usersList));
+                }
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active?limit=200`);
                 setActiveSessions(res.data);
@@ -472,9 +485,25 @@ export default function Hotspot() {
     // created on the router, and the operator must be able to print them.
     const pollVoucherJob = (jobId, deviceId) => {
         stopPolling();
+        pollFailureCountRef.current = 0;
+
+        // Give up on this job entirely: stop polling, forget it so a future
+        // mount doesn't resume something dead, reset voucherJob to null so
+        // the Generate button re-enables, and tell the operator why -- a
+        // silent reset still leaves them wondering what happened to their
+        // batch, and the alert() below is the same mechanism every other
+        // handler in this component already uses for errors.
+        const giveUp = (message) => {
+            stopPolling();
+            localStorage.removeItem(voucherJobStorageKey(deviceId));
+            setVoucherJob(null);
+            alert(message);
+        };
+
         const tick = async () => {
             try {
                 const res = await api.get(`/hotspot/jobs/${jobId}`);
+                pollFailureCountRef.current = 0;
                 const job = res.data;
                 setVoucherJob(job);
                 if (job.status === 'complete' || job.status === 'failed') {
@@ -487,6 +516,24 @@ export default function Hotspot() {
                 }
             } catch (e) {
                 console.error('Failed to poll voucher job:', e);
+                if (e.response?.status === 404) {
+                    // The job genuinely does not exist (deleted batch row, a
+                    // database restored from backup, a stale id from another
+                    // environment) -- there is nothing left to poll for, so
+                    // clear it immediately rather than hammering the backend
+                    // every 3s forever with the Generate button stuck disabled.
+                    giveUp('This voucher batch could not be found (it may have been deleted). You can start a new batch now.');
+                    return;
+                }
+                // Anything else (network hiccup, 5xx, timeout) might just be a
+                // blip -- the job could still be running and creating real
+                // vouchers on the router. Tolerate a few consecutive failures
+                // before concluding we've actually lost it, so one bad request
+                // doesn't throw away progress on a batch that's still going.
+                pollFailureCountRef.current += 1;
+                if (pollFailureCountRef.current >= MAX_TRANSIENT_POLL_FAILURES) {
+                    giveUp('Lost contact while tracking this voucher batch. It may still be running on the router -- check the History tab shortly. You can start a new batch now.');
+                }
             }
         };
         tick();

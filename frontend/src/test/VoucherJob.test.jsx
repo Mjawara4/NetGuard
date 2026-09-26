@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import React from 'react';
 
 // Background voucher-generation job polling (Task 5).
@@ -200,6 +200,50 @@ describe('Voucher generation background job', () => {
         });
     });
 
+    it('CRITICAL: a stale job_id that 404s clears the job, stops polling, and re-enables Generate', async () => {
+        localStorage.setItem(JOB_KEY, 'job-stale');
+        let jobPollCount = 0;
+        api.get.mockImplementation((url) => {
+            if (url.includes('/hotspot/jobs/job-stale')) {
+                jobPollCount += 1;
+                return Promise.reject({ response: { status: 404, data: { detail: 'Job not found' } } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+        // jsdom's window.alert throws "not implemented" unless stubbed; the
+        // fix reuses alert() as its operator-facing message, so stub it here
+        // the same way a real browser would just show it.
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        await renderHotspotOnDevice();
+
+        // A single 404 is treated as "this job is confirmed gone" -- cleared
+        // immediately, no need to tolerate repeated failures first.
+        await waitFor(() => {
+            expect(localStorage.getItem(JOB_KEY)).toBeNull();
+        });
+        expect(alertSpy).toHaveBeenCalled();
+
+        goToGenerator();
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+        });
+
+        // The interval must actually be stopped, not just the state cleared --
+        // give it well past one 3s tick and confirm no further polling happened.
+        const pollsAtClear = jobPollCount;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(jobPollCount).toBe(pollsAtClear);
+
+        alertSpy.mockRestore();
+    });
+
     it('a failed job renders its partial vouchers rather than discarding them', async () => {
         const vouchers = [
             { username: 'part01', password: 'pw1' },
@@ -267,7 +311,15 @@ describe('Voucher generation background job', () => {
             expect(screen.getByText('user')).toBeInTheDocument();
         });
         expect(screen.getByText('legacy')).toBeInTheDocument();
-        // New row shows its status; legacy row (status: null) renders with no badge.
+        // New row shows its status badge...
         expect(screen.getByText('complete')).toBeInTheDocument();
+        // ...but the legacy row (status: null -- there are 21 of these in
+        // production) renders with NO badge at all, same as before this
+        // feature existed. Scope the check to that row's own name block
+        // (badge and displayName are siblings there) so a badge elsewhere
+        // on the page can't make this pass by accident.
+        const legacyNameBlock = screen.getByText('legacy').parentElement;
+        expect(within(legacyNameBlock).queryByText(/complete|failed|running|queued/i)).not.toBeInTheDocument();
+        expect(legacyNameBlock.querySelector('span')).toBeNull();
     });
 });
