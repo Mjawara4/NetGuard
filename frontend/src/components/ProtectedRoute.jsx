@@ -1,6 +1,17 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Navigate } from 'react-router-dom';
 import Layout from './Layout';
+
+// Content-area fallback for the boundary below. Sized for the pane inside
+// Layout rather than the full viewport, so the shell (sidebar, header) stays
+// mounted and only this pane shows a loading state while a route chunk
+// loads. Kept deliberately simple: a heavier fallback here would itself have
+// to ship in the entry chunk.
+const ContentFallback = () => (
+    <div className="flex items-center justify-center h-full min-h-[50vh]" role="status" aria-label="Loading content">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+    </div>
+);
 
 const ProtectedRoute = ({ children }) => {
     const token = localStorage.getItem('token');
@@ -9,7 +20,9 @@ const ProtectedRoute = ({ children }) => {
     }
     return (
         <Layout>
-            {children}
+            <Suspense fallback={<ContentFallback />}>
+                {children}
+            </Suspense>
         </Layout>
     );
 };
