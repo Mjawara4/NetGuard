@@ -744,7 +744,7 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
             "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
         }
     except (TypeError, ValueError, AttributeError) as e:
-        logger.warning(f"Hotspot summary computation failed for {device_id}: {e}")
+        logger.error(f"Hotspot summary computation failed for device={device_id} datasets=active,users: {e}")
         result = {
             "active_count": 0,
             "total_vouchers": 0,
@@ -783,7 +783,14 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
     # miss. A cold cache is a normal state, reported via "stale", not an error.
     rows, fetched_at = hotspot_cache.read_dataset(device_id, "system")
 
-    if not rows:
+    # Guard the type before indexing: read_dataset's contract only promises
+    # "[] or whatever JSON decoded under the rows key" — a corrupted cache
+    # value could store rows as a dict/int/string, and rows[0] on those is
+    # not uniformly a TypeError/ValueError/AttributeError (e.g. a dict with
+    # an int key 0 would raise KeyError, a string would silently subscript a
+    # character). Treat anything that isn't a non-empty list the same as an
+    # empty cache, so indexing below is always safe.
+    if not isinstance(rows, list) or not rows:
         return {
             "cpu_load": None,
             "free_memory": None,
@@ -806,7 +813,7 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
             "board_name": info.get('board-name')
         }
     except (TypeError, ValueError, AttributeError) as e:
-        logger.warning(f"Hotspot system-info cache row unparseable for {device_id}: {e}")
+        logger.error(f"Hotspot system-info cache row unparseable for device={device_id} dataset=system: {e}")
         return {
             "cpu_load": None,
             "free_memory": None,
