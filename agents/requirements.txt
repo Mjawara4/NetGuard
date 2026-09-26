@@ -7,4 +7,4 @@ redis
 routeros-api
 
 pytest==8.0.0
-fakeredis==2.21.0
+fakeredis==2.38.0

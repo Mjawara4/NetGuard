@@ -11,6 +11,7 @@ import sys
 import redis
 import routeros_api
 from retry_utils import retry_with_backoff
+import hotspot_cache
 
 # Configure logging
 logging.basicConfig(
@@ -170,7 +171,7 @@ def report_metrics_batch(metrics_list):
         logger.error(f"Failed to report batch metrics: {e}")
         raise
 
-def get_mikrotik_stats(device_ip, username, password, port=8728):
+def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None):
     """
     Connects to MikroTik Router via API and fetches resources.
     Returns a list of metric dicts.
@@ -189,6 +190,8 @@ def get_mikrotik_stats(device_ip, username, password, port=8728):
         # 1. System Resources
         resource = api.get_resource('/system/resource')
         res_data = resource.get()
+        if device_id and res_data:
+            hotspot_cache.write_dataset(device_id, "system", res_data)
         if res_data:
             data = res_data[0]
             # CPU
@@ -243,6 +246,8 @@ def get_mikrotik_stats(device_ip, username, password, port=8728):
         try:
             hotspot_active = api.get_resource('/ip/hotspot/active')
             active_users = hotspot_active.get()
+            if device_id:
+                hotspot_cache.write_dataset(device_id, "active", active_users)
 
             metrics.append({
                 "metric_type": "hotspot_users",
@@ -396,7 +401,7 @@ def run_agent():
                             port = 8728 if db_port == 22 else db_port
 
                             logger.info(f"Deep inspect {ip} (user={user}, port={port})")
-                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port)
+                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id)
 
                             for m in mt_metrics:
                                 batch.append(build_metric_payload(
