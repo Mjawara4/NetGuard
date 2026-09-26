@@ -106,9 +106,15 @@ export default function Hotspot() {
     // Consecutive poll failures that were NOT a confirmed "job is gone" (404)
     // -- see pollVoucherJob's catch block.
     const pollFailureCountRef = useRef(0);
-    // Last-seen `created` count and when it was last observed to change --
-    // see VOUCHER_JOB_STALL_MS / pollVoucherJob's stall check below (C1).
-    const lastProgressRef = useRef({ created: null, at: 0 });
+    // Last-seen `created` count and `status`, and when either was last
+    // observed to change -- see VOUCHER_JOB_STALL_MS / pollVoucherJob's
+    // stall check below (C1). `status` is tracked alongside `created`
+    // because there's exactly one voucher-worker (no replicas in compose,
+    // one job at a time) and qty is unbounded, so a second job can sit
+    // "queued" behind a large one for minutes -- created stays 0 the whole
+    // time, but that's the queue doing its job, not a stall. See the stall
+    // check itself for why only "running" counts toward the timeout.
+    const lastProgressRef = useRef({ created: null, status: null, at: 0 });
 
     // Template State
     const [template, setTemplate] = useState({
@@ -526,7 +532,7 @@ export default function Hotspot() {
     const pollVoucherJob = (jobId, deviceId) => {
         stopPolling();
         pollFailureCountRef.current = 0;
-        lastProgressRef.current = { created: null, at: Date.now() };
+        lastProgressRef.current = { created: null, status: null, at: Date.now() };
 
         // Give up on this job entirely: stop polling, forget it so a future
         // mount doesn't resume something dead, reset voucherJob to null so
@@ -557,20 +563,53 @@ export default function Hotspot() {
                     return;
                 }
 
-                // C1: a job stuck "running"/"queued" forever returns this
-                // exact 200 response every single poll -- there is no error
-                // for the two escape hatches below to catch. Detect it
-                // ourselves: if `created` hasn't moved since the last time we
-                // checked, and it's been at least VOUCHER_JOB_STALL_MS since
-                // it last did, this job is making no forward progress. Give up
-                // client-side (the manual Dismiss button next to the progress
-                // bar is the other way out, for an operator who doesn't want
-                // to wait for the timeout).
+                // C1: a job stuck "running" forever returns this exact 200
+                // response every single poll -- there is no error for the two
+                // escape hatches below to catch. Detect it ourselves: if
+                // `created` hasn't moved since the last time we checked, and
+                // it's been at least VOUCHER_JOB_STALL_MS since it last did,
+                // this job is making no forward progress. Give up client-side
+                // (the manual Dismiss button next to the progress bar is the
+                // other way out, for an operator who doesn't want to wait for
+                // the timeout).
+                //
+                // The clock only ever COUNTS DOWN while status === 'running'.
+                // There is a single voucher-worker (no replicas in compose,
+                // one job at a time) and qty is unbounded, so a second job
+                // (another device, another tab, a re-Generate after a
+                // Dismiss) can legitimately sit "queued" behind a large one
+                // for minutes -- created stays 0 that whole time, and that is
+                // the queue doing its job, not a stall. Treating that as
+                // stalled clears the id and re-enables Generate while the
+                // first job is still genuinely running, which is how an
+                // operator ends up starting a second, duplicate job for one
+                // request (paid-for duplicate vouchers, not just wasted time).
+                //
+                // A "queued" job is therefore never auto-abandoned, no matter
+                // how long it stays queued -- including the case where the
+                // queue truly is stuck (worker down, nothing draining it).
+                // That case is indistinguishable from "just waiting behind a
+                // long job" purely from this response shape, so any timeout
+                // here would reintroduce the exact double-submission risk
+                // above. The manual Dismiss control is the intended and
+                // sufficient escape for a forever-queued job: it's already
+                // operator-driven (nothing fires without the operator
+                // choosing to fire it), so it can't fire *for* a job that's
+                // actually still progressing behind the scenes.
+                //
+                // The queued -> running transition itself counts as forward
+                // progress (the job left the queue and started doing real
+                // work) even though `created` is still 0 at that instant, so
+                // a `status` change also resets the clock, not only a
+                // `created` change.
                 const createdNow = job.created ?? 0;
                 const prevProgress = lastProgressRef.current;
-                if (prevProgress.created === null || createdNow !== prevProgress.created) {
-                    lastProgressRef.current = { created: createdNow, at: Date.now() };
-                } else if (Date.now() - prevProgress.at >= VOUCHER_JOB_STALL_MS) {
+                const progressed = prevProgress.created === null
+                    || createdNow !== prevProgress.created
+                    || job.status !== prevProgress.status;
+                if (progressed) {
+                    lastProgressRef.current = { created: createdNow, status: job.status, at: Date.now() };
+                } else if (job.status === 'running' && Date.now() - prevProgress.at >= VOUCHER_JOB_STALL_MS) {
                     giveUp('This voucher batch has made no progress for a while and may be stuck. It may still be running on the router -- check the History tab shortly. You can start a new batch now.');
                 }
             } catch (e) {

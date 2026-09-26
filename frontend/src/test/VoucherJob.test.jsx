@@ -462,6 +462,94 @@ describe('C1: stuck-job stall detection and manual dismiss', () => {
         }
     });
 
+    it('a queued job that stays queued well past the stall timeout must NOT be abandoned (single-worker queue depth is normal, not a stall)', async () => {
+        localStorage.setItem(JOB_KEY, 'job-queued-behind-a-big-one');
+        api.get.mockImplementation((url) => {
+            if (url.includes('/hotspot/jobs/job-queued-behind-a-big-one')) {
+                // Never leaves "queued" -- there is a single voucher-worker
+                // and qty is unbounded, so a large job ahead of this one in
+                // the queue can legitimately hold it here for minutes.
+                // `created` stays 0 throughout, which looks identical to a
+                // genuinely stuck job from this response shape alone -- that
+                // is exactly why "queued" must never count toward the stall
+                // timeout (see Fix 1 above the stall check in index.jsx).
+                return Promise.resolve({ data: { job_id: 'job-queued-behind-a-big-one', status: 'queued', count: 500, created: 0, vouchers: [] } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        vi.useFakeTimers();
+        try {
+            render(<Hotspot />);
+            await flushMicrotasks();
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-queued-behind-a-big-one');
+
+            // Well past the stall timeout, and still "queued" (created: 0)
+            // on every single tick the entire time.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(3 * 60 * 1000 + 30000);
+            });
+
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-queued-behind-a-big-one');
+            expect(alertSpy).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+            alertSpy.mockRestore();
+        }
+    });
+
+    it('a running job whose created is flat for a gap shorter than the stall timeout must NOT be abandoned', async () => {
+        localStorage.setItem(JOB_KEY, 'job-brief-pause');
+        api.get.mockImplementation((url) => {
+            if (url.includes('/hotspot/jobs/job-brief-pause')) {
+                // `created` never changes across this whole test -- unlike
+                // the "IS progressing" test above (which advances `created`
+                // on every tick and so would pass regardless of the stall
+                // constant's value), this is the genuinely sensitive case:
+                // a real pause with no progress, held for a duration shorter
+                // than VOUCHER_JOB_STALL_MS. It must survive.
+                return Promise.resolve({ data: { job_id: 'job-brief-pause', status: 'running', count: 200, created: 40, vouchers: [] } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        vi.useFakeTimers();
+        try {
+            render(<Hotspot />);
+            await flushMicrotasks();
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-brief-pause');
+
+            // A 2:50 flat gap -- shorter than the 3-minute timeout -- must
+            // survive. (This is the test that actually catches an
+            // over-aggressive constant: with `created` genuinely flat the
+            // whole time, lowering VOUCHER_JOB_STALL_MS below this gap makes
+            // this fail -- see the report for the deliberate-lowering check.)
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(3 * 60 * 1000 - 10000);
+            });
+
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-brief-pause');
+            expect(alertSpy).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+            alertSpy.mockRestore();
+        }
+    });
+
     it('CRITICAL: the manual Dismiss control clears local job state and re-enables Generate, without attempting to cancel anything server-side', async () => {
         installDefaultApiMocks({
             jobs: { 'job-dismiss': { job_id: 'job-dismiss', status: 'running', count: 20, created: 3, vouchers: [] } },
