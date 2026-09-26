@@ -171,7 +171,7 @@ def report_metrics_batch(metrics_list):
         logger.error(f"Failed to report batch metrics: {e}")
         raise
 
-def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None):
+def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None, last_refreshed=None):
     """
     Connects to MikroTik Router via API and fetches resources.
     Returns a list of metric dicts.
@@ -310,6 +310,26 @@ def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None)
         except Exception as e_iface:
             logger.error(f"Interface stats failed: {e_iface}")
 
+        # Datasets the hotspot UI reads but this agent does not need for metrics.
+        # Each has its own interval so they do not add a round trip to every poll.
+        if device_id is not None and last_refreshed is not None:
+            for dataset, path in (
+                ("users", '/ip/hotspot/user'),
+                ("profiles", '/ip/hotspot/user/profile'),
+                ("log", '/log'),
+            ):
+                interval = DATASET_INTERVALS[dataset]
+                if not should_refresh(last_refreshed, device_id, dataset, interval):
+                    continue
+                try:
+                    rows = api.get_resource(path).get()
+                    hotspot_cache.write_dataset(device_id, dataset, rows)
+                    logger.info(f"Cached {dataset} for {device_ip}: {len(rows)} rows")
+                except Exception as e_ds:
+                    # One dataset failing must not abort the metric collection
+                    # that the rest of this function performed successfully.
+                    logger.warning(f"Failed to cache {dataset} for {device_ip}: {e_ds}")
+
         return metrics
 
     except Exception as e:
@@ -335,6 +355,31 @@ def wait_for_trigger(seconds):
     except Exception:
         time.sleep(seconds)
 
+# Per-dataset refresh intervals in seconds. Datasets that only change when an
+# operator acts (users, profiles) are invalidated on write by the backend; the
+# interval here is just a safety net for router-side changes such as auto-expiry.
+DATASET_INTERVALS = {
+    "users": 600,
+    "profiles": 600,
+    "log": 30,
+}
+
+
+def should_refresh(last_refreshed, device_id, dataset, interval, now=None):
+    """True if `dataset` for `device_id` is due, recording the time when it is.
+
+    Mutates `last_refreshed` on a True result so callers cannot forget to.
+    """
+    if now is None:
+        now = time.time()
+    key = (device_id, dataset)
+    previous = last_refreshed.get(key)
+    if previous is not None and now - previous < interval:
+        return False
+    last_refreshed[key] = now
+    return True
+
+
 def build_metric_payload(dev_id, metric_type, value, unit=None, meta_data=None):
     return {
         "device_id": dev_id,
@@ -348,6 +393,7 @@ def build_metric_payload(dev_id, metric_type, value, unit=None, meta_data=None):
 def run_agent():
     logger.info("Starting Monitor Agent with MikroTik Support")
     device_last_polled = {}
+    dataset_last_refreshed = {}
 
     while True:
         try:
@@ -401,7 +447,7 @@ def run_agent():
                             port = 8728 if db_port == 22 else db_port
 
                             logger.info(f"Deep inspect {ip} (user={user}, port={port})")
-                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id)
+                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id, last_refreshed=dataset_last_refreshed)
 
                             for m in mt_metrics:
                                 batch.append(build_metric_payload(

@@ -53,8 +53,8 @@ def write_dataset(device_id, dataset, rows):
     if dataset not in TTLS:
         raise ValueError(f"unknown dataset {dataset!r}; expected one of {sorted(TTLS)}")
 
-    payload = json.dumps({"fetched_at": time.time(), "rows": rows})
     try:
+        payload = json.dumps({"fetched_at": time.time(), "rows": rows})
         _client().setex(cache_key(device_id, dataset), TTLS[dataset], payload)
         return True
     except Exception as e:

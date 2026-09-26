@@ -56,3 +56,30 @@ def test_write_dataset_returns_false_on_redis_error(monkeypatch):
 def test_unknown_dataset_rejected(fake_redis):
     with pytest.raises(ValueError):
         hotspot_cache.write_dataset("dev-1", "not-a-dataset", [])
+
+
+def test_write_dataset_returns_false_on_unserializable_row(fake_redis):
+    # json.dumps must run inside the try/except: a non-serializable row must
+    # not raise into get_mikrotik_stats and break metric collection.
+    rows = [{"bad": object()}]
+    assert hotspot_cache.write_dataset("dev-1", "active", rows) is False
+
+
+def test_should_refresh_returns_true_when_never_fetched():
+    import monitor_agent
+    last = {}
+    assert monitor_agent.should_refresh(last, "dev-1", "users", 600, now=1000.0) is True
+
+
+def test_should_refresh_respects_interval():
+    import monitor_agent
+    last = {("dev-1", "users"): 1000.0}
+    assert monitor_agent.should_refresh(last, "dev-1", "users", 600, now=1500.0) is False
+    assert monitor_agent.should_refresh(last, "dev-1", "users", 600, now=1601.0) is True
+
+
+def test_should_refresh_records_the_time_it_returns_true():
+    import monitor_agent
+    last = {}
+    monitor_agent.should_refresh(last, "dev-1", "log", 30, now=500.0)
+    assert last[("dev-1", "log")] == 500.0
