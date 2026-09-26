@@ -11,12 +11,11 @@ from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import Device, User, Site, APIKey, UserRole, VoucherSale, VoucherBatch
 from app.models.core import decrypt_device_secrets
 from app.services import hotspot_cache
+from app.services import voucher_jobs
 import routeros_api
 from uuid import UUID
 from datetime import datetime
 import time
-import random
-import string
 import logging
 import re
 import os
@@ -1058,120 +1057,80 @@ async def get_voucher_template(device_id: str, db: AsyncSession = Depends(get_db
     # Return default if not set
     return VoucherTemplate()
 
-@router.post("/{device_id}/users/batch")
+@router.post("/{device_id}/users/batch", status_code=202)
 async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
-    
+
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(Device).where(Device.id == UUID(device_id))
     elif isinstance(actor, APIKey) and not actor.organization_id:
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-        
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    # Decrypt device secrets (required for async SQLAlchemy)
-    decrypt_device_secrets(device)
-        
+
+    # Actual voucher generation now happens out-of-band in the worker
+    # (agents/voucher_job_worker.py, Task 3): create the batch row up front
+    # so it is visible in history even if the enqueue below fails or the
+    # operator's browser drops the request, then hand off the work.
+    batch_comment = f"Batch-{batch.prefix or 'auto'} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-        resource = api.get_resource('/ip/hotspot/user')
-        
-        generated = []
-        max_attempts = batch.qty * 3 # Allow for more collisions
-        attempts = 0
-        batch_comment = f"Batch-{batch.prefix or 'auto'} | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # Get organization_id from device via site
+        site_res = await db.execute(select(Site).where(Site.id == device.site_id))
+        site = site_res.scalars().first()
+        org_id = site.organization_id if site else None
+        if not org_id:
+            raise ValueError(f"No organization found for device {device_id}")
 
-        logger.info(f"Starting batch generation: qty={batch.qty}, random={batch.random_mode}, format={batch.format}")
-
-        while len(generated) < batch.qty and attempts < max_attempts:
-            attempts += 1
-            if batch.random_mode:
-                if batch.format == "numeric":
-                    # numeric mode with variable length
-                    length = batch.length if batch.length else 8
-                    username = ''.join(random.choices(string.digits, k=length))
-                    password = username
-                else:
-                    # alphanumeric mode: split length between letters and numbers
-                    # default length 8 if not specified
-                    length = batch.length if batch.length else 8
-                    num_len = length // 2
-                    char_len = length - num_len
-
-                    letters = ''.join(random.choices(string.ascii_lowercase, k=char_len))
-                    numbers = ''.join(random.choices(string.digits, k=num_len))
-                    username = f"{letters}{numbers}"
-                    password = username # Same as username
-            else:
-                suffix_len = batch.length if batch.length else 4
-                suffix = ''.join(random.choices(string.digits, k=suffix_len))
-                username = f"{batch.prefix}{suffix}"
-                password = ''.join(random.choices(string.digits, k=4)) # Simple 4 digit password
-
-            try:
-                params = {
-                    'name': username,
-                    'password': password,
-                    'profile': batch.profile or 'default',
-                    'comment': batch_comment
-                }
-                if batch.time_limit:
-                    params['limit-uptime'] = batch.time_limit
-                if batch.data_limit:
-                    params['limit-bytes-total'] = batch.data_limit
-                    
-                resource.add(**params)
-                generated.append({"username": username, "password": password})
-            except Exception as e:
-                # Likely "user already exists", continue to next attempt
-                if "already exists" not in str(e).lower():
-                    logger.warning(f"Batch item error (Attempt {attempts}/{max_attempts}): {e}")
-                continue
-                
-        logger.info(f"Batch generation complete: {len(generated)}/{batch.qty} created in {attempts} attempts")
-        connection.disconnect()
-        hotspot_cache.invalidate(device_id, "users")
-        hotspot_cache.request_refresh(device_id)
-
-        # Persist batch to database for history/reprint
-        try:
-            # Get organization_id from device via site
-            site_res = await db.execute(select(Site).where(Site.id == device.site_id))
-            site = site_res.scalars().first()
-            org_id = site.organization_id if site else None
-
-            if org_id:
-                voucher_batch = VoucherBatch(
-                    device_id=device.id,
-                    organization_id=org_id,
-                    batch_name=batch_comment,
-                    prefix=batch.prefix or 'auto',
-                    profile=batch.profile or 'default',
-                    time_limit=batch.time_limit,
-                    data_limit=batch.data_limit,
-                    count=len(generated),
-                    vouchers=generated,
-                    created_at=datetime.utcnow()
-                )
-                db.add(voucher_batch)
-                await db.commit()
-                logger.info(f"Persisted batch {batch_comment} with {len(generated)} vouchers to database")
-        except Exception as db_err:
-            logger.warning(f"Failed to persist batch to database: {db_err}")
-            await db.rollback()
-
-        return generated
+        voucher_batch = VoucherBatch(
+            device_id=device.id,
+            organization_id=org_id,
+            batch_name=batch_comment,
+            prefix=batch.prefix or 'auto',
+            profile=batch.profile or 'default',
+            time_limit=batch.time_limit,
+            data_limit=batch.data_limit,
+            count=batch.qty,
+            vouchers=[],
+            status="queued",
+            created_at=datetime.utcnow()
+        )
+        db.add(voucher_batch)
+        await db.commit()
     except Exception as e:
-        logger.error(f"Batch Gen Error: {e}", exc_info=True)
-        if 'connection' in locals() and connection:
-            connection.disconnect()
-        raise HTTPException(status_code=500, detail=f"Failed to generate vouchers: {str(e)}")
+        logger.error(f"Failed to create voucher batch record for device {device_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to create voucher batch: {str(e)}")
+
+    job = {
+        "batch_id": str(voucher_batch.id),
+        "device_id": device_id,
+        "qty": batch.qty,
+        "prefix": batch.prefix or 'auto',
+        "profile": batch.profile or 'default',
+        "time_limit": batch.time_limit,
+        "data_limit": batch.data_limit,
+        "comment": batch_comment,
+    }
+
+    if not voucher_jobs.enqueue(job):
+        # The row is already committed, so this is the recoverable state:
+        # the operator sees a "failed" batch instead of a 500 that implies
+        # nothing happened.
+        voucher_batch.status = "failed"
+        await db.commit()
+        return {
+            "job_id": str(voucher_batch.id),
+            "status": "failed",
+            "count": batch.qty,
+            "detail": "Voucher batch was recorded but could not be queued for generation. Retry later.",
+        }
+
+    logger.info(f"Enqueued voucher batch {voucher_batch.id} for device {device_id}: qty={batch.qty}")
+    return {"job_id": str(voucher_batch.id), "status": "queued", "count": batch.qty}
 
 @router.get("/{device_id}/batches")
 async def get_voucher_batches(

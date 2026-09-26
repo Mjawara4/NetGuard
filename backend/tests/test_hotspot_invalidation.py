@@ -23,7 +23,7 @@ import fakeredis
 import pytest
 from fastapi import HTTPException
 
-from app.models import APIKey, Device
+from app.models import APIKey, Device, Site
 from app.routers import hotspot
 from app.services import hotspot_cache
 
@@ -45,6 +45,22 @@ def _db_returning(device):
     result.scalars.return_value.first.return_value = device
     db = MagicMock()
     db.execute = AsyncMock(return_value=result)
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    return db
+
+
+def _db_returning_device_then_site(device, site):
+    """Two distinct db.execute() results in sequence: the device lookup,
+    then the Site lookup batch_generate_users does to resolve organization_id
+    for the VoucherBatch row it must create up front."""
+    device_result = MagicMock()
+    device_result.scalars.return_value.first.return_value = device
+    site_result = MagicMock()
+    site_result.scalars.return_value.first.return_value = site
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=[device_result, site_result])
+    db.add = MagicMock()
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     return db
@@ -162,27 +178,66 @@ async def test_delete_user_success_invalidates_users_cache(fake_redis, monkeypat
 
 # ---------------------------------------------------------------------------
 # POST /{device_id}/users/batch
+#
+# Task 2 (background-voucher-generation) changed this endpoint: it no longer
+# talks to the router at all. It creates a `queued` VoucherBatch row and
+# hands the job to Redis for a worker (Task 3) to actually generate the
+# vouchers. So the old assertion here -- that a synchronous call invalidates
+# the "users" cache -- no longer applies to this endpoint; that invalidation
+# now belongs to the worker, which this backend test suite cannot exercise
+# (separate container/image). What's testable here is the new contract: a
+# 202-shaped response, a queued batch row, and the job handed to
+# voucher_jobs.enqueue with the right payload.
 # ---------------------------------------------------------------------------
 
-async def test_batch_generate_users_invalidates_users_cache(fake_redis, monkeypatch):
+async def test_batch_generate_users_creates_queued_batch_and_enqueues_job(monkeypatch):
     device_id = str(uuid.uuid4())
-    _seed(fake_redis, device_id, "users", [{"name": "old-voucher"}])
+    device = _device(device_id)
+    site = Site(id=device.site_id, name="site", organization_id=uuid.uuid4())
 
-    connection, api = _stub_connection()
-    resource = MagicMock()
-    resource.add.return_value = None
-    api.get_resource.return_value = resource
-    monkeypatch.setattr(hotspot, "get_api_pool", lambda *a, **kw: connection)
+    enqueued = {}
+
+    def fake_enqueue(job):
+        enqueued.update(job)
+        return True
+
+    monkeypatch.setattr(hotspot.voucher_jobs, "enqueue", fake_enqueue)
 
     result = await hotspot.batch_generate_users(
         device_id,
-        hotspot.BatchUserCreate(qty=1, prefix="V", profile="default", random_mode=True, format="numeric", length=4),
-        db=_db_returning(_device(device_id)),
+        hotspot.BatchUserCreate(qty=3, prefix="V", profile="default", random_mode=True, format="numeric", length=4),
+        db=_db_returning_device_then_site(device, site),
         actor=_unscoped_actor(),
     )
 
-    assert len(result) == 1
-    assert fake_redis.get(hotspot_cache.cache_key(device_id, "users")) is None
+    assert result["status"] == "queued"
+    assert result["count"] == 3
+    assert "job_id" in result
+
+    assert enqueued["batch_id"] == result["job_id"]
+    assert enqueued["device_id"] == device_id
+    assert enqueued["qty"] == 3
+    assert enqueued["prefix"] == "V"
+    assert enqueued["profile"] == "default"
+
+
+async def test_batch_generate_users_marks_batch_failed_when_enqueue_fails(monkeypatch):
+    device_id = str(uuid.uuid4())
+    device = _device(device_id)
+    site = Site(id=device.site_id, name="site", organization_id=uuid.uuid4())
+
+    monkeypatch.setattr(hotspot.voucher_jobs, "enqueue", lambda job: False)
+
+    result = await hotspot.batch_generate_users(
+        device_id,
+        hotspot.BatchUserCreate(qty=2, prefix="V", profile="default"),
+        db=_db_returning_device_then_site(device, site),
+        actor=_unscoped_actor(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["count"] == 2
+    assert "detail" in result
 
 
 # ---------------------------------------------------------------------------
