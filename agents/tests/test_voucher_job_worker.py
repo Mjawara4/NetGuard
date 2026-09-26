@@ -36,8 +36,28 @@ def test_claim_returns_none_on_redis_error(monkeypatch):
             raise RuntimeError("redis down")
 
     monkeypatch.setattr(w, "_client", lambda: Boom())
+    # Don't actually wait REDIS_ERROR_SLEEP_SECONDS in the test; just prove
+    # the sleep is attempted (see test_claim_sleeps_on_redis_error_to_avoid_busy_spin).
+    monkeypatch.setattr(w.time, "sleep", lambda s: None)
     # The worker must survive a Redis outage and keep retrying, not crash.
     assert w.claim_job(timeout=1) is None
+
+
+def test_claim_sleeps_on_redis_error_to_avoid_busy_spin(monkeypatch):
+    """Without a sleep here, a Redis outage turns run_worker's `while True:
+    claim_job(...)` loop into a busy-spin that burns a core hammering a
+    Redis that is already down -- BRPOP's own timeout only blocks when Redis
+    is actually reachable and the queue is merely empty."""
+    class Boom:
+        def brpop(self, *a, **k):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr(w, "_client", lambda: Boom())
+    slept = []
+    monkeypatch.setattr(w.time, "sleep", lambda s: slept.append(s))
+
+    assert w.claim_job(timeout=1) is None
+    assert slept == [w.REDIS_ERROR_SLEEP_SECONDS]
 
 
 def test_claim_drops_malformed_payload_without_raising(fake_redis):
@@ -190,6 +210,57 @@ def test_report_progress_returns_false_on_request_error(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# report_terminal_progress -- I1: the worker's fire-once terminal report is
+# the original bug this whole feature exists to eliminate (see the module's
+# TERMINAL_REPORT_BACKOFF_SECONDS comment). These prove it actually retries,
+# actually gives up (bounded, not forever), and logs loudly enough on final
+# failure that stranded vouchers are findable.
+# ---------------------------------------------------------------------------
+
+def test_report_terminal_progress_retries_and_succeeds_on_a_later_attempt(monkeypatch):
+    slept = []
+    monkeypatch.setattr(w.time, "sleep", lambda s: slept.append(s))
+
+    attempts = []
+
+    def flaky(batch_id, vouchers, status):
+        attempts.append(status)
+        # Fail the first two attempts (simulating a backend mid-restart),
+        # succeed on the third once it's back.
+        return len(attempts) >= 3
+
+    monkeypatch.setattr(w, "report_progress", flaky)
+
+    ok = w.report_terminal_progress("batch-recovers", [{"username": "u1", "password": "p1"}], "complete")
+
+    assert ok is True
+    assert len(attempts) == 3
+    # Backed off between the two failed attempts, using the documented
+    # schedule, not a fixed/naive delay.
+    assert slept == w.TERMINAL_REPORT_BACKOFF_SECONDS[:2]
+
+
+def test_report_terminal_progress_is_bounded_and_logs_loudly_on_final_failure(monkeypatch):
+    monkeypatch.setattr(w.time, "sleep", lambda s: None)
+    attempts = []
+    monkeypatch.setattr(w, "report_progress", lambda *a, **k: (attempts.append(1), False)[1])
+
+    logged_errors = []
+    monkeypatch.setattr(w.logger, "error", lambda msg, *a, **k: logged_errors.append(msg))
+
+    stranded = [{"username": "u1", "password": "p1"}, {"username": "u2", "password": "p2"}]
+    ok = w.report_terminal_progress("batch-stranded-123", stranded, "failed")
+
+    assert ok is False
+    # Bounded -- never spins forever waiting for a backend that never comes
+    # back: exactly len(TERMINAL_REPORT_BACKOFF_SECONDS) + 1 attempts total.
+    assert len(attempts) == len(w.TERMINAL_REPORT_BACKOFF_SECONDS) + 1
+    # Findable by an operator or a log search: the job id and how many
+    # vouchers are now stranded must both be in the final error log line.
+    assert any("batch-stranded-123" in msg and "2" in msg for msg in logged_errors)
+
+
+# ---------------------------------------------------------------------------
 # process_job -- the router and the backend API are both mocked, per the
 # brief: end-to-end verification against a real progress endpoint waits on
 # Task 4.
@@ -278,6 +349,67 @@ def _install_progress_capture(monkeypatch):
 
     monkeypatch.setattr(w, "report_progress", fake_report_progress)
     return calls
+
+
+# ---------------------------------------------------------------------------
+# Router port derivation -- must match agents/monitor_agent.py's identical
+# computation (`8728 if db_port == 22 else db_port`) exactly, so the two
+# agents reading the same `ssh_port` inventory field can never diverge on
+# which port they actually dial.
+# ---------------------------------------------------------------------------
+
+def test_process_job_maps_ssh_port_22_to_the_hotspot_api_port(monkeypatch):
+    """A device whose stored ssh_port is 22 (the SSH port, not the RouterOS
+    API port) must connect on 8728 instead -- mirrors monitor_agent.py."""
+    device = {
+        "id": "d1",
+        "ip_address": "10.13.13.5",
+        "ssh_username": "admin",
+        "ssh_password": "secret",
+        "ssh_port": 22,
+    }
+    monkeypatch.setattr(w, "fetch_device", lambda device_id: device)
+
+    resource = FakeResource()
+    captured_pools = []
+
+    def fake_pool_factory(ip, **kwargs):
+        pool = FakePool(ip, resource=resource, **kwargs)
+        captured_pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(w.routeros_api, "RouterOsApiPool", fake_pool_factory)
+    _install_progress_capture(monkeypatch)
+
+    w.process_job(_job(qty=1))
+
+    assert captured_pools[0].connect_args["port"] == 8728
+
+
+def test_process_job_passes_through_a_non_22_ssh_port_unchanged(monkeypatch):
+    device = {
+        "id": "d1",
+        "ip_address": "10.13.13.5",
+        "ssh_username": "admin",
+        "ssh_password": "secret",
+        "ssh_port": 8729,
+    }
+    monkeypatch.setattr(w, "fetch_device", lambda device_id: device)
+
+    resource = FakeResource()
+    captured_pools = []
+
+    def fake_pool_factory(ip, **kwargs):
+        pool = FakePool(ip, resource=resource, **kwargs)
+        captured_pools.append(pool)
+        return pool
+
+    monkeypatch.setattr(w.routeros_api, "RouterOsApiPool", fake_pool_factory)
+    _install_progress_capture(monkeypatch)
+
+    w.process_job(_job(qty=1))
+
+    assert captured_pools[0].connect_args["port"] == 8729
 
 
 def test_process_job_happy_path_batches_progress_and_completes(monkeypatch, fake_device):

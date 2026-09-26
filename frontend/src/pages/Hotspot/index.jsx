@@ -16,7 +16,34 @@ const VOUCHER_JOB_POLL_MS = 3000;
 // A poll that fails this many times in a row for a reason other than a
 // confirmed 404 (a real network/server problem, not "the job is gone") is
 // treated as unrecoverable -- see pollVoucherJob's catch block.
-const MAX_TRANSIENT_POLL_FAILURES = 3;
+//
+// 10 misses (~30s at the 3s poll interval) rather than 3 (~9s): a backend
+// restart during a deploy -- including this one's own -- takes roughly
+// 10-30s, which is LONGER than the old 3-miss/9s threshold. That made any
+// brief backend blip abandon a perfectly healthy in-flight job. The
+// stale-id case this counter was never meant to catch (a job_id left over
+// from a wiped database, a different environment, etc) already takes the
+// immediate 404 path below, not this one -- so raising this costs nothing
+// for that case and only stops healthy jobs from being thrown away.
+const MAX_TRANSIENT_POLL_FAILURES = 10;
+
+// C1: a job stuck at "running"/"queued" forever (worker crashed after
+// BRPOP'ing it, worker not running, backend unreachable at its last progress
+// report) returns HTTP 200 every time it's polled -- never a 404, never a
+// run of errors -- so neither escape hatch above ever fires. This is the
+// second, independent escape: if `created` (vouchers actually recorded so
+// far) hasn't advanced in this long, treat the job as stalled and abandon it
+// client-side.
+//
+// Why 3 minutes: the worker flushes progress about every 10 vouchers, and
+// each voucher takes ~187ms on the router, so a *normal* gap between
+// progress reports is ~2s (10 * 187ms). A slow or contended router could
+// stretch that considerably -- and on top of that, I1's own terminal-report
+// retry deliberately backs off for up to ~30s on a flaky backend, during
+// which `created` legitimately does not move. 3 minutes comfortably outlasts
+// both of those without being so long that a genuinely stuck job leaves the
+// operator staring at a disabled Generate button for the rest of their shift.
+const VOUCHER_JOB_STALL_MS = 3 * 60 * 1000;
 
 export default function Hotspot() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -59,6 +86,16 @@ export default function Hotspot() {
     // Generation State
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 10, random_mode: false, format: 'alphanumeric' });
     const [generatedBatch, setGeneratedBatch] = useState([]);
+    // C2 (version-skew: old frontend still open, new backend already
+    // deployed): the old page's handleGenerate destructures {job_id,...}
+    // straight into setGeneratedBatch, so generatedBatch can end up holding
+    // that plain object instead of an array once the backend moves to the
+    // job shape. We can't patch code already served to that open tab, but
+    // rendering here must not assume generatedBatch is an array just
+    // because the setter's declared type says so -- anything non-array
+    // renders as empty instead of throwing "generatedBatch.map is not a
+    // function" and hard-crashing the page.
+    const safeGeneratedBatch = Array.isArray(generatedBatch) ? generatedBatch : [];
     const [showPrintView, setShowPrintView] = useState(false);
     // Background voucher-generation job (Task 5): the batch endpoint now
     // returns 202 + job_id instead of the vouchers themselves. This tracks
@@ -69,6 +106,9 @@ export default function Hotspot() {
     // Consecutive poll failures that were NOT a confirmed "job is gone" (404)
     // -- see pollVoucherJob's catch block.
     const pollFailureCountRef = useRef(0);
+    // Last-seen `created` count and when it was last observed to change --
+    // see VOUCHER_JOB_STALL_MS / pollVoucherJob's stall check below (C1).
+    const lastProgressRef = useRef({ created: null, at: 0 });
 
     // Template State
     const [template, setTemplate] = useState({
@@ -486,6 +526,7 @@ export default function Hotspot() {
     const pollVoucherJob = (jobId, deviceId) => {
         stopPolling();
         pollFailureCountRef.current = 0;
+        lastProgressRef.current = { created: null, at: Date.now() };
 
         // Give up on this job entirely: stop polling, forget it so a future
         // mount doesn't resume something dead, reset voucherJob to null so
@@ -513,6 +554,24 @@ export default function Hotspot() {
                     // Terminal state shown to the operator -- forget the job so a
                     // future mount doesn't try to resume something already done.
                     localStorage.removeItem(voucherJobStorageKey(deviceId));
+                    return;
+                }
+
+                // C1: a job stuck "running"/"queued" forever returns this
+                // exact 200 response every single poll -- there is no error
+                // for the two escape hatches below to catch. Detect it
+                // ourselves: if `created` hasn't moved since the last time we
+                // checked, and it's been at least VOUCHER_JOB_STALL_MS since
+                // it last did, this job is making no forward progress. Give up
+                // client-side (the manual Dismiss button next to the progress
+                // bar is the other way out, for an operator who doesn't want
+                // to wait for the timeout).
+                const createdNow = job.created ?? 0;
+                const prevProgress = lastProgressRef.current;
+                if (prevProgress.created === null || createdNow !== prevProgress.created) {
+                    lastProgressRef.current = { created: createdNow, at: Date.now() };
+                } else if (Date.now() - prevProgress.at >= VOUCHER_JOB_STALL_MS) {
+                    giveUp('This voucher batch has made no progress for a while and may be stuck. It may still be running on the router -- check the History tab shortly. You can start a new batch now.');
                 }
             } catch (e) {
                 console.error('Failed to poll voucher job:', e);
@@ -540,12 +599,54 @@ export default function Hotspot() {
         pollIntervalRef.current = setInterval(tick, VOUCHER_JOB_POLL_MS);
     };
 
+    // C1 manual escape hatch: a guaranteed way out that doesn't depend on
+    // VOUCHER_JOB_STALL_MS being the right value for every situation. Purely
+    // local -- stops polling, forgets the job id, re-enables Generate. It
+    // deliberately does NOT attempt to cancel anything server-side: the
+    // worker/router job (if it's even still alive) is left alone, exactly
+    // like the timeout-driven giveUp() path above.
+    const dismissVoucherJob = () => {
+        stopPolling();
+        if (selectedDevice) localStorage.removeItem(voucherJobStorageKey(selectedDevice));
+        setVoucherJob(null);
+    };
+
     const handleGenerate = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
             const res = await api.post(`/hotspot/${selectedDevice}/users/batch`, batchForm);
-            const { job_id, status, count } = res.data;
+            const data = res.data;
+
+            // C2 (version-skew: new frontend served before the backend
+            // restarts): the OLD synchronous /users/batch returns 200 with a
+            // plain array of {username, password} vouchers, not
+            // {job_id, status, count}. The old backend already created and
+            // committed those vouchers -- treat this exactly like the
+            // pre-background-job code did (render them straight into the
+            // print view) instead of destructuring a job shape that isn't
+            // there. Do NOT store a job id or start polling: there is no job,
+            // and polling "/jobs/undefined" would just hammer the backend
+            // while the operator never sees vouchers that already exist.
+            if (Array.isArray(data) || !data || typeof data !== 'object' || !data.job_id) {
+                setVoucherJob(null);
+                setGeneratedBatch(Array.isArray(data) ? data : []);
+                setShowPrintView(true);
+                return;
+            }
+
+            const { job_id, status, count, detail } = data;
+
+            // I3: an enqueue failure (e.g. Redis down) comes back 202 with
+            // status: "failed" and a `detail` message, not an HTTP error --
+            // surfacing it here instead of storing the job id and polling
+            // means the operator sees why, instead of an empty "Ready to
+            // export 0 vouchers" print view a moment later.
+            if (status === 'failed') {
+                alert('Voucher generation failed: ' + (detail || 'Unknown error.'));
+                return;
+            }
+
             localStorage.setItem(voucherJobStorageKey(selectedDevice), job_id);
             setVoucherJob({ job_id, status, count, created: 0, vouchers: [] });
             setGeneratedBatch([]);
@@ -832,16 +933,16 @@ export default function Hotspot() {
                                     </div>
                                     <div>
                                         <h3 className="font-black uppercase tracking-tight text-sm sm:text-base">Print Preview</h3>
-                                        <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Ready to export {generatedBatch.length} vouchers</p>
+                                        <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Ready to export {safeGeneratedBatch.length} vouchers</p>
                                         {/* Honest short-batch / failed-job disclosure (Task 5): a job can
                                             legitimately finish "complete" with fewer vouchers than requested
                                             (the router's collision budget can run out), and a "failed" job's
                                             partial vouchers are still real and sellable. Only shown when they
                                             differ -- a full/normal batch (and reprints, which clear voucherJob)
                                             render exactly as before. */}
-                                        {voucherJob && (voucherJob.status === 'complete' || voucherJob.status === 'failed') && voucherJob.count > generatedBatch.length && (
+                                        {voucherJob && (voucherJob.status === 'complete' || voucherJob.status === 'failed') && voucherJob.count > safeGeneratedBatch.length && (
                                             <p className="text-amber-200 text-[10px] sm:text-xs font-black uppercase tracking-wide mt-0.5">
-                                                {generatedBatch.length} / {voucherJob.count} {voucherJob.status === 'failed' ? 'created before job failed' : 'complete'}
+                                                {safeGeneratedBatch.length} / {voucherJob.count} {voucherJob.status === 'failed' ? 'created before job failed' : 'complete'}
                                             </p>
                                         )}
                                     </div>
@@ -852,7 +953,7 @@ export default function Hotspot() {
                                 </div>
                             </div>
                             <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900/50 grid grid-cols-2 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto max-h-[400px]">
-                                {generatedBatch.map((u, i) => (
+                                {safeGeneratedBatch.map((u, i) => (
                                     <div key={i} className="bg-white dark:bg-gray-800 p-3 sm:p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-center">
                                         <div className="text-[8px] sm:text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Voucher</div>
                                         <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base sm:text-lg'} font-mono font-black py-1 sm:py-2 rounded-lg border mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '15', borderColor: template.color_primary + '30' }}>{u.username}</div>
@@ -867,7 +968,7 @@ export default function Hotspot() {
                     {/* Hidden Print Area (Physical Print) */}
                     {/* Hidden Print Area (Physical Print) */}
                     <div className="hidden print:grid print:grid-cols-5 print:gap-2 print:p-2" id="printable-area">
-                        {generatedBatch.map((u, i) => (
+                        {safeGeneratedBatch.map((u, i) => (
                             <div key={i} className="voucher-card p-2 rounded-lg border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[85px] overflow-hidden break-inside-avoid shadow-sm relative">
                                 {/* Cut Guides */}
                                 <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-gray-300"></div>
@@ -1840,7 +1941,21 @@ export default function Hotspot() {
                                             <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 sm:p-5">
                                                 <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2">
                                                     <span>Generating vouchers…</span>
-                                                    <span>{voucherJob.created ?? 0} / {voucherJob.count}</span>
+                                                    <div className="flex items-center gap-3">
+                                                        <span>{voucherJob.created ?? 0} / {voucherJob.count}</span>
+                                                        {/* C1 manual escape hatch: clears local job-tracking state
+                                                            immediately, independent of whether VOUCHER_JOB_STALL_MS
+                                                            is the right value. Does NOT touch the server-side job --
+                                                            if it's actually still running, it keeps running regardless. */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={dismissVoucherJob}
+                                                            className="normal-case tracking-normal font-bold text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 underline decoration-dotted underline-offset-2 transition-colors"
+                                                            title="Stop tracking this batch here. If it's still running on the router, it keeps running -- check the History tab later."
+                                                        >
+                                                            Dismiss
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <div className="w-full bg-blue-100 dark:bg-blue-900/40 rounded-full h-2">
                                                     <div

@@ -323,3 +323,338 @@ describe('Voucher generation background job', () => {
         expect(legacyNameBlock.querySelector('span')).toBeNull();
     });
 });
+
+// ---------------------------------------------------------------------------
+// C1 -- a job stuck at "running"/"queued" forever returns HTTP 200 on every
+// poll, so neither the 404 path nor the transient-failure-counter path above
+// ever fires. The stall timeout (VOUCHER_JOB_STALL_MS, 3 minutes in
+// index.jsx) and the manual Dismiss control are the two independent escapes
+// for that case.
+// ---------------------------------------------------------------------------
+describe('C1: stuck-job stall detection and manual dismiss', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        localStorage.clear();
+        installDefaultApiMocks();
+    });
+
+    // The stall check only looks at `created`, so `status` can stay
+    // "running" (or "queued") throughout every poll in these tests -- the
+    // job never reports a terminal state or an error, exactly like the real
+    // bug (worker gone, backend unreachable at the last report, or simply
+    // not running).
+    function installStuckJobMocks(jobId, { created = 12, count = 50 } = {}) {
+        api.get.mockImplementation((url) => {
+            if (url.includes(`/hotspot/jobs/${jobId}`)) {
+                return Promise.resolve({ data: { job_id: jobId, status: 'running', count, created, vouchers: [] } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+    }
+
+    // Flush chained promise -> setState -> effect -> promise cycles under
+    // fake timers (fetchDevices -> setSelectedDevice -> prefetchAll +
+    // resume-job effect, each themselves awaiting mocked axios calls). A
+    // single advanceTimersByTimeAsync(0) only drains one microtask round;
+    // a handful of repeats settles the whole mount chain without needing any
+    // real wall-clock time to pass.
+    async function flushMicrotasks(rounds = 6) {
+        for (let i = 0; i < rounds; i++) {
+            // eslint-disable-next-line no-await-in-loop
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(0);
+            });
+        }
+    }
+
+    it('CRITICAL: a job stuck "running" with unchanging created is abandoned after the stall timeout -- polling stops, the stored id is cleared, and Generate re-enables', async () => {
+        localStorage.setItem(JOB_KEY, 'job-stuck');
+        installStuckJobMocks('job-stuck', { created: 12, count: 50 });
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        vi.useFakeTimers();
+        try {
+            render(<Hotspot />);
+            await flushMicrotasks();
+            // Resumed on mount, same as the reload/screen-lock regression guard.
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-stuck');
+
+            const pollsBeforeStall = api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-stuck')).length;
+            expect(pollsBeforeStall).toBeGreaterThan(0);
+
+            // `created` never advances on any subsequent tick. Fast-forward
+            // well past the 3-minute stall timeout.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(3 * 60 * 1000 + 15000);
+            });
+
+            expect(localStorage.getItem(JOB_KEY)).toBeNull();
+            expect(alertSpy).toHaveBeenCalled();
+
+            // Polling actually stopped, not just the state cleared: no more
+            // calls after one further interval tick.
+            const pollsAtGiveUp = api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-stuck')).length;
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(5000);
+            });
+            expect(api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-stuck')).length).toBe(pollsAtGiveUp);
+
+            fireEvent.click(screen.getByRole('button', { name: /Generator/i }));
+            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+        } finally {
+            vi.useRealTimers();
+            alertSpy.mockRestore();
+        }
+    });
+
+    it('a job that IS progressing must NOT be abandoned, even well past the stall timeout wall-clock duration', async () => {
+        localStorage.setItem(JOB_KEY, 'job-healthy');
+        let pollCount = 0;
+        api.get.mockImplementation((url) => {
+            if (url.includes('/hotspot/jobs/job-healthy')) {
+                // `created` advances on every single poll -- this job is
+                // healthy and must survive indefinitely regardless of how
+                // much wall-clock time the stall timeout would otherwise
+                // allow.
+                pollCount += 1;
+                return Promise.resolve({ data: { job_id: 'job-healthy', status: 'running', count: 1000, created: pollCount, vouchers: [] } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        vi.useFakeTimers();
+        try {
+            render(<Hotspot />);
+            await flushMicrotasks();
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-healthy');
+
+            // Same fast-forward as the stuck-job test above -- well past the
+            // 3-minute stall timeout -- but this job keeps making progress on
+            // every tick, so it must still be tracked afterward.
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(3 * 60 * 1000 + 15000);
+            });
+
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-healthy');
+            expect(alertSpy).not.toHaveBeenCalled();
+
+            fireEvent.click(screen.getByRole('button', { name: /Generator/i }));
+            // Still running, so the submit button reads "Generating…" rather
+            // than its idle label -- match either so this doesn't hinge on
+            // which one is showing, only on it being disabled.
+            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers|Generating/i })).toBeDisabled();
+        } finally {
+            vi.useRealTimers();
+            alertSpy.mockRestore();
+        }
+    });
+
+    it('CRITICAL: the manual Dismiss control clears local job state and re-enables Generate, without attempting to cancel anything server-side', async () => {
+        installDefaultApiMocks({
+            jobs: { 'job-dismiss': { job_id: 'job-dismiss', status: 'running', count: 20, created: 3, vouchers: [] } },
+        });
+        api.post.mockImplementation(() => Promise.resolve({ data: { job_id: 'job-dismiss', status: 'queued', count: 20 } }));
+
+        await renderHotspotOnDevice();
+        goToGenerator();
+
+        vi.useFakeTimers();
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(0);
+            });
+
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-dismiss');
+            const dismissButton = screen.getByRole('button', { name: /dismiss/i });
+
+            fireEvent.click(dismissButton);
+
+            expect(localStorage.getItem(JOB_KEY)).toBeNull();
+            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+            // The progress panel (and its Dismiss button) is gone along with it.
+            expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument();
+
+            // Purely local: polling must actually have stopped, not just the
+            // visible state -- no further /jobs/job-dismiss calls survive
+            // one more interval tick. (No DELETE/cancel call of any kind is
+            // ever made -- api.delete is never invoked by this flow either.)
+            const pollsAtDismiss = api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-dismiss')).length;
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(5000);
+            });
+            expect(api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-dismiss')).length).toBe(pollsAtDismiss);
+            expect(api.delete).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// C2 -- version-skew during deploy in both directions.
+// ---------------------------------------------------------------------------
+describe('C2: version-skew safety (array legacy response, non-array generatedBatch)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        localStorage.clear();
+        installDefaultApiMocks();
+    });
+
+    it('CRITICAL: an array POST response (new frontend / old backend) is handled as the legacy synchronous result -- vouchers render, no job id stored, no polling', async () => {
+        const legacyVouchers = [
+            { username: 'legacy01', password: 'pw1' },
+            { username: 'legacy02', password: 'pw2' },
+        ];
+        api.post.mockImplementation(() => Promise.resolve({ data: legacyVouchers }));
+
+        await renderHotspotOnDevice();
+        goToGenerator();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+        });
+
+        await waitFor(() => {
+            expect(screen.getByText('Ready to export 2 vouchers')).toBeInTheDocument();
+        });
+        expectVoucherRendered('legacy01');
+        expectVoucherRendered('legacy02');
+
+        // No job was ever created for this response, so nothing must be
+        // stored or polled -- the bug this guards against is storing the
+        // literal string "undefined" and polling "/hotspot/jobs/undefined".
+        expect(localStorage.getItem(JOB_KEY)).toBeNull();
+        expect(api.get.mock.calls.some(([url]) => url.includes('/hotspot/jobs/'))).toBe(false);
+    });
+
+    it('CRITICAL: a non-array generatedBatch (e.g. a malformed job vouchers field) renders empty instead of throwing', async () => {
+        installDefaultApiMocks({
+            jobs: { 'job-bad-shape': { job_id: 'job-bad-shape', status: 'complete', count: 2, created: 2, vouchers: { not: 'an array' } } },
+        });
+        api.post.mockImplementation(() => Promise.resolve({ data: { job_id: 'job-bad-shape', status: 'queued', count: 2 } }));
+
+        await renderHotspotOnDevice();
+        goToGenerator();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+        });
+
+        // Renders as an empty batch instead of crashing on
+        // "generatedBatch.map is not a function".
+        await waitFor(() => {
+            expect(screen.getByText('Ready to export 0 vouchers')).toBeInTheDocument();
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// I3 -- an enqueue failure (status: "failed" + detail, from a 202 response,
+// not an HTTP error) must surface the detail and never start polling.
+// ---------------------------------------------------------------------------
+describe('I3: enqueue-failure detail surfaced, no polling started', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        localStorage.clear();
+        installDefaultApiMocks();
+    });
+
+    it('a failed-enqueue POST response surfaces detail and does not poll', async () => {
+        api.post.mockImplementation(() => Promise.resolve({
+            data: {
+                job_id: 'job-enqueue-failed',
+                status: 'failed',
+                count: 10,
+                detail: 'Voucher batch was recorded but could not be queued for generation. Retry later.',
+            },
+        }));
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        await renderHotspotOnDevice();
+        goToGenerator();
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+        });
+
+        expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('could not be queued'));
+        expect(localStorage.getItem(JOB_KEY)).toBeNull();
+        expect(api.get.mock.calls.some(([url]) => url.includes('/hotspot/jobs/'))).toBe(false);
+        // No misleading empty print view ("Ready to export 0 vouchers").
+        expect(screen.queryByText(/Ready to export/)).not.toBeInTheDocument();
+
+        alertSpy.mockRestore();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// I2 -- the transient-failure threshold was raised from 3 (~9s) to 10
+// (~30s) because a backend restart during a deploy can easily take that
+// long, and 9s was shorter than that. This proves the new threshold is
+// actually in effect: fewer than 10 consecutive transient failures must NOT
+// abandon a healthy job, and the reset-on-success behavior still works.
+// ---------------------------------------------------------------------------
+describe('I2: raised transient-failure threshold (~10 misses / ~30s)', () => {
+    beforeEach(() => {
+        vi.resetAllMocks();
+        localStorage.clear();
+        installDefaultApiMocks();
+    });
+
+    it('tolerates 9 consecutive transient (non-404) poll failures without abandoning the job, then recovers on success', async () => {
+        localStorage.setItem(JOB_KEY, 'job-blip');
+        let jobPollAttempt = 0;
+        api.get.mockImplementation((url) => {
+            if (url.includes('/hotspot/jobs/job-blip')) {
+                jobPollAttempt += 1;
+                if (jobPollAttempt <= 9) {
+                    return Promise.reject(new Error('network blip'));
+                }
+                return Promise.resolve({ data: { job_id: 'job-blip', status: 'running', count: 20, created: 7, vouchers: [] } });
+            }
+            if (url.includes('/inventory/devices')) return Promise.resolve({ data: DEVICES_RESPONSE });
+            if (url.includes('/batches')) return Promise.resolve({ data: [] });
+            if (url.includes('/summary')) return Promise.resolve({ data: { active_count: 0, total_vouchers: 0, total_data_mb: 0, profile_distribution: [], stale: false } });
+            if (url.includes('/system-info')) return Promise.resolve({ data: { cpu_load: 1, free_memory: 100, total_memory: 200, uptime: '1h' } });
+            if (url.includes('/voucher-template')) return Promise.resolve({ data: null });
+            if (url.includes('/reports')) return Promise.resolve({ data: { data: [] } });
+            return Promise.resolve({ data: [] });
+        });
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+        vi.useFakeTimers();
+        try {
+            render(<Hotspot />);
+            // Drive 9 failed ticks (immediate + 8 interval ticks) plus the
+            // 10th, successful one -- all under one blip that's shorter than
+            // the new threshold.
+            for (let i = 0; i < 10; i++) {
+                // eslint-disable-next-line no-await-in-loop
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(3000);
+                });
+            }
+
+            expect(localStorage.getItem(JOB_KEY)).toBe('job-blip');
+            expect(alertSpy).not.toHaveBeenCalled();
+            expect(jobPollAttempt).toBeGreaterThanOrEqual(10);
+        } finally {
+            vi.useRealTimers();
+            alertSpy.mockRestore();
+        }
+    });
+});

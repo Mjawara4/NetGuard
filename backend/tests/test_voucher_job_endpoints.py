@@ -84,10 +84,15 @@ def _db_returning(row):
 
 def _unscoped_actor():
     # organization_id=None takes the `isinstance(actor, APIKey) and not
-    # actor.organization_id` unscoped branch -- this is the actor shape the
-    # worker itself authenticates as (agents/voucher_job_worker.py uses the
-    # same NETGUARD_API_KEY every other agent uses against /inventory/devices,
-    # which is likewise unscoped).
+    # actor.organization_id` unscoped branch. NOTE: this is NOT the actor
+    # shape the worker authenticates as in production -- backend/seed_user.py
+    # creates agent-secret-key-123 WITH an organization_id, so every real
+    # request from agents/voucher_job_worker.py takes the org-scoped `else`
+    # branch instead (see _scoped_actor and
+    # test_progress_org_scoped_actor_can_report_on_own_batch below, which
+    # covers that actual production path). This helper only exercises the
+    # unscoped branch itself, in case some other API key deployment omits an
+    # organization_id.
     return APIKey(organization_id=None)
 
 
@@ -145,6 +150,20 @@ async def test_get_job_unknown_id_returns_404(fake_redis):
     with pytest.raises(HTTPException) as exc_info:
         await hotspot.get_voucher_job(
             str(uuid.uuid4()), db=_db_returning(None), actor=_unscoped_actor()
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_get_job_malformed_id_returns_404_not_500(fake_redis):
+    """A bare UUID(job_id) raises ValueError on a malformed id, which FastAPI
+    would otherwise turn into a 500. It must be a 404 like any other
+    not-found job -- this is also what makes a malformed *stored* job id in
+    the frontend take the immediate-clear 404 path rather than the slower
+    transient-failure path."""
+    with pytest.raises(HTTPException) as exc_info:
+        await hotspot.get_voucher_job(
+            "not-a-valid-uuid", db=_db_returning(None), actor=_unscoped_actor()
         )
 
     assert exc_info.value.status_code == 404
@@ -312,6 +331,19 @@ async def test_progress_status_complete_marks_batch_complete(fake_redis):
     assert batch.status == "complete"
 
 
+async def test_progress_malformed_id_returns_404_not_500(fake_redis):
+    """Mirrors the GET endpoint's identical guard."""
+    with pytest.raises(HTTPException) as exc_info:
+        await hotspot.report_voucher_job_progress(
+            "not-a-valid-uuid",
+            hotspot.VoucherJobProgress(vouchers=[], status="running"),
+            db=_db_returning(None),
+            actor=_unscoped_actor(),
+        )
+
+    assert exc_info.value.status_code == 404
+
+
 async def test_progress_unknown_job_id_returns_404(fake_redis):
     with pytest.raises(HTTPException) as exc_info:
         await hotspot.report_voucher_job_progress(
@@ -404,6 +436,31 @@ async def test_progress_intermediate_running_does_not_invalidate_cache(fake_redi
     assert fake_redis.get(hotspot_cache.cache_key(str(device_id), "users")) is not None
     # ...and the agent not nudged either.
     assert triggered == []
+
+
+async def test_progress_org_scoped_actor_can_report_on_own_batch(fake_redis):
+    """The actual production path: agents/voucher_job_worker.py authenticates
+    with agent-secret-key-123, which backend/seed_user.py creates WITH an
+    organization_id (not None) -- so every real progress report from the
+    worker takes this org-scoped `else` branch, never the
+    _unscoped_actor() branch the other tests above exercise. That branch was
+    previously untested even though it's the one production actually runs.
+    """
+    org_id = uuid.uuid4()
+    batch = _voucher_batch(organization_id=org_id, status="running", vouchers=[])
+    db = _db_returning(batch)
+
+    result = await hotspot.report_voucher_job_progress(
+        str(batch.id),
+        hotspot.VoucherJobProgress(vouchers=[{"username": "v1", "password": "v1"}], status="complete"),
+        db=db,
+        actor=_scoped_actor(org_id),
+    )
+
+    assert result["status"] == "complete"
+    assert result["created"] == 1
+    assert batch.vouchers == [{"username": "v1", "password": "v1"}]
+    assert batch.status == "complete"
 
 
 async def test_progress_other_organization_not_writable(fake_redis):

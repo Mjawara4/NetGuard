@@ -30,6 +30,7 @@ import os
 import random
 import string
 import sys
+import time
 
 import redis
 import requests
@@ -78,6 +79,17 @@ def get_headers():
     return {"X-API-Key": API_KEY}
 
 
+
+# BRPOP's own `timeout` blocks the loop between jobs, but a Redis connection
+# error raises immediately instead of blocking -- without this, an outage
+# turns run_worker's `while True: claim_job(...)` into a tight busy-spin that
+# burns a full core hammering a Redis that is already down. This is not
+# retried/backed-off like the terminal progress report (that is a single
+# job's completion signal with a natural bound); this is an infinite loop's
+# error path, so a short flat sleep here is what actually matters.
+REDIS_ERROR_SLEEP_SECONDS = 2
+
+
 def claim_job(timeout=5):
     """BRPOP one job off QUEUE_KEY and return the decoded dict.
 
@@ -91,6 +103,7 @@ def claim_job(timeout=5):
         result = _client().brpop(QUEUE_KEY, timeout=timeout)
     except Exception as e:
         logger.error(f"Redis error while claiming a voucher job: {e}")
+        time.sleep(REDIS_ERROR_SLEEP_SECONDS)
         return None
 
     if result is None:
@@ -159,6 +172,60 @@ def report_progress(batch_id, vouchers, status):
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to report progress for batch {batch_id} (status={status}): {e}")
         return False
+
+
+# Delays (seconds) between successive attempts at the TERMINAL report only
+# (see report_terminal_progress below) -- 5 attempts total, with these 4 gaps
+# summing to 30s. A backend restart is observed to take ~10-30s, so an outage
+# that started right before the terminal call is expected to have recovered
+# by the 4th or 5th attempt. Intermediate ("running") progress calls made
+# from _create_vouchers are NOT retried this way: they get another chance for
+# free at the next ~10-voucher flush (or this same terminal call, since any
+# unflushed vouchers are still sitting in `pending`), so retrying them here
+# too would just be redundant backoff stacked on top of that natural retry.
+TERMINAL_REPORT_BACKOFF_SECONDS = [2, 4, 8, 16]
+
+
+def report_terminal_progress(batch_id, vouchers, status):
+    """Report a job's TERMINAL status ("complete" or "failed"), retrying a
+    failed POST with backoff instead of firing once and giving up.
+
+    Why this one call gets special treatment: it is the only progress report
+    that can never be "made up" later -- there is no next flush after this.
+    If it never lands, the VoucherBatch row is stuck at a non-terminal status
+    forever (feeding the frontend's C1 stuck-job problem) AND `vouchers`
+    (the entire accumulated-but-unflushed `pending` buffer, potentially
+    hundreds of real, router-created vouchers) never reaches the database --
+    invisible in History and unprintable, which is the exact bug this whole
+    feature exists to eliminate. A brief backend restart during a deploy is
+    the realistic trigger: it takes ~10-30s, comfortably inside this
+    function's ~30s of cumulative backoff.
+
+    Bounded, not infinite: after the attempts below are exhausted this logs
+    at ERROR with the job_id and how many vouchers are stranded, so an
+    operator or a log search (e.g. by job_id) can find and manually recover
+    them, then gives up and returns False. Callers must not block forever on
+    this -- the worker still has to move on to its next job.
+    """
+    max_attempts = len(TERMINAL_REPORT_BACKOFF_SECONDS) + 1
+    for attempt in range(1, max_attempts + 1):
+        if report_progress(batch_id, vouchers, status):
+            return True
+        if attempt < max_attempts:
+            delay = TERMINAL_REPORT_BACKOFF_SECONDS[attempt - 1]
+            logger.warning(
+                f"Terminal progress report for batch {batch_id} (status={status}) "
+                f"failed on attempt {attempt}/{max_attempts}; retrying in {delay}s"
+            )
+            time.sleep(delay)
+
+    logger.error(
+        f"Voucher job {batch_id} terminal report (status={status}) failed after "
+        f"{max_attempts} attempts. {len(vouchers)} voucher(s) exist on the router "
+        f"but were NOT recorded in VoucherBatch -- they will not appear in History "
+        f"and cannot be printed until manually recovered. job_id={batch_id}"
+    )
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +406,12 @@ def process_job(job):
         ip = device.get("ip_address")
         ssh_username = device.get("ssh_username") or SSH_USER
         ssh_password = device.get("ssh_password") or SSH_PASSWORD
-        port = int(device.get("ssh_port") or 8728)
+        # Same form as agents/monitor_agent.py's identical computation (its
+        # deep-inspect block, ~line 584) -- two agents reading the exact same
+        # `ssh_port` field must not diverge on how they turn it into a
+        # connection port.
+        db_port = int(device.get("ssh_port", 8728))
+        port = 8728 if db_port == 22 else db_port
 
         pool = routeros_api.RouterOsApiPool(
             ip,
@@ -359,11 +431,11 @@ def process_job(job):
             except Exception:
                 pass
 
-        report_progress(batch_id, pending, "complete")
+        report_terminal_progress(batch_id, pending, "complete")
 
     except Exception as e:
         logger.error(f"Voucher job {batch_id} failed: {e}", exc_info=True)
-        report_progress(batch_id, pending, "failed")
+        report_terminal_progress(batch_id, pending, "failed")
 
 
 def run_worker():

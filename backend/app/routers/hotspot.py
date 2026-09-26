@@ -1203,13 +1203,23 @@ async def get_voucher_job(job_id: str, db: AsyncSession = Depends(get_db), actor
     (set at creation time in batch_generate_users) rather than via a
     Device/Site join.
     """
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        # A malformed id (bad localStorage value, hand-edited URL, etc) can
+        # never match a row -- 404 like any other "not found" job, not a 500.
+        # This also means a malformed *stored* job id takes the frontend's
+        # immediate-clear 404 path on the very first poll, rather than the
+        # slower transient-failure path a 500 would trigger.
+        raise HTTPException(status_code=404, detail="Job not found")
+
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
-        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+        query = select(VoucherBatch).where(VoucherBatch.id == job_uuid)
     elif isinstance(actor, APIKey) and not actor.organization_id:
-        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+        query = select(VoucherBatch).where(VoucherBatch.id == job_uuid)
     else:
         query = select(VoucherBatch).where(
-            VoucherBatch.id == UUID(job_id), VoucherBatch.organization_id == actor.organization_id
+            VoucherBatch.id == job_uuid, VoucherBatch.organization_id == actor.organization_id
         )
 
     res = await db.execute(query)
@@ -1255,13 +1265,20 @@ async def report_voucher_job_progress(
     the same call) before extending, so genuinely new vouchers still
     accumulate but an exact-replay flush is a no-op.
     """
+    try:
+        job_uuid = UUID(job_id)
+    except ValueError:
+        # See get_voucher_job's identical guard -- a malformed id is a 404,
+        # not a 500.
+        raise HTTPException(status_code=404, detail="Job not found")
+
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
-        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+        query = select(VoucherBatch).where(VoucherBatch.id == job_uuid)
     elif isinstance(actor, APIKey) and not actor.organization_id:
-        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+        query = select(VoucherBatch).where(VoucherBatch.id == job_uuid)
     else:
         query = select(VoucherBatch).where(
-            VoucherBatch.id == UUID(job_id), VoucherBatch.organization_id == actor.organization_id
+            VoucherBatch.id == job_uuid, VoucherBatch.organization_id == actor.organization_id
         )
 
     res = await db.execute(query)
