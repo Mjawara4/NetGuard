@@ -158,6 +158,7 @@ class VoucherBatch(Base):
     count = Column(Integer, nullable=False)
     vouchers = Column(JSONB, nullable=False, default=list)  # [{"username": "...", "password": "..."}, ...]
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    status = Column(String, nullable=True)
 
     device = relationship("Device")
     organization = relationship("Organization")
