@@ -1236,13 +1236,23 @@ async def report_voucher_job_progress(
     successful call (see report_progress's docstring in the worker), so this
     must be genuinely append-only: read the current list, extend it, write
     it back. Replacing the column wholesale would discard everything before
-    the worker's last ~10-voucher batch, and a retried call (the worker
-    resends the same pending vouchers on a failed POST) must not double them
-    either -- see the append-only test in test_voucher_job_endpoints.py for
-    why the worker's own retry semantics make wholesale replacement unsafe
-    but a plain extend safe (the worker only drops vouchers from its pending
-    buffer once a call here succeeds, so a given voucher is only ever
-    resent, never duplicated).
+    the worker's last ~10-voucher batch.
+
+    This is also a read-modify-write with no lock: if this handler commits
+    the append but the worker never sees the 200 (e.g. the ack is lost on a
+    docker-internal network partition after the commit -- precisely what the
+    worker's 10s client timeout exists to guard against), the worker's local
+    pending buffer still believes those vouchers are unsent and resends the
+    exact same batch. Since VoucherBatch.vouchers is what the operator
+    prints, a naive extend would then store (and let get printed) two slips
+    with identical username/password -- a real support/refund problem, not a
+    cosmetic one. Router-side voucher usernames are unique by construction
+    (the worker generates unique names and the router itself rejects
+    collisions), so a username already present in the stored array means
+    that exact voucher was already recorded: dedup incoming vouchers by
+    "username" against what's already stored (and against each other within
+    the same call) before extending, so genuinely new vouchers still
+    accumulate but an exact-replay flush is a no-op.
     """
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
         query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
@@ -1262,7 +1272,26 @@ async def report_voucher_job_progress(
     from sqlalchemy.orm.attributes import flag_modified
 
     current_vouchers = copy.deepcopy(voucher_batch.vouchers) or []
-    current_vouchers.extend(progress.vouchers)
+    seen_usernames = {v.get("username") for v in current_vouchers if isinstance(v, dict)}
+
+    new_vouchers = []
+    skipped = 0
+    for voucher in progress.vouchers:
+        username = voucher.get("username") if isinstance(voucher, dict) else None
+        if username is not None and username in seen_usernames:
+            skipped += 1
+            continue
+        new_vouchers.append(voucher)
+        if username is not None:
+            seen_usernames.add(username)
+
+    if skipped:
+        logger.info(
+            f"Voucher job {job_id} progress: skipped {skipped} duplicate voucher(s) "
+            f"already recorded (retry after a lost ack, most likely)"
+        )
+
+    current_vouchers.extend(new_vouchers)
     voucher_batch.vouchers = current_vouchers
     flag_modified(voucher_batch, 'vouchers')
     voucher_batch.status = progress.status

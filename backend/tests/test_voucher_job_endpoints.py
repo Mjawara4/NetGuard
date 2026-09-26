@@ -28,8 +28,20 @@ Two things this file guards especially closely:
    "failed" (real vouchers exist on the router either way), and must NOT
    fire on an intermediate "running" call, which would otherwise force a
    ~3.6 MB router refetch every ~10 vouchers.
+
+3. Dedup by username on append (fix round 1). The append is a
+   read-modify-write with no lock: if this endpoint commits but the worker
+   never sees the ack (its 10s client timeout exists for exactly this), the
+   worker's pending buffer still believes those vouchers are unsent and
+   resends them. Since VoucherBatch.vouchers is what the operator prints, a
+   naive extend would store (and let print) two slips with identical
+   credentials -- a real support/refund problem. Usernames are unique by
+   construction, so a username already present in the stored array means
+   that exact voucher was already recorded and must be skipped, while
+   genuinely new vouchers in the same call must still be kept.
 """
 
+import copy
 import time
 import uuid
 from unittest.mock import AsyncMock, MagicMock
@@ -222,6 +234,67 @@ async def test_progress_retried_call_does_not_lose_prior_vouchers(fake_redis):
     assert result["created"] == 2
     assert {"username": "existing", "password": "existing"} in batch.vouchers
     assert {"username": "new", "password": "new"} in batch.vouchers
+
+
+async def test_progress_overlapping_call_dedups_by_username(fake_redis):
+    """The read-modify-write-with-no-lock case: if this endpoint commits an
+    append but the worker never sees the ack (its 10s client timeout exists
+    for exactly this), the worker resends the same still-pending vouchers on
+    its next flush. The second call here carries one voucher already
+    persisted by the first ("v2") plus one genuinely new one ("v3") -- each
+    username must appear exactly once in the stored array afterward, with
+    the non-overlapping ones (v1, v2, v3) all still present.
+    """
+    batch = _voucher_batch(status="running", vouchers=[])
+    db = _db_returning(batch)
+
+    first_vouchers = [{"username": "v1", "password": "v1"}, {"username": "v2", "password": "v2"}]
+    await hotspot.report_voucher_job_progress(
+        str(batch.id),
+        hotspot.VoucherJobProgress(vouchers=first_vouchers, status="running"),
+        db=db,
+        actor=_unscoped_actor(),
+    )
+
+    overlapping_vouchers = [{"username": "v2", "password": "v2"}, {"username": "v3", "password": "v3"}]
+    result = await hotspot.report_voucher_job_progress(
+        str(batch.id),
+        hotspot.VoucherJobProgress(vouchers=overlapping_vouchers, status="running"),
+        db=db,
+        actor=_unscoped_actor(),
+    )
+
+    usernames = [v["username"] for v in batch.vouchers]
+    assert sorted(usernames) == ["v1", "v2", "v3"]
+    assert len(usernames) == len(set(usernames))
+    assert result["created"] == 3
+
+
+async def test_progress_fully_duplicate_replay_is_a_noop(fake_redis):
+    """An exact resend of a call that already committed -- the worst case of
+    the lost-ack scenario -- must leave the stored array completely
+    unchanged, not just deduped-per-username-but-still-growing."""
+    batch = _voucher_batch(status="running", vouchers=[])
+    db = _db_returning(batch)
+
+    vouchers = [{"username": "v1", "password": "v1"}, {"username": "v2", "password": "v2"}]
+    await hotspot.report_voucher_job_progress(
+        str(batch.id),
+        hotspot.VoucherJobProgress(vouchers=vouchers, status="running"),
+        db=db,
+        actor=_unscoped_actor(),
+    )
+    stored_after_first_call = copy.deepcopy(batch.vouchers)
+
+    result = await hotspot.report_voucher_job_progress(
+        str(batch.id),
+        hotspot.VoucherJobProgress(vouchers=vouchers, status="running"),
+        db=db,
+        actor=_unscoped_actor(),
+    )
+
+    assert batch.vouchers == stored_after_first_call
+    assert result["created"] == 2
 
 
 async def test_progress_status_complete_marks_batch_complete(fake_redis):
