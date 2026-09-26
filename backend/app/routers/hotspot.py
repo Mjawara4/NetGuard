@@ -413,7 +413,7 @@ async def get_hotspot_users(
     limit: int = Query(200, ge=0, le=5000),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None, description="Filter by username prefix"),
-    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    refresh: bool = Query(False, description="Deprecated, ignored: this read path always serves from cache, never the router"),
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
@@ -430,36 +430,18 @@ async def get_hotspot_users(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Decrypt device secrets (required for async SQLAlchemy)
-    decrypt_device_secrets(device)
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported as an empty list with
+    # HTTP 200 — never a router fallthrough, never a 500.
+    rows, fetched_at = hotspot_cache.read_dataset(device_id, "users")
 
-    # Try cache first (unless refresh requested)
-    key = cache_key(device_id, "users")
-    if not refresh:
-        cached = _redis_get(key)
-        if cached:
-            try:
-                result = [HotspotUser(**item) for item in json.loads(cached)]
-                # Apply pagination and search to cached data
-                if search:
-                    result = [u for u in result if search.lower() in (u.name or '').lower()]
-                # Apply pagination (limit=0 means return all)
-                if limit == 0:
-                    return result[offset:]
-                return result[offset:offset + limit]
-            except Exception as e:
-                logger.warning(f"Failed to deserialize cached users: {e}")
+    # Guard the type before indexing/iterating: a corrupted cache value could
+    # store rows as a dict/int/string instead of a list.
+    if not isinstance(rows, list):
+        logger.error(f"Hotspot users cache rows not a list for device={device_id} dataset=users")
+        return []
 
     try:
-        # Heuristic: If port is 22 (SSH), use 8728 (API) for RouterOS API connections
-        db_port = getattr(device, 'ssh_port', 8728) or 8728
-        port = 8728 if int(db_port) == 22 else db_port
-
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-
-        users = api.get_resource('/ip/hotspot/user').get()
-
         result = [HotspotUser(
             name=u.get('name'),
             password=u.get('password'),
@@ -470,28 +452,19 @@ async def get_hotspot_users(
             limit_uptime=u.get('limit-uptime'),
             limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
             comment=u.get('comment')
-        ) for u in users]
+        ) for u in rows]
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error(f"Hotspot users cache row unparseable for device={device_id} dataset=users: {e}")
+        return []
 
-        # Cache full result before pagination/search
-        _redis_setex(key, 15, json.dumps([r.model_dump() for r in result]))
+    # Apply search filter
+    if search:
+        result = [u for u in result if search.lower() in (u.name or '').lower()]
 
-        # Apply search filter
-        if search:
-            result = [u for u in result if search.lower() in (u.name or '').lower()]
-
-        # Apply pagination (limit=0 means return all)
-        if limit == 0:
-            return result[offset:]
-        return result[offset:offset + limit]
-
-    except Exception as e:
-        logger.error(f"Hotspot API Error: {e}")
-        error_msg = str(e)
-        if "Authentication failed" in error_msg:
-             raise HTTPException(status_code=401, detail="Router Authentication Failed. Check username/password.")
-        if "timed out" in error_msg or "time out" in error_msg:
-             raise HTTPException(status_code=504, detail="Router Connection Timed Out. Check VPN status and IP.")
-        raise HTTPException(status_code=500, detail=f"Router Error: {error_msg}")
+    # Apply pagination (limit=0 means return all)
+    if limit == 0:
+        return result[offset:]
+    return result[offset:offset + limit]
 
 
 @router.post("/{device_id}/users")
@@ -907,7 +880,7 @@ async def get_active_users(
     device_id: str,
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    refresh: bool = Query(False, description="Deprecated, ignored: this read path always serves from cache, never the router"),
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
@@ -923,28 +896,21 @@ async def get_active_users(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Decrypt device secrets (required for async SQLAlchemy)
-    decrypt_device_secrets(device)
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported as an empty list with
+    # HTTP 200 — never a router fallthrough, never a 500. remaining_time
+    # depends on joining the "active" and "users" datasets, so both are read
+    # here (once each — the users dataset is ~3.6 MB on the real router).
+    active, active_fetched_at = hotspot_cache.read_dataset(device_id, "active")
+    users, users_fetched_at = hotspot_cache.read_dataset(device_id, "users")
 
-    # Try cache first
-    key = cache_key(device_id, "active")
-    if not refresh:
-        cached = _redis_get(key)
-        if cached:
-            try:
-                result = [HotspotActive(**item) for item in json.loads(cached)]
-                return result[offset:offset + limit]
-            except Exception as e:
-                logger.warning(f"Failed to deserialize cached active: {e}")
+    # Guard the type before indexing/iterating: a corrupted cache value could
+    # store rows as a dict/int/string instead of a list.
+    if not isinstance(active, list) or not isinstance(users, list):
+        logger.error(f"Hotspot active cache rows not a list for device={device_id} datasets=active,users")
+        return []
 
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-        active = api.get_resource('/ip/hotspot/active').get()
-        users = api.get_resource('/ip/hotspot/user').get()
-        connection.disconnect()
-
         user_limits = {
             u.get('name'): {
                 'limit-uptime': u.get('limit-uptime'),
@@ -987,12 +953,11 @@ async def get_active_users(
                 limit_uptime=limit_str,
                 limit_bytes_total=limit_bytes
             ))
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error(f"Hotspot active cache row unparseable for device={device_id} datasets=active,users: {e}")
+        return []
 
-        _redis_setex(key, 5, json.dumps([r.model_dump() for r in results]))
-        return results[offset:offset + limit]
-    except Exception as e:
-        logger.error(f"Active Users Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return results[offset:offset + limit]
 
 @router.delete("/{device_id}/active/{active_id}")
 async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

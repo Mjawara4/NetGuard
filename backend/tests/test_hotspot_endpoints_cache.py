@@ -1,10 +1,19 @@
-"""Endpoint-level tests for the cache-only /summary and /system-info reads.
+"""THE RULE is enforced in this file: hotspot read endpoints never call the
+router, not even on a cache miss.
 
-These guard the actual conversion in app/routers/hotspot.py, not just the
-app/services/hotspot_cache.py module the earlier unit tests cover. Each
-endpoint is exercised in three cache states — warm, cold, and corrupted —
-and every test carries a landmine on get_api_pool so any accidental router
-call fails loudly instead of silently passing.
+Endpoint-level tests for the cache-only /summary, /system-info, /users and
+/active reads. These guard the actual conversion in app/routers/hotspot.py,
+not just the app/services/hotspot_cache.py module the earlier unit tests
+cover. Each endpoint is exercised in three cache states — warm, cold, and
+corrupted — and every test carries a landmine on get_api_pool (via the
+autouse `router_landmine` fixture) so any accidental router call fails loudly
+instead of silently passing.
+
+/profiles and /logs are still router-backed as of this file's current state
+(Task 6 converts them) — they are deliberately NOT covered here yet. Once
+converted, their coverage belongs in this file too, so THE RULE stays
+enforced for the full read surface in one place rather than splitting across
+files.
 """
 
 import json
@@ -264,3 +273,226 @@ async def test_system_info_corrupted_non_numeric_field_returns_200_and_stale(fak
     }
     assert result["stale"] is True
     assert result["fetched_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# /users
+#
+# get_hotspot_users returns a bare List[HotspotUser] (response_model enforces
+# this in production), so unlike /summary and /system-info there is no
+# top-level dict to hang a "stale" key off of without changing the response
+# shape from an array to an object — a breaking change for the frontend that
+# is out of scope here. A degraded read (missing or corrupted cache) instead
+# returns an empty list with no exception, matching THE RULE's "HTTP 200,
+# never a 500" without altering the existing array response contract.
+# ---------------------------------------------------------------------------
+
+HOTSPOT_USER_FIELDS = {
+    "name", "password", "profile", "uptime", "bytes_in", "bytes_out",
+    "limit_uptime", "limit_bytes_total", "comment",
+}
+
+
+async def test_users_warm_cache_returns_real_values(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "password": "pw1", "profile": "default", "uptime": "1h",
+         "bytes-in": "1000", "bytes-out": "2000", "limit-uptime": "2h",
+         "limit-bytes-total": "500000", "comment": "vip"},
+        {"name": "bob", "profile": "premium"},
+    ])
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 2
+    assert set(type(result[0]).model_fields.keys()) == HOTSPOT_USER_FIELDS
+    alice = next(u for u in result if u.name == "alice")
+    assert alice.password == "pw1"
+    assert alice.profile == "default"
+    assert alice.uptime == "1h"
+    assert alice.bytes_in == 1000
+    assert alice.bytes_out == 2000
+    assert alice.limit_uptime == "2h"
+    assert alice.limit_bytes_total == 500000
+    assert alice.comment == "vip"
+
+
+async def test_users_cold_cache_returns_empty_list_not_error(fake_redis):
+    device_id = str(uuid.uuid4())
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_users_corrupted_rows_not_a_list_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    # cached payload has rows as a dict, not a list.
+    _set_raw(fake_redis, device_id, "users", now, {"unexpected": "dict"})
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_users_corrupted_non_numeric_field_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "bytes-in": "not-a-number"},
+    ])
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# /active
+#
+# Same list-response reasoning as /users applies here (no top-level "stale"
+# key). This endpoint additionally joins the "active" and "users" datasets to
+# compute remaining_time, so both datasets are exercised, including the case
+# where one is present and the other is cold.
+# ---------------------------------------------------------------------------
+
+HOTSPOT_ACTIVE_FIELDS = {
+    "id", "user", "address", "uptime", "bytes_in", "bytes_out",
+    "mac_address", "remaining_time", "limit_uptime", "limit_bytes_total",
+}
+
+
+async def test_active_warm_cache_returns_real_values(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "active", now, [
+        {"id": "*1", "user": "alice", "address": "10.0.0.5", "uptime": "1h",
+         "bytes-in": "100", "bytes-out": "200", "mac-address": "AA:BB:CC:DD:EE:FF"},
+    ])
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "limit-uptime": "2h"},
+    ])
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 1
+    a = result[0]
+    assert set(type(a).model_fields.keys()) == HOTSPOT_ACTIVE_FIELDS
+    assert a.id == "*1"
+    assert a.user == "alice"
+    assert a.address == "10.0.0.5"
+    assert a.uptime == "1h"
+    assert a.bytes_in == 100
+    assert a.bytes_out == 200
+    assert a.mac_address == "AA:BB:CC:DD:EE:FF"
+
+
+async def test_active_cold_cache_returns_empty_list_not_error(fake_redis):
+    device_id = str(uuid.uuid4())
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_active_missing_users_dataset_degrades_to_unlim(fake_redis):
+    """'active' is warm but 'users' — needed for the limits join — is cold.
+
+    read_dataset cannot distinguish "cache miss" from "this device genuinely
+    has zero registered users": both decode to ([], None). The unchanged
+    transformation loop already handles an empty user_limits map the same
+    way it handles a router response with no users — sessions are still
+    returned, just without a computed remaining_time. This is the correct,
+    pre-existing degrade path, not a bug to special-case away.
+    """
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "active", now, [
+        {"id": "*1", "user": "alice", "address": "10.0.0.5", "uptime": "1h",
+         "bytes-in": "100", "bytes-out": "200"},
+    ])
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 1
+    assert result[0].user == "alice"
+    assert result[0].remaining_time == "UNLIM"
+
+
+async def test_active_corrupted_active_rows_not_a_list_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "active", now, {"unexpected": "dict"})
+    _set_raw(fake_redis, device_id, "users", now, [{"name": "alice"}])
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_active_corrupted_non_numeric_field_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "active", now, [
+        {"user": "alice", "bytes-in": "not-a-number", "address": "10.0.0.5", "uptime": "1h"},
+    ])
+    _set_raw(fake_redis, device_id, "users", now, [{"name": "alice"}])
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_active_limits_join_computes_remaining_time(fake_redis):
+    """The most breakable thing in this task: remaining_time depends on
+    joining the 'active' and 'users' datasets by username via the
+    user_limits map. If that join breaks silently, remaining_time reverts to
+    the 'UNLIM' default instead of raising — this test guards against that.
+    """
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "active", now, [
+        {"id": "*1", "user": "alice", "address": "10.0.0.5", "uptime": "30m",
+         "bytes-in": "0", "bytes-out": "0"},
+    ])
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "limit-uptime": "2h"},
+    ])
+
+    result = await hotspot.get_active_users(
+        device_id, limit=200, offset=0, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 1
+    assert result[0].remaining_time == "1h30m"
+    assert result[0].remaining_time != "UNLIM"
