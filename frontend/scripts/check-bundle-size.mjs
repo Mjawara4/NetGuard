@@ -5,6 +5,11 @@ const ASSETS = 'dist/assets';
 const INDEX_HTML = 'dist/index.html';
 const MAX_ENTRY_KB = 350;
 
+if (!existsSync(ASSETS)) {
+    console.error(`Could not find ${ASSETS}. Run \`npm run build\` first.`);
+    process.exit(1);
+}
+
 const files = readdirSync(ASSETS).filter((f) => f.endsWith('.js'));
 if (files.length === 0) {
     console.error('No JS output found in dist/assets. Run `npm run build` first.');

@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
 import ProtectedRoute from './components/ProtectedRoute';
+import ChunkErrorBoundary from './components/ChunkErrorBoundary';
 
 const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
@@ -25,76 +26,78 @@ const RouteFallback = () => (
 function App() {
     return (
         <Router>
-            <Suspense fallback={<RouteFallback />}>
-                <Routes>
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/signup" element={<Signup />} />
-                    <Route
-                        path="/settings"
-                        element={
-                            <ProtectedRoute>
-                                <SettingsPage />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/"
-                        element={
-                            <ProtectedRoute>
-                                <Dashboard />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/sites"
-                        element={
-                            <ProtectedRoute>
-                                <Sites />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/devices"
-                        element={
-                            <ProtectedRoute>
-                                <Devices />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/network-map"
-                        element={
-                            <ProtectedRoute>
-                                <NetworkMap />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/reports"
-                        element={
-                            <ProtectedRoute>
-                                <Reports />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/hotspot"
-                        element={
-                            <ProtectedRoute>
-                                <Hotspot />
-                            </ProtectedRoute>
-                        }
-                    />
-                    <Route
-                        path="/admin"
-                        element={
-                            <ProtectedRoute>
-                                <AdminDashboard />
-                            </ProtectedRoute>
-                        }
-                    />
-                </Routes>
-            </Suspense>
+            <ChunkErrorBoundary>
+                <Suspense fallback={<RouteFallback />}>
+                    <Routes>
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/signup" element={<Signup />} />
+                        <Route
+                            path="/settings"
+                            element={
+                                <ProtectedRoute>
+                                    <SettingsPage />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/"
+                            element={
+                                <ProtectedRoute>
+                                    <Dashboard />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/sites"
+                            element={
+                                <ProtectedRoute>
+                                    <Sites />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/devices"
+                            element={
+                                <ProtectedRoute>
+                                    <Devices />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/network-map"
+                            element={
+                                <ProtectedRoute>
+                                    <NetworkMap />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/reports"
+                            element={
+                                <ProtectedRoute>
+                                    <Reports />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/hotspot"
+                            element={
+                                <ProtectedRoute>
+                                    <Hotspot />
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/admin"
+                            element={
+                                <ProtectedRoute>
+                                    <AdminDashboard />
+                                </ProtectedRoute>
+                            }
+                        />
+                    </Routes>
+                </Suspense>
+            </ChunkErrorBoundary>
         </Router>
     );
 }
