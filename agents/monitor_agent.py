@@ -358,8 +358,14 @@ def wait_for_trigger(seconds):
 # Per-dataset refresh intervals in seconds. Datasets that only change when an
 # operator acts (users, profiles) are invalidated on write by the backend; the
 # interval here is just a safety net for router-side changes such as auto-expiry.
+#
+# `users` is deliberately the longest interval, not an oversight to align with
+# `profiles`: it is 11k+ rows / several MB on a real router, and the poll loop
+# is sequential, so fetching it blocks the 4-second metric series every time
+# it runs. 1800s keeps that gap rare. `profiles` and `log` stay short because
+# they are small (KB-scale) and cheap to fetch every time they are due.
 DATASET_INTERVALS = {
-    "users": 600,
+    "users": 1800,
     "profiles": 600,
     "log": 30,
 }
