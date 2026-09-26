@@ -214,11 +214,56 @@ async def test_batch_generate_users_creates_queued_batch_and_enqueues_job(monkey
     assert result["count"] == 3
     assert "job_id" in result
 
+    # Full eleven-key payload contract -- nothing dropped, nothing re-defaulted.
+    assert set(enqueued.keys()) == {
+        "batch_id", "device_id", "qty", "prefix", "profile", "time_limit",
+        "data_limit", "comment", "length", "random_mode", "format",
+    }
     assert enqueued["batch_id"] == result["job_id"]
     assert enqueued["device_id"] == device_id
     assert enqueued["qty"] == 3
     assert enqueued["prefix"] == "V"
     assert enqueued["profile"] == "default"
+    assert enqueued["length"] == 4
+    assert enqueued["random_mode"] is True
+    assert enqueued["format"] == "numeric"
+
+
+async def test_batch_generate_users_enqueues_random_mode_params_unaltered(monkeypatch):
+    """Regression test for the defect flagged after the initial Task 2 pass:
+    random_mode/length/format were omitted from the job payload, so a batch
+    requested as random_mode=True, length=8, format="numeric" would have
+    silently reached the worker as a plain non-random length-10 batch. These
+    three fields must survive into the job exactly as the operator requested
+    them, taken from the validated BatchUserCreate instance -- not re-defaulted
+    at the enqueue call site.
+    """
+    device_id = str(uuid.uuid4())
+    device = _device(device_id)
+    site = Site(id=device.site_id, name="site", organization_id=uuid.uuid4())
+
+    enqueued = {}
+
+    def fake_enqueue(job):
+        enqueued.update(job)
+        return True
+
+    monkeypatch.setattr(hotspot.voucher_jobs, "enqueue", fake_enqueue)
+
+    result = await hotspot.batch_generate_users(
+        device_id,
+        hotspot.BatchUserCreate(
+            qty=5, prefix="", profile="default",
+            random_mode=True, length=8, format="numeric",
+        ),
+        db=_db_returning_device_then_site(device, site),
+        actor=_unscoped_actor(),
+    )
+
+    assert result["status"] == "queued"
+    assert enqueued["random_mode"] is True
+    assert enqueued["length"] == 8
+    assert enqueued["format"] == "numeric"
 
 
 async def test_batch_generate_users_marks_batch_failed_when_enqueue_fails(monkeypatch):

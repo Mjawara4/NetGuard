@@ -1114,6 +1114,13 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         "time_limit": batch.time_limit,
         "data_limit": batch.data_limit,
         "comment": batch_comment,
+        # Naming-shape flags: taken straight from the validated request model
+        # so BatchUserCreate's own defaults apply. Do not re-default these
+        # here -- a second set of defaults drifting from the model's is how
+        # this bug happened the first time.
+        "length": batch.length,
+        "random_mode": batch.random_mode,
+        "format": batch.format,
     }
 
     if not voucher_jobs.enqueue(job):

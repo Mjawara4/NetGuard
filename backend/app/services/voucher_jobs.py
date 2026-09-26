@@ -4,6 +4,18 @@ The worker (agents/voucher_job_worker.py) consumes QUEUE_KEY with BRPOP, so the
 key name and the payload keys are a contract across two containers with no
 shared module. Change them in both places or not at all.
 
+Job payload keys (all eleven, no more, no fewer):
+    batch_id, device_id, qty, prefix, profile, time_limit, data_limit,
+    comment, length, random_mode, format
+
+`length`, `random_mode` and `format` are not optional extras -- they select
+which of the three naming shapes `generate_candidate` below produces (see its
+docstring). Dropping them silently changes what code a voucher batch gets
+without telling the operator, so route them straight from the validated
+`BatchUserCreate` request model rather than re-defaulting them at the call
+site: two independently-drifting default sets is exactly how they'd get
+dropped again.
+
 This module also holds the voucher-naming and collision-retry logic that used
 to live inline in `batch_generate_users` (app/routers/hotspot.py). It is
 extracted here purely for the backend's own testability -- the backend no
