@@ -205,7 +205,17 @@ export default function Hotspot() {
                 api.get(`/hotspot/${deviceId}/profiles`),
                 api.get(`/hotspot/${deviceId}/voucher-template`),
             ]);
-            if (summaryRes.status === 'fulfilled') setDashboardData(summaryRes.value.data);
+            if (summaryRes.status === 'fulfilled') {
+                setDashboardData(summaryRes.value.data);
+                // The read endpoints never throw anymore (they serve from
+                // cache), so "the request succeeded" no longer means "the
+                // router/agent/Redis are healthy". /summary's `stale` field
+                // is the real signal: a dead router/VPN/agent/Redis shows up
+                // as stale cached data, not an HTTP error.
+                setHealthStatus(summaryRes.value.data?.stale ? 'offline' : 'online');
+            } else {
+                setHealthStatus('offline');
+            }
             if (systemRes.status === 'fulfilled') setSystemInfo(systemRes.value.data);
             if (usersRes.status === 'fulfilled') {
                 setUsers(usersRes.value.data);
@@ -238,7 +248,6 @@ export default function Hotspot() {
                 profiles: now,
                 templates: now,
             });
-            setHealthStatus('online');
         } catch (e) {
             console.error('Prefetch error', e);
         } finally {
@@ -293,7 +302,10 @@ export default function Hotspot() {
                 ]);
                 setDashboardData(summaryRes.data);
                 setSystemInfo(systemRes.data);
-                setHealthStatus('online');
+                // Drive health from /summary's `stale` flag, not from
+                // whether the request threw (it always serves from cache
+                // and never does) -- see I1.
+                setHealthStatus(summaryRes.data?.stale ? 'offline' : 'online');
             } else if (activeTab === 'users') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users?limit=200`);
                 setUsers(res.data);

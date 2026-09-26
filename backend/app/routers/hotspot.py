@@ -28,6 +28,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# How stale cached hotspot data must be (in seconds) before /summary and
+# /system-info report `stale: True`. Must stay a comfortable margin above
+# agents/monitor_agent.py's DEEP_INSPECT_INTERVAL (default 30s, env override
+# on the agent container) -- that's how often "active"/"system" are normally
+# rewritten. Not imported directly: the backend and monitor agent are
+# separate containers/deployments, so this is a single named constant with
+# this comment as the pointer to its source of truth instead of wiring an
+# env var or shared config module across that boundary for one value. If
+# DEEP_INSPECT_INTERVAL is ever raised, raise this too (keep >= 2x it).
+HOTSPOT_STALE_THRESHOLD_SECONDS = 60
+
 # Redis client for caching hotspot reads
 try:
     redis_client = redis.Redis(
@@ -428,30 +439,42 @@ async def get_hotspot_users(
         logger.error(f"Hotspot users cache rows not a list for device={device_id} dataset=users")
         return []
 
-    try:
-        result = [HotspotUser(
+    def to_model(u):
+        return HotspotUser(
             name=u.get('name'),
             password=u.get('password'),
             profile=u.get('profile'),
             uptime=u.get('uptime'),
-            bytes_in=int(u.get('bytes-in', 0)),
-            bytes_out=int(u.get('bytes-out', 0)),
+            # `or 0` guards a raw row with bytes-in/-out set to '' (empty
+            # string): without it, int('') raises and the except below
+            # discards the *entire* result list for one bad voucher.
+            bytes_in=int(u.get('bytes-in', 0) or 0),
+            bytes_out=int(u.get('bytes-out', 0) or 0),
             limit_uptime=u.get('limit-uptime'),
             limit_bytes_total=int(u.get('limit-bytes-total')) if u.get('limit-bytes-total') else None,
             comment=u.get('comment')
-        ) for u in rows]
+        )
+
+    try:
+        if search:
+            # A search filters by name, which requires looking at every row,
+            # so there is no cheaper option than building every model here.
+            result = [to_model(u) for u in rows]
+            result = [u for u in result if search.lower() in (u.name or '').lower()]
+            if limit == 0:
+                return result[offset:]
+            return result[offset:offset + limit]
+
+        # No search filter: this is the common path (e.g. limit=200 on page
+        # load against 11k+ rows). Slice the raw dicts FIRST, then build
+        # pydantic models only for the page that will actually be returned,
+        # instead of constructing (and response-validating) a model for
+        # every row and throwing away all but one page of them.
+        page = rows[offset:] if limit == 0 else rows[offset:offset + limit]
+        return [to_model(u) for u in page]
     except (TypeError, ValueError, AttributeError) as e:
         logger.error(f"Hotspot users cache row unparseable for device={device_id} dataset=users: {e}")
         return []
-
-    # Apply search filter
-    if search:
-        result = [u for u in result if search.lower() in (u.name or '').lower()]
-
-    # Apply pagination (limit=0 means return all)
-    if limit == 0:
-        return result[offset:]
-    return result[offset:offset + limit]
 
 
 @router.post("/{device_id}/users")
@@ -488,6 +511,7 @@ async def create_hotspot_user(device_id: str, user: HotspotUser, db: AsyncSessio
         )
         connection.disconnect()
         hotspot_cache.invalidate(device_id, "users")
+        hotspot_cache.request_refresh(device_id)
         return {"status": "success"}
     except Exception as e:
         if "User already exists" in str(e): raise e
@@ -530,6 +554,7 @@ async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = 
         resource.remove(id=uid)
         connection.disconnect()
         hotspot_cache.invalidate(device_id, "users")
+        hotspot_cache.request_refresh(device_id)
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Delete User Error: {e}")
@@ -709,7 +734,7 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
     stale = (
         active_fetched_at is None
         or users_fetched_at is None
-        or hotspot_cache.age_seconds(active_fetched_at) > 60
+        or hotspot_cache.age_seconds(active_fetched_at) > HOTSPOT_STALE_THRESHOLD_SECONDS
     )
 
     result["fetched_at"] = active_fetched_at
@@ -779,7 +804,7 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
 
     age = hotspot_cache.age_seconds(fetched_at)
     result["fetched_at"] = fetched_at
-    result["stale"] = age is None or age > 60
+    result["stale"] = age is None or age > HOTSPOT_STALE_THRESHOLD_SECONDS
     return result
 
 @router.post("/{device_id}/profiles")
@@ -814,6 +839,7 @@ async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: As
         api.get_resource('/ip/hotspot/user/profile').add(**params)
         connection.disconnect()
         hotspot_cache.invalidate(device_id, "profiles")
+        hotspot_cache.request_refresh(device_id)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -850,6 +876,7 @@ async def delete_hotspot_profile(device_id: str, profile_name: str, db: AsyncSes
         resource.remove(id=profile[0]['id'])
         connection.disconnect()
         hotspot_cache.invalidate(device_id, "profiles")
+        hotspot_cache.request_refresh(device_id)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -925,8 +952,8 @@ async def get_active_users(
                 user=username,
                 address=a.get('address'),
                 uptime=uptime_str,
-                bytes_in=int(a.get('bytes-in', 0)),
-                bytes_out=int(a.get('bytes-out', 0)),
+                bytes_in=int(a.get('bytes-in', 0) or 0),
+                bytes_out=int(a.get('bytes-out', 0) or 0),
                 mac_address=a.get('mac-address'),
                 remaining_time=remaining,
                 limit_uptime=limit_str,
@@ -961,7 +988,12 @@ async def kick_active_user(device_id: str, active_id: str, db: AsyncSession = De
         api = connection.get_api()
         api.get_resource('/ip/hotspot/active').remove(id=active_id)
         connection.disconnect()
-        hotspot_cache.invalidate(device_id, "active")
+        # Deliberately NOT invalidating "active" here (I2): all cache writes
+        # are gated by DEEP_INSPECT_INTERVAL (~30s), so invalidating would
+        # blank the entire active-sessions list -- which the frontend polls
+        # every 15s -- for up to 30s after every single kick. A list that is
+        # stale by up to 30s is strictly better than one that goes empty; the
+        # agent overwrites this key on its own within that window regardless.
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1094,6 +1126,7 @@ async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: Async
         logger.info(f"Batch generation complete: {len(generated)}/{batch.qty} created in {attempts} attempts")
         connection.disconnect()
         hotspot_cache.invalidate(device_id, "users")
+        hotspot_cache.request_refresh(device_id)
 
         # Persist batch to database for history/reprint
         try:
@@ -1376,6 +1409,7 @@ async def bulk_delete_users(
             logger.warning(f"Bulk delete partial completion. Deleted: {deleted_count}, Failed: {failed_count}. Errors: {errors[:5]}")
 
         hotspot_cache.invalidate(device_id, "users")
+        hotspot_cache.request_refresh(device_id)
         return {"status": "success", "count": deleted_count, "failed": failed_count}
     except Exception as e:
         logger.error(f"Bulk Delete Error: {e}")

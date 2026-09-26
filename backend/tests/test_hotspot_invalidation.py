@@ -272,7 +272,16 @@ async def test_delete_profile_success_invalidates_profiles_cache(fake_redis, mon
 # DELETE /{device_id}/active/{active_id}
 # ---------------------------------------------------------------------------
 
-async def test_kick_active_user_invalidates_active_cache(fake_redis, monkeypatch):
+async def test_kick_active_user_does_not_invalidate_active_cache(fake_redis, monkeypatch):
+    """I2: kicking a session must NOT invalidate "active".
+
+    All cache writes are gated by the ~30s DEEP_INSPECT_INTERVAL, and the
+    frontend polls /active every 15s, so invalidating here would blank the
+    entire active-sessions list for up to 30s after every single kick. A
+    list that is stale by up to 30s is strictly better than one that goes
+    empty -- the agent overwrites the key on its own within that window
+    regardless (and C1 Part B's trigger prompts it sooner).
+    """
     device_id = str(uuid.uuid4())
     _seed(fake_redis, device_id, "active", [{"user": "someone"}])
 
@@ -289,4 +298,4 @@ async def test_kick_active_user_invalidates_active_cache(fake_redis, monkeypatch
     )
 
     assert result == {"status": "success"}
-    assert fake_redis.get(hotspot_cache.cache_key(device_id, "active")) is None
+    assert fake_redis.get(hotspot_cache.cache_key(device_id, "active")) is not None

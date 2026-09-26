@@ -51,3 +51,41 @@ def test_redis_failure_returns_empty_not_error(monkeypatch):
 def test_age_seconds():
     assert hotspot_cache.age_seconds(None) is None
     assert hotspot_cache.age_seconds(time.time() - 5) >= 4.5
+
+
+# --- C1 Part B: request_refresh --------------------------------------------
+
+def test_request_refresh_publishes_to_trigger_channel(fake_redis):
+    pubsub = fake_redis.pubsub()
+    pubsub.subscribe(hotspot_cache.TRIGGER_CHANNEL)
+    pubsub.get_message(timeout=1)  # discard the subscribe confirmation
+
+    hotspot_cache.request_refresh("dev-1")
+
+    msg = pubsub.get_message(timeout=1)
+    assert msg is not None
+    assert msg["type"] == "message"
+    assert msg["channel"] == hotspot_cache.TRIGGER_CHANNEL
+
+
+def test_request_refresh_never_raises_when_redis_down(monkeypatch):
+    class Boom:
+        def publish(self, *a, **k):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr(hotspot_cache, "_client", lambda: Boom())
+    # Must not raise -- a failed trigger publish must never break the write
+    # endpoint that just succeeded against the router.
+    hotspot_cache.request_refresh("dev-1")
+
+
+def test_request_refresh_with_no_device_id_still_publishes(fake_redis):
+    pubsub = fake_redis.pubsub()
+    pubsub.subscribe(hotspot_cache.TRIGGER_CHANNEL)
+    pubsub.get_message(timeout=1)
+
+    hotspot_cache.request_refresh()
+
+    msg = pubsub.get_message(timeout=1)
+    assert msg is not None
+    assert msg["type"] == "message"

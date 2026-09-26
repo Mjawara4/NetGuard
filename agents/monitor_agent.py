@@ -319,16 +319,10 @@ def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None,
                 ("log", '/log'),
             ):
                 interval = DATASET_INTERVALS[dataset]
-                if not should_refresh(last_refreshed, device_id, dataset, interval):
-                    continue
-                try:
-                    rows = api.get_resource(path).get()
-                    hotspot_cache.write_dataset(device_id, dataset, rows)
-                    logger.info(f"Cached {dataset} for {device_ip}: {len(rows)} rows")
-                except Exception as e_ds:
-                    # One dataset failing must not abort the metric collection
-                    # that the rest of this function performed successfully.
-                    logger.warning(f"Failed to cache {dataset} for {device_ip}: {e_ds}")
+                # One dataset failing must not abort the metric collection
+                # that the rest of this function performed successfully;
+                # maybe_refresh_dataset only logs on failure.
+                maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed, device_ip=device_ip)
 
         return metrics
 
@@ -344,25 +338,50 @@ def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None,
         return metrics
 
 def wait_for_trigger(seconds):
+    """Block for up to `seconds`, or return early if a message arrives on the
+    'agent_trigger:monitor' pubsub channel.
+
+    Returns True if a trigger was received -- the caller should force its next
+    deep-inspect pass to bypass DEEP_INSPECT_INTERVAL, since a trigger means
+    the backend just invalidated a cache key and wants it repopulated now, not
+    up to 30s from now. Returns False otherwise, including on a Redis error
+    (where this just falls back to a plain sleep, as before).
+    """
     try:
         r = redis.Redis(host=REDIS_HOST, port=6379, db=0)
         p = r.pubsub()
         p.subscribe('agent_trigger:monitor')
         msg = p.get_message(timeout=seconds)
         if msg and msg['type'] == 'message':
-            logger.info("Manual Trigger Received! Skipping sleep.")
-            return
+            logger.info("Manual Trigger Received! Forcing deep inspect next pass.")
+            return True
+        return False
     except Exception:
         time.sleep(seconds)
+        return False
+
+
+def deep_inspect_due(last_deep, now, interval, force=False):
+    """True if a device is due for a deep inspect: by interval, or forced.
+
+    `force` is how a received pubsub trigger (see wait_for_trigger) bypasses
+    DEEP_INSPECT_INTERVAL for one pass.
+    """
+    return force or (now - last_deep) >= interval
+
 
 # Per-dataset refresh intervals in seconds. Datasets that only change when an
-# operator acts (users, profiles) are invalidated on write by the backend; the
-# interval here is just a safety net for router-side changes such as auto-expiry.
+# operator acts (users, profiles) are invalidated on write by the backend
+# (which also publishes agent_trigger:monitor, see request_refresh in
+# backend/app/services/hotspot_cache.py); the interval here is just a safety
+# net for router-side changes such as auto-expiry, and for a missed/failed
+# invalidation.
 #
 # `users` is deliberately the longest interval, not an oversight to align with
 # `profiles`: it is 11k+ rows / several MB on a real router, and the poll loop
-# is sequential, so fetching it blocks the 4-second metric series every time
-# it runs. 1800s keeps that gap rare. `profiles` and `log` stay short because
+# is sequential, so fetching it blocks the rest of that pass's metric
+# collection (gated by DEEP_INSPECT_INTERVAL, default ~30s) every time it
+# runs. 1800s keeps that gap rare. `profiles` and `log` stay short because
 # they are small (KB-scale) and cheap to fetch every time they are due.
 DATASET_INTERVALS = {
     "users": 1800,
@@ -372,17 +391,71 @@ DATASET_INTERVALS = {
 
 
 def should_refresh(last_refreshed, device_id, dataset, interval, now=None):
-    """True if `dataset` for `device_id` is due, recording the time when it is.
+    """True if `dataset` for `device_id` is due for a refresh, by wall-clock
+    interval alone.
 
-    Mutates `last_refreshed` on a True result so callers cannot forget to.
+    Pure: never mutates `last_refreshed`. This is only the time-based half of
+    the refresh decision -- callers combine it with hotspot_cache.exists(...)
+    (a dataset is also due if its cache key is simply missing, e.g. after
+    invalidation or a Redis flush) and must call record_refreshed(...)
+    themselves once the refresh actually succeeds. See maybe_refresh_dataset,
+    which wires all of this together for the caller.
     """
     if now is None:
         now = time.time()
-    key = (device_id, dataset)
-    previous = last_refreshed.get(key)
-    if previous is not None and now - previous < interval:
+    previous = last_refreshed.get((device_id, dataset))
+    return previous is None or now - previous >= interval
+
+
+def record_refreshed(last_refreshed, device_id, dataset, now=None):
+    """Record that `dataset` for `device_id` was just successfully refreshed.
+
+    Callers must only call this after both the fetch and the cache write
+    succeeded -- recording on a failed attempt is exactly the bug (C2) this
+    split from should_refresh exists to prevent: it would silently consume a
+    whole interval's worth of retries on a single timeout.
+    """
+    if now is None:
+        now = time.time()
+    last_refreshed[(device_id, dataset)] = now
+
+
+def maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed, device_ip=None, now=None):
+    """Fetch and cache one hotspot dataset if it is due, then record success.
+
+    "Due" is: due by interval (should_refresh), OR the cache key is simply
+    absent (hotspot_cache.exists returns False -- covers invalidation, a
+    Redis flush, or eviction; see C1/C3). The timestamp in `last_refreshed` is
+    only recorded when BOTH the router fetch and the cache write succeed, so
+    a failed attempt (timeout, Redis error) leaves the slot open for an
+    immediate retry on the next pass instead of burning the whole interval
+    (C2). Returns True if a refresh was attempted and succeeded, False
+    otherwise (not due, fetch failed, or cache write failed).
+
+    No separate failure backoff is added here: this function is only called
+    from inside a per-device deep inspect that is itself already gated to
+    happen at most once per DEEP_INSPECT_INTERVAL (~30s) per device, which is
+    backoff enough for a persistently failing dataset. A forced pass (a
+    received pubsub trigger) can shorten that gap, but wait_for_trigger only
+    ever consumes one queued message per call, so a burst of writes collapses
+    to at most one extra forced pass, not a spin.
+    """
+    due = should_refresh(last_refreshed, device_id, dataset, interval, now=now) or not hotspot_cache.exists(device_id, dataset)
+    if not due:
         return False
-    last_refreshed[key] = now
+
+    try:
+        rows = api.get_resource(path).get()
+    except Exception as e_ds:
+        logger.warning(f"Failed to fetch {dataset} for {device_ip or device_id}: {e_ds}")
+        return False
+
+    if not hotspot_cache.write_dataset(device_id, dataset, rows):
+        logger.warning(f"Failed to cache write {dataset} for {device_ip or device_id}; will retry next pass")
+        return False
+
+    record_refreshed(last_refreshed, device_id, dataset, now=now)
+    logger.info(f"Cached {dataset} for {device_ip or device_id}: {len(rows)} rows")
     return True
 
 
@@ -400,6 +473,12 @@ def run_agent():
     logger.info("Starting Monitor Agent with MikroTik Support")
     device_last_polled = {}
     dataset_last_refreshed = {}
+    # Set by wait_for_trigger's return value; forces the *next* pass's deep
+    # inspect to bypass DEEP_INSPECT_INTERVAL (see C1 Part B). Consumed once
+    # per pass -- it is reassigned from wait_for_trigger at the bottom of
+    # every iteration (and on the early-continue path below), so it never
+    # lingers past the one pass it was meant for.
+    force_deep_inspect = False
 
     while True:
         try:
@@ -413,7 +492,7 @@ def run_agent():
                 resp.raise_for_status()
             except requests.exceptions.RequestException as e:
                 logger.error(f"Failed to fetch devices: {e}")
-                wait_for_trigger(5)
+                force_deep_inspect = wait_for_trigger(5)
                 continue
 
             if resp.status_code == 200:
@@ -441,10 +520,11 @@ def run_agent():
                         # Device offline: reset deep-inspect timer so we inspect immediately when back
                         device_last_polled.pop(dev_id, None)
 
-                    # 2. Deep Inspection (MikroTik) — throttle to DEEP_INSPECT_INTERVAL
+                    # 2. Deep Inspection (MikroTik) — throttle to DEEP_INSPECT_INTERVAL,
+                    # unless a pubsub trigger forces this pass through early.
                     if status == 1.0:
                         last_deep = device_last_polled.get(dev_id, 0)
-                        if now - last_deep >= DEEP_INSPECT_INTERVAL:
+                        if deep_inspect_due(last_deep, now, DEEP_INSPECT_INTERVAL, force=force_deep_inspect):
                             device_last_polled[dev_id] = now
 
                             user = device.get('ssh_username') or SSH_USER
@@ -480,7 +560,7 @@ def run_agent():
         except Exception as e:
             logger.exception(f"Monitor loop error: {e}")
 
-        wait_for_trigger(5)
+        force_deep_inspect = wait_for_trigger(5)
 
 if __name__ == "__main__":
     try:

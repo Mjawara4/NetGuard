@@ -19,14 +19,25 @@ logger = logging.getLogger(__name__)
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 
-# TTLs are ~30x each dataset's refresh interval, so a key never expires between
-# refreshes. Expiry therefore means "the writer stopped", not "data is stale" —
-# staleness is judged from fetched_at, never from key absence.
+# TTLs exist so a key doesn't expire between refreshes -- expiry means "the
+# writer stopped", not "data is stale" (staleness is judged from fetched_at,
+# never from key absence). The margin over each dataset's real refresh
+# interval varies by dataset:
+#   - "active"/"system" are rewritten on every deep-inspect pass, gated by
+#     DEEP_INSPECT_INTERVAL (default 30s, see monitor_agent.py). Their 120s
+#     TTL is only a ~4x margin, not the 30x this comment used to claim.
+#   - "log" is on its own 30s DATASET_INTERVALS entry, so its 900s TTL is a
+#     genuine ~30x margin.
+#   - "users"/"profiles" are invalidation-driven (the backend deletes the key
+#     on write; see request_refresh in backend/app/services/hotspot_cache.py)
+#     with DATASET_INTERVALS-gated safety refreshes underneath (1800s / 600s).
+#     Their 86400s TTL is a backstop against a stuck invalidation, not a
+#     multiple of the refresh cadence.
 TTLS = {
-    "active": 120,      # refreshed every ~4s with the metric poll
-    "system": 120,      # refreshed every ~4s with the metric poll
-    "users": 86400,     # invalidation-driven, with a 10 min safety refresh
-    "profiles": 86400,  # invalidation-driven, with a 10 min safety refresh
+    "active": 120,      # refreshed every DEEP_INSPECT_INTERVAL (~30s)
+    "system": 120,      # refreshed every DEEP_INSPECT_INTERVAL (~30s)
+    "users": 86400,     # invalidation-driven, with a 30 min (1800s) safety refresh
+    "profiles": 86400,  # invalidation-driven, with a 10 min (600s) safety refresh
     "log": 900,         # refreshed every ~30s
 }
 
@@ -59,4 +70,19 @@ def write_dataset(device_id, dataset, rows):
         return True
     except Exception as e:
         logger.warning(f"Hotspot cache write failed for {device_id}/{dataset}: {e}")
+        return False
+
+
+def exists(device_id, dataset) -> bool:
+    """Whether `dataset`'s cache key is currently present in Redis.
+
+    Used as the correctness floor for refresh decisions: a wall-clock
+    interval alone cannot tell the difference between "not due yet" and "the
+    key was deleted (backend invalidation, Redis flush, eviction)". Returns
+    False on any Redis error, same as write_dataset -- never raises.
+    """
+    try:
+        return bool(_client().exists(cache_key(device_id, dataset)))
+    except Exception as e:
+        logger.warning(f"Hotspot cache exists check failed for {device_id}/{dataset}: {e}")
         return False

@@ -361,6 +361,82 @@ async def test_users_corrupted_non_numeric_field_returns_empty_list(fake_redis):
     assert result == []
 
 
+async def test_users_empty_string_bytes_degrades_one_row_not_whole_list(fake_redis):
+    """I4: `bytes-in`/`bytes-out` of '' (a real RouterOS quirk, distinct from
+    the 'not-a-number' corruption case above) must not raise -- the `or 0`
+    guard means one bad voucher degrades to bytes=0 instead of the whole
+    list going empty.
+    """
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "bytes-in": "", "bytes-out": ""},
+        {"name": "bob", "bytes-in": "100", "bytes-out": "200"},
+    ])
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 2
+    alice = next(u for u in result if u.name == "alice")
+    assert alice.bytes_in == 0
+    assert alice.bytes_out == 0
+    bob = next(u for u in result if u.name == "bob")
+    assert bob.bytes_in == 100
+    assert bob.bytes_out == 200
+
+
+async def test_users_limit_200_skips_building_models_for_whole_dataset(fake_redis, monkeypatch):
+    """I4: with no search filter, /users must slice the raw rows to the
+    requested page BEFORE building pydantic models, not build 11k+ models
+    and only then slice. Asserted by counting HotspotUser construction
+    calls, not by timing.
+    """
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    rows = [{"name": f"user{i}", "bytes-in": "0", "bytes-out": "0"} for i in range(5000)]
+    _set_raw(fake_redis, device_id, "users", now, rows)
+
+    construct_count = {"n": 0}
+    real_cls = hotspot.HotspotUser
+
+    class CountingHotspotUser(real_cls):
+        def __init__(self, **kwargs):
+            construct_count["n"] += 1
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(hotspot, "HotspotUser", CountingHotspotUser)
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search=None, refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 200
+    # The whole point of I4: 200, not 5000.
+    assert construct_count["n"] == 200
+
+
+async def test_users_search_still_scans_full_dataset(fake_redis):
+    """The slice-first optimization must only apply when search is None --
+    a search has to look at every row regardless of `limit`/`offset`."""
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    rows = [{"name": f"user{i}", "bytes-in": "0", "bytes-out": "0"} for i in range(300)]
+    rows.append({"name": "findme", "bytes-in": "0", "bytes-out": "0"})
+    _set_raw(fake_redis, device_id, "users", now, rows)
+
+    result = await hotspot.get_hotspot_users(
+        device_id, limit=200, offset=0, search="findme", refresh=False,
+        db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 1
+    assert result[0].name == "findme"
+
+
 # ---------------------------------------------------------------------------
 # /active
 #
