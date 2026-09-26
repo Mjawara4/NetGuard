@@ -1186,6 +1186,108 @@ async def get_voucher_batches(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class VoucherJobProgress(BaseModel):
+    vouchers: List[dict] = []
+    status: str
+
+
+@router.get("/jobs/{job_id}")
+async def get_voucher_job(job_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    """Poll a background voucher-generation job's progress.
+
+    Keyed by job_id (== VoucherBatch.id) alone -- there is no device_id in
+    this path, unlike the other hotspot endpoints, since the operator's
+    browser only knows the job_id returned by the batch-create call. Org
+    scoping is therefore done directly against VoucherBatch.organization_id
+    (set at creation time in batch_generate_users) rather than via a
+    Device/Site join.
+    """
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+    else:
+        query = select(VoucherBatch).where(
+            VoucherBatch.id == UUID(job_id), VoucherBatch.organization_id == actor.organization_id
+        )
+
+    res = await db.execute(query)
+    voucher_batch = res.scalars().first()
+    if not voucher_batch:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    vouchers = voucher_batch.vouchers or []
+    return {
+        "job_id": str(voucher_batch.id),
+        "status": voucher_batch.status,
+        "count": voucher_batch.count,
+        "created": len(vouchers),
+        "vouchers": vouchers,
+    }
+
+
+@router.post("/jobs/{job_id}/progress")
+async def report_voucher_job_progress(
+    job_id: str, progress: VoucherJobProgress, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)
+):
+    """Consume a progress report from agents/voucher_job_worker.py.
+
+    `progress.vouchers` is only the NEW vouchers since the worker's last
+    successful call (see report_progress's docstring in the worker), so this
+    must be genuinely append-only: read the current list, extend it, write
+    it back. Replacing the column wholesale would discard everything before
+    the worker's last ~10-voucher batch, and a retried call (the worker
+    resends the same pending vouchers on a failed POST) must not double them
+    either -- see the append-only test in test_voucher_job_endpoints.py for
+    why the worker's own retry semantics make wholesale replacement unsafe
+    but a plain extend safe (the worker only drops vouchers from its pending
+    buffer once a call here succeeds, so a given voucher is only ever
+    resent, never duplicated).
+    """
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(VoucherBatch).where(VoucherBatch.id == UUID(job_id))
+    else:
+        query = select(VoucherBatch).where(
+            VoucherBatch.id == UUID(job_id), VoucherBatch.organization_id == actor.organization_id
+        )
+
+    res = await db.execute(query)
+    voucher_batch = res.scalars().first()
+    if not voucher_batch:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    import copy
+    from sqlalchemy.orm.attributes import flag_modified
+
+    current_vouchers = copy.deepcopy(voucher_batch.vouchers) or []
+    current_vouchers.extend(progress.vouchers)
+    voucher_batch.vouchers = current_vouchers
+    flag_modified(voucher_batch, 'vouchers')
+    voucher_batch.status = progress.status
+    db.add(voucher_batch)
+    await db.commit()
+
+    # Only the terminal states mean real vouchers now exist on the router
+    # (or, for "failed", whatever was created before the failure) -- an
+    # intermediate "running" call must NOT invalidate, or a 500-voucher job
+    # forces the monitor agent to refetch the full ~3.6 MB user list every
+    # ~10 vouchers, repeatedly blocking its metric loop. See hotspot_cache's
+    # own docstring: invalidate() + request_refresh() closes the window
+    # between this write and the cache repopulating from ~30 minutes to a
+    # second or two.
+    if progress.status in ("complete", "failed"):
+        hotspot_cache.invalidate(str(voucher_batch.device_id), "users")
+        hotspot_cache.request_refresh(str(voucher_batch.device_id))
+
+    return {
+        "job_id": str(voucher_batch.id),
+        "status": voucher_batch.status,
+        "created": len(current_vouchers),
+    }
+
+
 @router.get("/{device_id}/users/search")
 async def search_hotspot_user(
     device_id: str,
