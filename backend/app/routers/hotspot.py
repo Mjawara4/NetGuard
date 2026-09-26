@@ -551,7 +551,7 @@ async def delete_hotspot_user(device_id: str, username: str, db: AsyncSession = 
 @router.get("/{device_id}/profiles", response_model=List[dict])
 async def get_hotspot_profiles(
     device_id: str,
-    refresh: bool = Query(False, description="Bypass cache and fetch fresh data from router"),
+    refresh: bool = Query(False, description="Deprecated, ignored: this read path always serves from cache, never the router"),
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
@@ -567,28 +567,21 @@ async def get_hotspot_profiles(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Decrypt device secrets (required for async SQLAlchemy)
-    decrypt_device_secrets(device)
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported as an empty list with
+    # HTTP 200 — never a router fallthrough, never a 500. active_users counts
+    # depend on joining the "profiles", "active" and "users" datasets.
+    profiles, profiles_fetched_at = hotspot_cache.read_dataset(device_id, "profiles")
+    active, active_fetched_at = hotspot_cache.read_dataset(device_id, "active")
+    users, users_fetched_at = hotspot_cache.read_dataset(device_id, "users")
 
-    # Try cache first
-    key = cache_key(device_id, "profiles")
-    if not refresh:
-        cached = _redis_get(key)
-        if cached:
-            try:
-                return json.loads(cached)
-            except Exception as e:
-                logger.warning(f"Failed to deserialize cached profiles: {e}")
+    # Guard the type before indexing/iterating: a corrupted cache value could
+    # store rows as a dict/int/string instead of a list.
+    if not isinstance(profiles, list) or not isinstance(active, list) or not isinstance(users, list):
+        logger.error(f"Hotspot profiles cache rows not a list for device={device_id} datasets=profiles,active,users")
+        return []
 
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-
-        profiles = api.get_resource('/ip/hotspot/user/profile').get()
-        active = api.get_resource('/ip/hotspot/active').get()
-        users = api.get_resource('/ip/hotspot/user').get()
-
         # Build user-to-profile mapping
         user_to_profile = {u.get('name'): u.get('profile') for u in users}
 
@@ -604,7 +597,7 @@ async def get_hotspot_profiles(
         profile_pricing = settings.get('profile_pricing', {})
         default_currency = settings.get('default_currency', 'TZS')
 
-        # Build serializable result dicts (RouterOS API objects may not be JSON-serializable)
+        # Build serializable result dicts
         result = []
         for p in profiles:
             p_name = p.get('name')
@@ -617,12 +610,11 @@ async def get_hotspot_profiles(
                 "custom_price": pricing.get('price', 0),
                 "custom_currency": pricing.get('currency', default_currency),
             })
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error(f"Hotspot profiles cache row unparseable for device={device_id} datasets=profiles,active,users: {e}")
+        return []
 
-        _redis_setex(key, 15, json.dumps(result))
-        return result
-    except Exception as e:
-        logger.error(f"Hotspot Profiles Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return result
 
 class ProfileSettings(BaseModel):
     price: float
@@ -1410,36 +1402,27 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    decrypt_device_secrets(device)
 
-    # Try cache first
-    key = cache_key(device_id, "logs")
-    cached = _redis_get(key)
-    if cached:
-        try:
-            return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Failed to deserialize cached logs: {e}")
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported as an empty list with
+    # HTTP 200 — never a router fallthrough, never a 500. Note the dataset
+    # name is "log" (singular) — that is what the poller agent writes.
+    rows, fetched_at = hotspot_cache.read_dataset(device_id, "log")
+
+    # Guard the type before indexing/iterating: a corrupted cache value could
+    # store rows as a dict/int/string instead of a list.
+    if not isinstance(rows, list):
+        logger.error(f"Hotspot logs cache rows not a list for device={device_id} dataset=log")
+        return []
 
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-
-        # Fetch recent logs (last 500 to ensure we find enough hotspot entries)
-        log_resource = api.get_resource('/log')
-        all_logs = log_resource.get()
-
-        connection.disconnect()
-
         # Filter for logs containing 'hotspot' topic
-        hotspot_logs = [l for l in all_logs if 'hotspot' in l.get('topics', '').lower()]
+        hotspot_logs = [l for l in rows if 'hotspot' in l.get('topics', '').lower()]
 
         # Return last 100 logs, reversed (newest first)
         results = []
@@ -1453,7 +1436,6 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
             user_info = "system"
             if '(' in msg and ')' in msg:
                 # Often logs look like: user muhammad (10.5.5.10): logged in
-                import re
                 match = re.search(r'user\s+([^\s\(]+)', msg)
                 if match:
                     user_info = match.group(1)
@@ -1463,12 +1445,11 @@ async def get_hotspot_logs(device_id: str, db: AsyncSession = Depends(get_db), a
                 "user_info": user_info,
                 "message": msg
             })
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.error(f"Hotspot logs cache row unparseable for device={device_id} dataset=log: {e}")
+        return []
 
-        _redis_setex(key, 30, json.dumps(results))
-        return results
-    except Exception as e:
-        logger.error(f"Router Logs Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return results
 
 @router.get("/{device_id}/reports")
 async def get_hotspot_reports(

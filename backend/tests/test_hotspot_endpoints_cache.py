@@ -1,19 +1,19 @@
 """THE RULE is enforced in this file: hotspot read endpoints never call the
 router, not even on a cache miss.
 
-Endpoint-level tests for the cache-only /summary, /system-info, /users and
-/active reads. These guard the actual conversion in app/routers/hotspot.py,
-not just the app/services/hotspot_cache.py module the earlier unit tests
-cover. Each endpoint is exercised in three cache states — warm, cold, and
-corrupted — and every test carries a landmine on get_api_pool (via the
-autouse `router_landmine` fixture) so any accidental router call fails loudly
-instead of silently passing.
+Endpoint-level tests for the cache-only /summary, /system-info, /users,
+/active, /profiles and /logs reads. These guard the actual conversion in
+app/routers/hotspot.py, not just the app/services/hotspot_cache.py module the
+earlier unit tests cover. Each endpoint is exercised in three cache states —
+warm, cold, and corrupted — and every test carries a landmine on get_api_pool
+(via the autouse `router_landmine` fixture) so any accidental router call
+fails loudly instead of silently passing.
 
-/profiles and /logs are still router-backed as of this file's current state
-(Task 6 converts them) — they are deliberately NOT covered here yet. Once
-converted, their coverage belongs in this file too, so THE RULE stays
-enforced for the full read surface in one place rather than splitting across
-files.
+/reports is intentionally NOT covered here: it reads VoucherSale from
+Postgres, never the router, so it already satisfies THE RULE without a
+dataset conversion — see get_hotspot_reports in app/routers/hotspot.py.
+
+All six hotspot read endpoints are covered as of this file's current state.
 """
 
 import json
@@ -496,3 +496,180 @@ async def test_active_limits_join_computes_remaining_time(fake_redis):
     assert len(result) == 1
     assert result[0].remaining_time == "1h30m"
     assert result[0].remaining_time != "UNLIM"
+
+
+# ---------------------------------------------------------------------------
+# /profiles
+#
+# get_hotspot_profiles returns a bare List[dict] (response_model enforces
+# this in production), so like /users and /active there is no top-level dict
+# to hang a "stale" key off of without changing the response shape from an
+# array to an object. A degraded read instead returns an empty list with no
+# exception. This endpoint joins the "profiles", "active" and "users"
+# datasets to compute per-profile active_users counts.
+# ---------------------------------------------------------------------------
+
+HOTSPOT_PROFILE_KEYS = {
+    "name", "rate-limit", "shared-users", "active_users",
+    "custom_price", "custom_currency",
+}
+
+
+def _device_with_pricing(device_id, profile_pricing=None, default_currency="TZS"):
+    device = _device(device_id)
+    device.voucher_template = {
+        "profile_pricing": profile_pricing or {},
+        "default_currency": default_currency,
+    }
+    return device
+
+
+async def test_profiles_warm_cache_returns_real_values(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "profiles", now, [
+        {"name": "default", "rate-limit": "2M/2M", "shared-users": "1"},
+        {"name": "premium", "rate-limit": "10M/10M", "shared-users": "1"},
+    ])
+    _set_raw(fake_redis, device_id, "active", now, [
+        {"user": "alice"}, {"user": "bob"}, {"user": "carol"},
+    ])
+    _set_raw(fake_redis, device_id, "users", now, [
+        {"name": "alice", "profile": "default"},
+        {"name": "bob", "profile": "premium"},
+        {"name": "carol", "profile": "default"},
+    ])
+
+    device = _device_with_pricing(
+        device_id,
+        profile_pricing={"default": {"price": 1000, "currency": "TZS"}},
+    )
+
+    result = await hotspot.get_hotspot_profiles(
+        device_id, refresh=False, db=_db_returning(device), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 2
+    assert set(result[0].keys()) == HOTSPOT_PROFILE_KEYS
+    default = next(p for p in result if p["name"] == "default")
+    premium = next(p for p in result if p["name"] == "premium")
+    assert default["rate-limit"] == "2M/2M"
+    assert default["shared-users"] == "1"
+    assert default["active_users"] == 2
+    assert default["custom_price"] == 1000
+    assert default["custom_currency"] == "TZS"
+    assert premium["active_users"] == 1
+    assert premium["custom_price"] == 0
+    assert premium["custom_currency"] == "TZS"
+
+
+async def test_profiles_cold_cache_returns_empty_list_not_error(fake_redis):
+    device_id = str(uuid.uuid4())
+
+    result = await hotspot.get_hotspot_profiles(
+        device_id, refresh=False, db=_db_returning(_device_with_pricing(device_id)),
+        actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_profiles_corrupted_rows_not_a_list_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    # "profiles" cached payload has rows as a dict, not a list.
+    _set_raw(fake_redis, device_id, "profiles", now, {"unexpected": "dict"})
+    _set_raw(fake_redis, device_id, "active", now, [])
+    _set_raw(fake_redis, device_id, "users", now, [])
+
+    result = await hotspot.get_hotspot_profiles(
+        device_id, refresh=False, db=_db_returning(_device_with_pricing(device_id)),
+        actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_profiles_corrupted_malformed_row_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    # "profiles" is a list, as required, but one entry is a string instead of
+    # a dict — isinstance(rows, list) alone would not catch this; the
+    # per-row .get() call inside the try block raises AttributeError.
+    _set_raw(fake_redis, device_id, "profiles", now, ["not-a-dict"])
+    _set_raw(fake_redis, device_id, "active", now, [])
+    _set_raw(fake_redis, device_id, "users", now, [])
+
+    result = await hotspot.get_hotspot_profiles(
+        device_id, refresh=False, db=_db_returning(_device_with_pricing(device_id)),
+        actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# /logs
+#
+# get_hotspot_logs returns a bare list (no response_model, but still an
+# array), so the same "no stale key" reasoning applies. Note the dataset
+# name is "log" (singular) — that is what the poller agent writes; this is
+# deliberately double-checked here since a mismatch would silently return
+# empty forever with no error anywhere.
+# ---------------------------------------------------------------------------
+
+async def test_logs_warm_cache_returns_real_values(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "log", now, [
+        {"topics": "hotspot,info", "time": "10:00:00", "message": "user alice (10.0.0.5): logged in"},
+        {"topics": "system,error", "time": "11:00:00", "message": "unrelated system event"},
+    ])
+
+    result = await hotspot.get_hotspot_logs(
+        device_id, db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert len(result) == 1
+    assert set(result[0].keys()) == {"time", "user_info", "message"}
+    assert result[0]["time"] == "10:00:00"
+    assert result[0]["user_info"] == "alice"
+    assert result[0]["message"] == "user alice (10.0.0.5): logged in"
+
+
+async def test_logs_cold_cache_returns_empty_list_not_error(fake_redis):
+    device_id = str(uuid.uuid4())
+
+    result = await hotspot.get_hotspot_logs(
+        device_id, db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_logs_corrupted_rows_not_a_list_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    # "log" cached payload has rows as a dict, not a list.
+    _set_raw(fake_redis, device_id, "log", now, {"unexpected": "dict"})
+
+    result = await hotspot.get_hotspot_logs(
+        device_id, db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
+
+
+async def test_logs_corrupted_malformed_field_returns_empty_list(fake_redis):
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    # "topics" is an int instead of a string — .lower() raises AttributeError.
+    _set_raw(fake_redis, device_id, "log", now, [
+        {"topics": 12345, "time": "10:00:00", "message": "x"},
+    ])
+
+    result = await hotspot.get_hotspot_logs(
+        device_id, db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert result == []
