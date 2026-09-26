@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import Device, User, Site, APIKey, UserRole, VoucherSale, VoucherBatch
 from app.models.core import decrypt_device_secrets
+from app.services import hotspot_cache
 import routeros_api
 from uuid import UUID
 from datetime import datetime
@@ -715,36 +716,20 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    decrypt_device_secrets(device)
 
-    # Try cache first
-    key = cache_key(device_id, "summary")
-    cached = _redis_get(key)
-    if cached:
-        try:
-            return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Failed to deserialize cached summary: {e}")
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported via "stale", not an error.
+    active_sessions, active_fetched_at = hotspot_cache.read_dataset(device_id, "active")
+    total_users, users_fetched_at = hotspot_cache.read_dataset(device_id, "users")
 
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-
-        active_resource = api.get_resource('/ip/hotspot/active')
-        user_resource = api.get_resource('/ip/hotspot/user')
-
-        active_sessions = active_resource.get()
-        total_users = user_resource.get()
-
-        total_bytes_in = sum(int(a.get('bytes-in', 0)) for a in active_sessions)
-        total_bytes_out = sum(int(a.get('bytes-out', 0)) for a in active_sessions)
+        total_bytes_in = sum(int(a.get('bytes-in', 0) or 0) for a in active_sessions)
+        total_bytes_out = sum(int(a.get('bytes-out', 0) or 0) for a in active_sessions)
 
         # Profile Distribution
         profile_dist = {}
@@ -752,21 +737,33 @@ async def get_hotspot_summary(device_id: str, db: AsyncSession = Depends(get_db)
             p = u.get('profile', 'default')
             profile_dist[p] = profile_dist.get(p, 0) + 1
 
-        connection.disconnect()
-
         result = {
             "active_count": len(active_sessions),
             "total_vouchers": len(total_users),
             "total_data_mb": round((total_bytes_in + total_bytes_out) / 1024 / 1024, 2),
             "profile_distribution": [{"name": k, "value": v} for k, v in profile_dist.items()]
         }
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.warning(f"Hotspot summary computation failed for {device_id}: {e}")
+        result = {
+            "active_count": 0,
+            "total_vouchers": 0,
+            "total_data_mb": 0,
+            "profile_distribution": []
+        }
+        active_fetched_at = None
+        users_fetched_at = None
 
-        _redis_setex(key, 15, json.dumps(result))
+    stale = (
+        active_fetched_at is None
+        or users_fetched_at is None
+        or hotspot_cache.age_seconds(active_fetched_at) > 60
+    )
 
-        return result
-    except Exception as e:
-        logger.error(f"Hotspot Summary Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    result["fetched_at"] = active_fetched_at
+    result["stale"] = stale
+
+    return result
 
 @router.get("/{device_id}/system-info")
 async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -776,33 +773,30 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
         query = select(Device).where(Device.id == UUID(device_id))
     else:
         query = select(Device).join(Site).where(Device.id == UUID(device_id), Site.organization_id == actor.organization_id)
-    
+
     res = await db.execute(query)
     device = res.scalars().first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    decrypt_device_secrets(device)
 
-    # Try cache first
-    key = cache_key(device_id, "system-info")
-    cached = _redis_get(key)
-    if cached:
-        try:
-            return json.loads(cached)
-        except Exception as e:
-            logger.warning(f"Failed to deserialize cached system-info: {e}")
+    # THE RULE: this read path never calls the router, not even on a cache
+    # miss. A cold cache is a normal state, reported via "stale", not an error.
+    rows, fetched_at = hotspot_cache.read_dataset(device_id, "system")
 
+    if not rows:
+        return {
+            "cpu_load": None,
+            "free_memory": None,
+            "total_memory": None,
+            "uptime": None,
+            "version": None,
+            "board_name": None,
+            "fetched_at": None,
+            "stale": True,
+        }
+
+    info = rows[0]
     try:
-        port = getattr(device, 'ssh_port', 8728) or 8728
-        connection = get_api_pool(device.ip_address, device.ssh_username or 'admin', device.ssh_password or 'admin', int(port))
-        api = connection.get_api()
-
-        resource = api.get_resource('/system/resource')
-        info = resource.get()[0]
-
-        connection.disconnect()
-
         result = {
             "cpu_load": info.get('cpu-load'),
             "free_memory": int(info.get('free-memory', 0)) / 1024 / 1024,
@@ -811,12 +805,23 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
             "version": info.get('version'),
             "board_name": info.get('board-name')
         }
+    except (TypeError, ValueError, AttributeError) as e:
+        logger.warning(f"Hotspot system-info cache row unparseable for {device_id}: {e}")
+        return {
+            "cpu_load": None,
+            "free_memory": None,
+            "total_memory": None,
+            "uptime": None,
+            "version": None,
+            "board_name": None,
+            "fetched_at": None,
+            "stale": True,
+        }
 
-        _redis_setex(key, 30, json.dumps(result))
-        return result
-    except Exception as e:
-        logger.error(f"Router System Info Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    age = hotspot_cache.age_seconds(fetched_at)
+    result["fetched_at"] = fetched_at
+    result["stale"] = age is None or age > 60
+    return result
 
 @router.post("/{device_id}/profiles")
 async def create_hotspot_profile(device_id: str, profile: HotspotProfile, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
