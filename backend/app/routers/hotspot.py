@@ -1176,6 +1176,7 @@ async def get_voucher_batches(
                 "profile": b.profile,
                 "timeLimit": b.time_limit or '',
                 "date": b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else None,
+                "status": b.status,  # null for legacy rows created before job tracking existed
                 "vouchers": b.vouchers,
                 "data": b.vouchers,  # For backwards compat with frontend handleReprint
             }

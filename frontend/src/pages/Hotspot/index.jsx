@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api';
 import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText, Globe, AlertCircle, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
@@ -6,6 +6,12 @@ import ResponsiveTable from '../../components/ResponsiveTable';
 import ResponsiveModal from '../../components/ResponsiveModal';
 import SalesForecast from '../../components/SalesForecast';
 import { MetricCard, TabButton } from './components';
+
+// Device-scoped so two routers' in-flight generation jobs never clobber
+// each other's localStorage entry.
+const voucherJobStorageKey = (deviceId) => `hotspot_voucher_job_${deviceId}`;
+
+const VOUCHER_JOB_POLL_MS = 3000;
 
 export default function Hotspot() {
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -49,6 +55,12 @@ export default function Hotspot() {
     const [batchForm, setBatchForm] = useState({ qty: 10, prefix: 'user', profile: 'default', time_limit: '1h', data_limit: '', length: 10, random_mode: false, format: 'alphanumeric' });
     const [generatedBatch, setGeneratedBatch] = useState([]);
     const [showPrintView, setShowPrintView] = useState(false);
+    // Background voucher-generation job (Task 5): the batch endpoint now
+    // returns 202 + job_id instead of the vouchers themselves. This tracks
+    // that job's poll state so the operator sees progress, and survives a
+    // page reload / screen lock via the device-scoped localStorage key below.
+    const [voucherJob, setVoucherJob] = useState(null); // { job_id, status, count, created, vouchers }
+    const pollIntervalRef = useRef(null);
 
     // Template State
     const [template, setTemplate] = useState({
@@ -67,6 +79,24 @@ export default function Hotspot() {
         if (selectedDevice) {
             prefetchAll(selectedDevice);
         }
+    }, [selectedDevice]);
+
+    // Resume any in-flight voucher generation job on mount and whenever the
+    // selected device changes. This is what makes it safe for the operator
+    // to leave the Hotspot page, lock their screen, or reload mid-batch --
+    // the job keeps running on the router/worker regardless, and this effect
+    // reconnects the UI to it instead of losing progress.
+    useEffect(() => {
+        if (!selectedDevice) return;
+        const storedJobId = localStorage.getItem(voucherJobStorageKey(selectedDevice));
+        if (storedJobId) {
+            setVoucherJob({ job_id: storedJobId, status: 'running', count: 0, created: 0, vouchers: [] });
+            pollVoucherJob(storedJobId, selectedDevice);
+        } else {
+            stopPolling();
+            setVoucherJob(null);
+        }
+        return () => stopPolling();
     }, [selectedDevice]);
 
     // Fetch data when tab changes (show stale data immediately, refresh silently)
@@ -160,34 +190,38 @@ export default function Hotspot() {
         fetchData();
     };
 
-    const buildBatchHistory = (data) => {
-        // Group vouchers by their comment (Batch-{prefix} | {datetime})
-        // Strips seconds so vouchers created within the same minute group together
-        const groupMap = new Map();
-        data.filter(u => u.comment).forEach(u => {
-            const c = u.comment;
-            const key = c.replace(/(\d{2}:\d{2}):\d{2}$/, '$1');
-            if (!groupMap.has(key)) groupMap.set(key, []);
-            groupMap.get(key).push(u);
-        });
-
-        return [...groupMap.entries()].map(([key, batchUsers]) => {
-            const dateMatch = key.match(/\|\s*(\d{4}-\d{2}-\d{2}[\sT]+\d{2}:\d{2})/);
-            const prefixMatch = key.match(/^Batch-(.+?)\s*\|/i);
-            const displayName = prefixMatch ? prefixMatch[1].trim() : key.split('|')[0].trim();
-            const firstUser = batchUsers[0];
+    // Batch history used to be derived entirely by grouping the /users list
+    // by comment -- which meant it went empty whenever the voucher cache
+    // was empty, even though the batches themselves still existed. It now
+    // renders straight from GET /{device_id}/batches (the persisted
+    // VoucherBatch rows), which exists independently of that cache.
+    //
+    // "used" still isn't tracked on VoucherBatch, so it's cross-referenced
+    // here against whatever the router's /users list currently reports for
+    // each voucher's username -- best-effort, and 0 if that list hasn't
+    // loaded, but the batch itself (and its reprint/delete actions) no
+    // longer depends on it being populated.
+    const buildBatchHistoryFromBatches = (batchesRaw, usersList) => {
+        const usageByName = new Map((usersList || []).filter(u => u.name).map(u => [u.name, u]));
+        return (batchesRaw || []).map(b => {
+            const vouchers = b.vouchers || b.data || [];
+            const used = vouchers.filter(v => {
+                const u = usageByName.get(v.username);
+                return u && u.uptime && u.uptime !== '0s';
+            }).length;
             return {
-                id: key,
-                name: key,
-                displayName,
-                count: batchUsers.length,
-                used: batchUsers.filter(u => u.uptime && u.uptime !== '0s').length,
-                profile: firstUser.profile,
-                timeLimit: firstUser['limit-uptime'] || firstUser.limit_uptime || '',
-                date: dateMatch ? dateMatch[1] : null,
-                data: batchUsers,
+                id: b.id,
+                name: b.name,
+                displayName: b.displayName,
+                count: b.count,
+                used,
+                profile: b.profile,
+                timeLimit: b.timeLimit || '',
+                date: b.date,
+                status: b.status,
+                data: vouchers,
             };
-        }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        });
     };
 
     // Fire all tab requests in parallel as soon as a device is selected.
@@ -217,25 +251,24 @@ export default function Hotspot() {
                 setHealthStatus('offline');
             }
             if (systemRes.status === 'fulfilled') setSystemInfo(systemRes.value.data);
-            if (usersRes.status === 'fulfilled') {
-                setUsers(usersRes.value.data);
-                setBatchHistory(buildBatchHistory(usersRes.value.data));
-            }
+            if (usersRes.status === 'fulfilled') setUsers(usersRes.value.data);
             if (activeRes.status === 'fulfilled') setActiveSessions(activeRes.value.data);
             if (profilesRes.status === 'fulfilled') setProfiles(profilesRes.value.data);
             if (templateRes.status === 'fulfilled' && templateRes.value.data) setTemplate(templateRes.value.data);
 
             // Phase 2: fetch heavier tabs in background so they are ready when clicked
-            const [logsRes, reportsRes, allUsersRes] = await Promise.allSettled([
+            const [logsRes, reportsRes, allUsersRes, batchesRes] = await Promise.allSettled([
                 api.get(`/hotspot/${deviceId}/logs`),
                 api.get(`/hotspot/${deviceId}/reports`),
                 api.get(`/hotspot/${deviceId}/users?limit=0`), // full list for batch history accuracy
+                api.get(`/hotspot/${deviceId}/batches`),
             ]);
             if (logsRes.status === 'fulfilled') setLogs(logsRes.value.data);
             if (reportsRes.status === 'fulfilled') setReportData(reportsRes.value.data);
-            if (allUsersRes.status === 'fulfilled') {
-                setUsers(allUsersRes.value.data);
-                setBatchHistory(buildBatchHistory(allUsersRes.value.data));
+            const fullUsersList = allUsersRes.status === 'fulfilled' ? allUsersRes.value.data : users;
+            if (allUsersRes.status === 'fulfilled') setUsers(fullUsersList);
+            if (batchesRes.status === 'fulfilled') {
+                setBatchHistory(buildBatchHistoryFromBatches(batchesRes.value.data, fullUsersList));
             }
 
             setDataFreshness({
@@ -310,9 +343,12 @@ export default function Hotspot() {
                 const res = await api.get(`/hotspot/${selectedDevice}/users?limit=200`);
                 setUsers(res.data);
             } else if (activeTab === 'history') {
-                const res = await api.get(`/hotspot/${selectedDevice}/users?limit=0`);
-                setUsers(res.data);
-                setBatchHistory(buildBatchHistory(res.data));
+                const [usersRes, batchesRes] = await Promise.all([
+                    api.get(`/hotspot/${selectedDevice}/users?limit=0`),
+                    api.get(`/hotspot/${selectedDevice}/batches`),
+                ]);
+                setUsers(usersRes.data);
+                setBatchHistory(buildBatchHistoryFromBatches(batchesRes.data, usersRes.data));
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active?limit=200`);
                 setActiveSessions(res.data);
@@ -353,8 +389,16 @@ export default function Hotspot() {
 
     const handleReprint = (batch) => {
         const timeLimit = batch.timeLimit || batch.data[0]?.['limit-uptime'] || batch.data[0]?.limit_uptime || batchForm.time_limit || '';
-        setGeneratedBatch(batch.data.map(u => ({ username: u.name, password: u.password })));
+        // batch.data items come from GET /{device}/batches now, shaped like
+        // VoucherBatch.vouchers ({username, password}) rather than the old
+        // router-user shape ({name, password, ...}) -- accept either so
+        // reprint keeps working regardless of which produced this batch.
+        setGeneratedBatch(batch.data.map(u => ({ username: u.username || u.name, password: u.password })));
         setBatchForm({ ...batchForm, profile: batch.profile, time_limit: timeLimit });
+        // This print view is unrelated to any generation job, so clear any
+        // leftover job state that could otherwise attach a stale "N / count"
+        // note (below) to a batch it doesn't belong to.
+        setVoucherJob(null);
         setShowPrintView(true);
     };
 
@@ -413,13 +457,53 @@ export default function Hotspot() {
         }
     };
 
+    const stopPolling = () => {
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+        }
+    };
+
+    // Polls GET /hotspot/jobs/{job_id} until the job reaches a terminal
+    // state (complete or failed). On either terminal state the job's own
+    // vouchers -- not just "complete" ones -- are pushed into
+    // generatedBatch so the existing print view renders them unchanged: a
+    // failed job's partial vouchers are real, sellable vouchers already
+    // created on the router, and the operator must be able to print them.
+    const pollVoucherJob = (jobId, deviceId) => {
+        stopPolling();
+        const tick = async () => {
+            try {
+                const res = await api.get(`/hotspot/jobs/${jobId}`);
+                const job = res.data;
+                setVoucherJob(job);
+                if (job.status === 'complete' || job.status === 'failed') {
+                    stopPolling();
+                    setGeneratedBatch(job.vouchers || []);
+                    setShowPrintView(true);
+                    // Terminal state shown to the operator -- forget the job so a
+                    // future mount doesn't try to resume something already done.
+                    localStorage.removeItem(voucherJobStorageKey(deviceId));
+                }
+            } catch (e) {
+                console.error('Failed to poll voucher job:', e);
+            }
+        };
+        tick();
+        pollIntervalRef.current = setInterval(tick, VOUCHER_JOB_POLL_MS);
+    };
+
     const handleGenerate = async (e) => {
         e.preventDefault();
         setLoading(true);
         try {
             const res = await api.post(`/hotspot/${selectedDevice}/users/batch`, batchForm);
-            setGeneratedBatch(res.data);
-            setShowPrintView(true);
+            const { job_id, status, count } = res.data;
+            localStorage.setItem(voucherJobStorageKey(selectedDevice), job_id);
+            setVoucherJob({ job_id, status, count, created: 0, vouchers: [] });
+            setGeneratedBatch([]);
+            setShowPrintView(false);
+            pollVoucherJob(job_id, selectedDevice);
         } catch (e) {
             alert('Generation failed: ' + (e.response?.data?.detail || e.message));
         } finally {
@@ -702,6 +786,17 @@ export default function Hotspot() {
                                     <div>
                                         <h3 className="font-black uppercase tracking-tight text-sm sm:text-base">Print Preview</h3>
                                         <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Ready to export {generatedBatch.length} vouchers</p>
+                                        {/* Honest short-batch / failed-job disclosure (Task 5): a job can
+                                            legitimately finish "complete" with fewer vouchers than requested
+                                            (the router's collision budget can run out), and a "failed" job's
+                                            partial vouchers are still real and sellable. Only shown when they
+                                            differ -- a full/normal batch (and reprints, which clear voucherJob)
+                                            render exactly as before. */}
+                                        {voucherJob && (voucherJob.status === 'complete' || voucherJob.status === 'failed') && voucherJob.count > generatedBatch.length && (
+                                            <p className="text-amber-200 text-[10px] sm:text-xs font-black uppercase tracking-wide mt-0.5">
+                                                {generatedBatch.length} / {voucherJob.count} {voucherJob.status === 'failed' ? 'created before job failed' : 'complete'}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex gap-3 w-full sm:w-auto">
@@ -1066,6 +1161,15 @@ export default function Hotspot() {
                                                     <div>
                                                         <div className="text-[9px] font-black uppercase text-gray-400 tracking-widest mb-0.5">Batch</div>
                                                         <div className="text-base font-black text-gray-900 dark:text-white tracking-tight truncate max-w-[160px]">{b.displayName}</div>
+                                                        {/* Legacy rows have status: null (21 in production) and simply
+                                                            render without this badge, same as before this row existed. */}
+                                                        {b.status && (
+                                                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-wide ${
+                                                                b.status === 'complete' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' :
+                                                                b.status === 'failed' ? 'bg-red-50 dark:bg-red-900/20 text-red-600' :
+                                                                'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                                                            }`}>{b.status}</span>
+                                                        )}
                                                     </div>
                                                     <div className="text-right shrink-0">
                                                         <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-wide block mb-1">{b.profile}</span>
@@ -1685,9 +1789,24 @@ export default function Hotspot() {
                                             </div>
                                         </div>
 
+                                        {voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running') && (
+                                            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 sm:p-5">
+                                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2">
+                                                    <span>Generating vouchers…</span>
+                                                    <span>{voucherJob.created ?? 0} / {voucherJob.count}</span>
+                                                </div>
+                                                <div className="w-full bg-blue-100 dark:bg-blue-900/40 rounded-full h-2">
+                                                    <div
+                                                        className="h-2 rounded-full bg-blue-600 transition-all"
+                                                        style={{ width: `${voucherJob.count > 0 ? Math.min(100, Math.round(((voucherJob.created ?? 0) / voucherJob.count) * 100)) : 0}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="pt-4 sm:pt-6">
-                                            <button type="submit" className="w-full py-4 sm:py-5 bg-blue-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-blue-700 shadow-2xl shadow-blue-100 transition-all active:scale-[0.98]" disabled={loading}>
-                                                {loading ? 'Processing...' : 'Generate Hotspot Vouchers'}
+                                            <button type="submit" className="w-full py-4 sm:py-5 bg-blue-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-blue-700 shadow-2xl shadow-blue-100 transition-all active:scale-[0.98] disabled:opacity-60" disabled={loading || (voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running'))}>
+                                                {loading ? 'Processing...' : (voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running')) ? 'Generating…' : 'Generate Hotspot Vouchers'}
                                             </button>
                                         </div>
                                     </form>
