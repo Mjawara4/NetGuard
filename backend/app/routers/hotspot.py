@@ -36,8 +36,16 @@ router = APIRouter()
 # separate containers/deployments, so this is a single named constant with
 # this comment as the pointer to its source of truth instead of wiring an
 # env var or shared config module across that boundary for one value. If
-# DEEP_INSPECT_INTERVAL is ever raised, raise this too (keep >= 2x it).
-HOTSPOT_STALE_THRESHOLD_SECONDS = 60
+# DEEP_INSPECT_INTERVAL is ever raised, raise this too (keep >= 3x it).
+#
+# 90, not 60 (2x): during a voucher-write burst, each write forces a
+# ~14.5s blocked refetch of the "users" dataset on the agent's deep-inspect
+# loop; with several hotspot devices sharing that sequential poll loop, one
+# iteration can approach the old 60s threshold on perfectly healthy data,
+# flapping this flag (and the operator-facing health badge) to stale/red
+# with nothing actually wrong. 90s (3x DEEP_INSPECT_INTERVAL) gives enough
+# margin to absorb that without masking a genuine outage.
+HOTSPOT_STALE_THRESHOLD_SECONDS = 90
 
 # Redis client for caching hotspot reads
 try:
@@ -783,8 +791,11 @@ async def get_router_system_info(device_id: str, db: AsyncSession = Depends(get_
     try:
         result = {
             "cpu_load": info.get('cpu-load'),
-            "free_memory": int(info.get('free-memory', 0)) / 1024 / 1024,
-            "total_memory": int(info.get('total-memory', 0)) / 1024 / 1024,
+            # `or 0` guards a raw row with free-memory/total-memory set to ''
+            # (empty string) -- same guard as the bytes-in/-out conversions
+            # elsewhere in this file.
+            "free_memory": int(info.get('free-memory', 0) or 0) / 1024 / 1024,
+            "total_memory": int(info.get('total-memory', 0) or 0) / 1024 / 1024,
             "uptime": info.get('uptime'),
             "version": info.get('version'),
             "board_name": info.get('board-name')

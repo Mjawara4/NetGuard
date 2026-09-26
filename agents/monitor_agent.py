@@ -171,7 +171,7 @@ def report_metrics_batch(metrics_list):
         logger.error(f"Failed to report batch metrics: {e}")
         raise
 
-def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None, last_refreshed=None):
+def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None, last_refreshed=None, last_failed=None):
     """
     Connects to MikroTik Router via API and fetches resources.
     Returns a list of metric dicts.
@@ -319,10 +319,13 @@ def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None,
                 ("log", '/log'),
             ):
                 interval = DATASET_INTERVALS[dataset]
-                # One dataset failing must not abort the metric collection
-                # that the rest of this function performed successfully;
-                # maybe_refresh_dataset only logs on failure.
-                maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed, device_ip=device_ip)
+                # One dataset failing (fetch, cache write, or an unexpected
+                # error accounting for the result) must not abort the metric
+                # collection that the rest of this function already
+                # performed; maybe_refresh_dataset never raises -- it always
+                # returns bool and only logs on failure (see S3).
+                maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed,
+                                       device_ip=device_ip, last_failed=last_failed)
 
         return metrics
 
@@ -389,6 +392,12 @@ DATASET_INTERVALS = {
     "log": 30,
 }
 
+# Bounds router load during an outage (Redis down, router hung/unreachable,
+# etc.): a dataset whose fetch or cache write keeps failing is retried at
+# most once every FAILURE_BACKOFF_SECONDS, instead of on every deep-inspect
+# pass (DEEP_INSPECT_INTERVAL, ~30s) for as long as the failure persists.
+FAILURE_BACKOFF_SECONDS = 120
+
 
 def should_refresh(last_refreshed, device_id, dataset, interval, now=None):
     """True if `dataset` for `device_id` is due for a refresh, by wall-clock
@@ -420,42 +429,81 @@ def record_refreshed(last_refreshed, device_id, dataset, now=None):
     last_refreshed[(device_id, dataset)] = now
 
 
-def maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed, device_ip=None, now=None):
+def maybe_refresh_dataset(api, device_id, dataset, path, interval, last_refreshed,
+                           device_ip=None, now=None, last_failed=None):
     """Fetch and cache one hotspot dataset if it is due, then record success.
 
-    "Due" is: due by interval (should_refresh), OR the cache key is simply
-    absent (hotspot_cache.exists returns False -- covers invalidation, a
-    Redis flush, or eviction; see C1/C3). The timestamp in `last_refreshed` is
-    only recorded when BOTH the router fetch and the cache write succeed, so
-    a failed attempt (timeout, Redis error) leaves the slot open for an
-    immediate retry on the next pass instead of burning the whole interval
-    (C2). Returns True if a refresh was attempted and succeeded, False
-    otherwise (not due, fetch failed, or cache write failed).
+    "Due" is: due by interval (should_refresh), OR the cache key is
+    definitively absent (hotspot_cache.exists returns False -- covers
+    invalidation, a Redis flush, or eviction; see C1/C3). exists() is a
+    tri-state (True/False/None): when it returns None (Redis itself could not
+    answer), that is NOT treated as "absent" -- we cannot infer the key is
+    missing if we cannot ask Redis, so an unknown result falls back to the
+    interval alone (BLOCKER 1 Part A). Forcing a refresh on "unknown" was the
+    root cause of a Redis outage turning into a router-hammering fetch on
+    every single pass.
 
-    No separate failure backoff is added here: this function is only called
-    from inside a per-device deep inspect that is itself already gated to
-    happen at most once per DEEP_INSPECT_INTERVAL (~30s) per device, which is
-    backoff enough for a persistently failing dataset. A forced pass (a
-    received pubsub trigger) can shorten that gap, but wait_for_trigger only
-    ever consumes one queued message per call, so a burst of writes collapses
-    to at most one extra forced pass, not a spin.
+    The timestamp in `last_refreshed` is only recorded when BOTH the router
+    fetch and the cache write succeed, so a failed attempt (timeout, Redis
+    error) leaves the slot open for an immediate retry on the next pass
+    instead of burning the whole interval (C2).
+
+    Failure backoff (BLOCKER 1 Part B): `last_failed` tracks, per
+    (device_id, dataset), the wall-clock time of the last failed fetch or
+    cache write. While now - that timestamp is under FAILURE_BACKOFF_SECONDS,
+    this dataset is skipped entirely -- no fetch is attempted -- bounding
+    router load during a fetch that keeps failing every pass. The record is
+    cleared on the next success so recovery is immediate rather than delayed
+    by a stale backoff. `last_failed` defaults to a fresh dict per call (no
+    persistent backoff) only for callers that do not care to track it across
+    passes; production code (run_agent) always passes a dict that persists
+    for the life of the process.
+
+    The router fetch, the cache write, and the accounting that follows
+    (len(rows) for the log line) all run inside one try/except: an
+    unexpected exception anywhere in that sequence must be treated as a
+    failed refresh, not escape to the caller -- see get_mikrotik_stats, whose
+    outer handler would otherwise misreport a healthy device as
+    api_reachable=0 and evict its connection (S3).
+
+    Returns True if a refresh was attempted and succeeded, False otherwise
+    (not due, backed off, fetch failed, or cache write failed).
     """
-    due = should_refresh(last_refreshed, device_id, dataset, interval, now=now) or not hotspot_cache.exists(device_id, dataset)
+    if now is None:
+        now = time.time()
+    if last_failed is None:
+        last_failed = {}
+
+    key = (device_id, dataset)
+    last_failure_at = last_failed.get(key)
+    if last_failure_at is not None and (now - last_failure_at) < FAILURE_BACKOFF_SECONDS:
+        return False
+
+    exists_result = hotspot_cache.exists(device_id, dataset)
+    due = should_refresh(last_refreshed, device_id, dataset, interval, now=now) or exists_result is False
     if not due:
         return False
 
     try:
         rows = api.get_resource(path).get()
+        write_ok = hotspot_cache.write_dataset(device_id, dataset, rows)
+        row_count = len(rows)
     except Exception as e_ds:
-        logger.warning(f"Failed to fetch {dataset} for {device_ip or device_id}: {e_ds}")
+        logger.warning(f"Failed to refresh {dataset} for {device_ip or device_id}: {e_ds}")
+        last_failed[key] = now
         return False
 
-    if not hotspot_cache.write_dataset(device_id, dataset, rows):
-        logger.warning(f"Failed to cache write {dataset} for {device_ip or device_id}; will retry next pass")
+    if not write_ok:
+        logger.warning(
+            f"Failed to cache write {dataset} for {device_ip or device_id}; "
+            f"backing off {FAILURE_BACKOFF_SECONDS}s"
+        )
+        last_failed[key] = now
         return False
 
+    last_failed.pop(key, None)
     record_refreshed(last_refreshed, device_id, dataset, now=now)
-    logger.info(f"Cached {dataset} for {device_ip or device_id}: {len(rows)} rows")
+    logger.info(f"Cached {dataset} for {device_ip or device_id}: {row_count} rows")
     return True
 
 
@@ -473,6 +521,10 @@ def run_agent():
     logger.info("Starting Monitor Agent with MikroTik Support")
     device_last_polled = {}
     dataset_last_refreshed = {}
+    # Per-(device_id, dataset) failure backoff state -- see
+    # FAILURE_BACKOFF_SECONDS and maybe_refresh_dataset (BLOCKER 1 Part B).
+    # Persists for the life of the process, same as dataset_last_refreshed.
+    dataset_last_failed = {}
     # Set by wait_for_trigger's return value; forces the *next* pass's deep
     # inspect to bypass DEEP_INSPECT_INTERVAL (see C1 Part B). Consumed once
     # per pass -- it is reassigned from wait_for_trigger at the bottom of
@@ -533,7 +585,9 @@ def run_agent():
                             port = 8728 if db_port == 22 else db_port
 
                             logger.info(f"Deep inspect {ip} (user={user}, port={port})")
-                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id, last_refreshed=dataset_last_refreshed)
+                            mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id,
+                                                             last_refreshed=dataset_last_refreshed,
+                                                             last_failed=dataset_last_failed)
 
                             for m in mt_metrics:
                                 batch.append(build_metric_payload(

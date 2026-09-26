@@ -73,16 +73,32 @@ def write_dataset(device_id, dataset, rows):
         return False
 
 
-def exists(device_id, dataset) -> bool:
+def exists(device_id, dataset):
     """Whether `dataset`'s cache key is currently present in Redis.
 
     Used as the correctness floor for refresh decisions: a wall-clock
     interval alone cannot tell the difference between "not due yet" and "the
-    key was deleted (backend invalidation, Redis flush, eviction)". Returns
-    False on any Redis error, same as write_dataset -- never raises.
+    key was deleted (backend invalidation, Redis flush, eviction)".
+
+    Returns a TRI-STATE, deliberately not a plain bool:
+      - True  -- key present (Redis answered).
+      - False -- key definitively absent (Redis answered; it is genuinely
+        gone).
+      - None  -- unknown, because Redis raised.
+
+    Do NOT collapse this back to a bool. A prior version returned False on a
+    Redis error, identically to "key absent" -- which made a Redis outage
+    indistinguishable from a routine cache miss. Callers (see
+    maybe_refresh_dataset in monitor_agent.py) treat that as "the dataset is
+    due", so during an outage every pass looked due, forcing the ~3.6 MB
+    voucher-list fetch on every single deep-inspect pass instead of once per
+    interval -- a 60x router-load amplification. If Redis cannot answer, we
+    cannot know the key is missing, so assuming it is missing is exactly the
+    wrong inference. Callers must force a refresh only on a confirmed False,
+    and fall back to the wall-clock interval alone when this returns None.
     """
     try:
         return bool(_client().exists(cache_key(device_id, dataset)))
     except Exception as e:
         logger.warning(f"Hotspot cache exists check failed for {device_id}/{dataset}: {e}")
-        return False
+        return None

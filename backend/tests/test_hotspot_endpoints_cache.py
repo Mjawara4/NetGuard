@@ -251,6 +251,42 @@ async def test_system_info_corrupted_rows_not_a_list_returns_200_and_stale(fake_
     assert result["fetched_at"] is None
 
 
+async def test_system_info_empty_string_memory_returns_200_not_raising(fake_redis):
+    """S2: a raw row with free-memory/total-memory set to '' (empty string,
+    as RouterOS sometimes reports transiently) must degrade that field to 0
+    via the `or 0` guard, not raise -- and unlike the fully-corrupted cases
+    above, the rest of the row (cpu_load, uptime, version, board_name) stays
+    intact since the conversion no longer throws partway through.
+    """
+    device_id = str(uuid.uuid4())
+    now = time.time()
+    _set_raw(fake_redis, device_id, "system", now, [{
+        "cpu-load": "5",
+        "free-memory": "",
+        "total-memory": str(128 * 1024 * 1024),
+        "uptime": "1d2h3m4s",
+        "version": "7.1",
+        "board-name": "hAP ac2",
+    }])
+
+    result = await hotspot.get_router_system_info(
+        device_id, db=_db_returning(_device(device_id)), actor=_unscoped_actor()
+    )
+
+    assert set(result.keys()) == {
+        "cpu_load", "free_memory", "total_memory", "uptime", "version",
+        "board_name", "fetched_at", "stale",
+    }
+    assert result["free_memory"] == 0.0
+    assert result["total_memory"] == 128.0
+    assert result["cpu_load"] == "5"
+    assert result["uptime"] == "1d2h3m4s"
+    assert result["version"] == "7.1"
+    assert result["board_name"] == "hAP ac2"
+    assert result["fetched_at"] == now
+    assert result["stale"] is False
+
+
 async def test_system_info_corrupted_non_numeric_field_returns_200_and_stale(fake_redis):
     device_id = str(uuid.uuid4())
     now = time.time()

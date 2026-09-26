@@ -309,20 +309,16 @@ export default function Hotspot() {
             } else if (activeTab === 'users') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users?limit=200`);
                 setUsers(res.data);
-                setHealthStatus('online');
             } else if (activeTab === 'history') {
                 const res = await api.get(`/hotspot/${selectedDevice}/users?limit=0`);
                 setUsers(res.data);
                 setBatchHistory(buildBatchHistory(res.data));
-                setHealthStatus('online');
             } else if (activeTab === 'active') {
                 const res = await api.get(`/hotspot/${selectedDevice}/active?limit=200`);
                 setActiveSessions(res.data);
-                setHealthStatus('online');
             } else if (activeTab === 'logs') {
                 const res = await api.get(`/hotspot/${selectedDevice}/logs`);
                 setLogs(res.data);
-                setHealthStatus('online');
             } else if (activeTab === 'reports') {
                 const params = new URLSearchParams();
                 if (reportPeriod) params.append('period', reportPeriod);
@@ -334,7 +330,6 @@ export default function Hotspot() {
                 ]);
                 setReportData(reportRes.data);
                 if (templateRes.data) setTemplate(templateRes.data);
-                setHealthStatus('online');
             } else if (activeTab === 'profiles') {
                 const [profilesRes, templateRes] = await Promise.all([
                     api.get(`/hotspot/${selectedDevice}/profiles`),
@@ -342,7 +337,6 @@ export default function Hotspot() {
                 ]);
                 setProfiles(profilesRes.data);
                 if (templateRes.data) setTemplate(templateRes.data);
-                setHealthStatus('online');
             } else if (activeTab === 'templates') {
                 await fetchTemplate(selectedDevice);
             }

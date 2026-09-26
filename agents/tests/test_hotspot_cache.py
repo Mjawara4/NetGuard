@@ -108,14 +108,17 @@ def test_exists_false_when_key_absent(fake_redis):
     assert hotspot_cache.exists("dev-1", "users") is False
 
 
-def test_exists_false_on_redis_error(monkeypatch):
+def test_exists_returns_none_on_redis_error(monkeypatch):
+    # BLOCKER 1 Part A: exists() is a tri-state. A Redis error must report
+    # "unknown" (None), NOT "absent" (False) -- collapsing those two was the
+    # root cause of the cache-hammering defect (see exists()'s docstring).
     class Boom:
         def exists(self, *a, **k):
             raise RuntimeError("redis down")
 
     monkeypatch.setattr(hotspot_cache, "_client", lambda: Boom())
     # Must never raise, same contract as write_dataset.
-    assert hotspot_cache.exists("dev-1", "users") is False
+    assert hotspot_cache.exists("dev-1", "users") is None
 
 
 def test_exists_false_after_simulated_redis_flush(fake_redis):
@@ -257,8 +260,11 @@ def test_maybe_refresh_dataset_does_not_record_on_write_failure(monkeypatch):
 
 
 def test_maybe_refresh_dataset_refreshes_when_cache_key_absent_even_if_not_due(fake_redis):
-    # C1/C3: even though the interval has not elapsed, an absent cache key
-    # (invalidation, or a simulated Redis flush) must force a refresh.
+    # C1/C3, and BLOCKER 1 Part A's "definitively False" half: even though the
+    # interval has not elapsed, a cache key confirmed absent (invalidation, or
+    # a simulated Redis flush -- Redis DID answer, and said "no key") must
+    # force a refresh. Contrast with the "unknown" (None) case below, which
+    # must NOT force a refresh.
     import monitor_agent
     last = {("dev-1", "users"): 999.0}  # "just refreshed" a moment ago
     api = _FakeApi(_FakeResource(rows=[{"name": "alice"}]))
@@ -279,3 +285,160 @@ def test_maybe_refresh_dataset_skips_when_due_and_key_present(fake_redis):
     )
     assert ok is False
     assert last[("dev-1", "users")] == 999.0
+
+
+# --- BLOCKER 1 Part A: exists() tri-state must not force on "unknown" -----
+
+def test_maybe_refresh_dataset_does_not_force_refresh_when_exists_is_unknown(monkeypatch):
+    """BLOCKER 1 Part A: when hotspot_cache.exists() returns None (Redis
+    itself errored -- "unknown", not "absent"), a not-yet-due dataset must
+    NOT be force-refreshed. Only a confirmed False (genuinely absent) may
+    force a refresh; treating "unknown" the same as "absent" is exactly the
+    cache-hammering defect this fix removes.
+    """
+    import monitor_agent
+
+    monkeypatch.setattr(hotspot_cache, "exists", lambda *a, **k: None)
+    last = {("dev-1", "users"): 999.0}  # refreshed a moment ago; interval not elapsed
+    fetch_calls = {"n": 0}
+
+    class _CountingResource:
+        def get(self):
+            fetch_calls["n"] += 1
+            return [{"name": "alice"}]
+
+    api = _FakeApi(_CountingResource())
+    ok = monitor_agent.maybe_refresh_dataset(
+        api, "dev-1", "users", "/ip/hotspot/user", 1800, last, now=1000.0
+    )
+    assert ok is False
+    assert fetch_calls["n"] == 0
+    assert last[("dev-1", "users")] == 999.0
+
+
+# --- BLOCKER 1 Part B: failure backoff -------------------------------------
+
+def test_maybe_refresh_dataset_backs_off_after_failed_fetch_then_retries(fake_redis):
+    """BLOCKER 1 Part B: a failed router fetch starts a
+    FAILURE_BACKOFF_SECONDS-long backoff for that (device_id, dataset) pair.
+    While backed off, the dataset is skipped even if otherwise due; once the
+    window elapses, it is retried and a success clears the failure record.
+    """
+    import monitor_agent
+
+    last = {}
+    last_failed = {}
+    fail_api = _FakeApi(_FakeResource(error=TimeoutError("router timed out")))
+
+    # First attempt fails and starts the backoff.
+    ok = monitor_agent.maybe_refresh_dataset(
+        fail_api, "dev-1", "users", "/ip/hotspot/user", 30, last,
+        last_failed=last_failed, now=1000.0,
+    )
+    assert ok is False
+    assert last_failed[("dev-1", "users")] == 1000.0
+
+    # 30s later: interval (30) would otherwise make this "due", but the 120s
+    # backoff window has not elapsed -- must be skipped without even trying.
+    success_api = _FakeApi(_FakeResource(rows=[{"name": "alice"}]))
+    ok = monitor_agent.maybe_refresh_dataset(
+        success_api, "dev-1", "users", "/ip/hotspot/user", 30, last,
+        last_failed=last_failed, now=1030.0,
+    )
+    assert ok is False
+    assert ("dev-1", "users") not in last
+
+    # Past the 120s backoff window: retried, and succeeds.
+    ok = monitor_agent.maybe_refresh_dataset(
+        success_api, "dev-1", "users", "/ip/hotspot/user", 30, last,
+        last_failed=last_failed, now=1121.0,
+    )
+    assert ok is True
+    assert last[("dev-1", "users")] == 1121.0
+    # Success clears the failure record so recovery is immediate, not delayed
+    # by a stale backoff.
+    assert ("dev-1", "users") not in last_failed
+
+
+def test_maybe_refresh_dataset_backs_off_after_failed_write_too(monkeypatch):
+    """BLOCKER 1 Part B: a failed cache write (not just a failed fetch) also
+    starts the backoff -- both failure modes named in the spec are covered.
+    """
+    import monitor_agent
+
+    last = {}
+    last_failed = {}
+    api = _FakeApi(_FakeResource(rows=[{"name": "alice"}]))
+    monkeypatch.setattr(hotspot_cache, "exists", lambda *a, **k: True)
+    monkeypatch.setattr(hotspot_cache, "write_dataset", lambda *a, **k: False)
+
+    ok = monitor_agent.maybe_refresh_dataset(
+        api, "dev-1", "users", "/ip/hotspot/user", 30, last,
+        last_failed=last_failed, now=1000.0,
+    )
+    assert ok is False
+    assert last_failed[("dev-1", "users")] == 1000.0
+
+    # Still backed off shortly after, even though it would otherwise be due.
+    ok = monitor_agent.maybe_refresh_dataset(
+        api, "dev-1", "users", "/ip/hotspot/user", 30, last,
+        last_failed=last_failed, now=1010.0,
+    )
+    assert ok is False
+
+
+# --- BLOCKER 1 Parts A+B together: the hammering regression test ----------
+
+def test_regression_redis_outage_does_not_hammer_router_every_pass(monkeypatch):
+    """Regression test for BLOCKER 1 (the critical finding): simulates Redis
+    erroring on BOTH exists() and write_dataset() -- a Redis outage -- across
+    many consecutive deep-inspect passes, and asserts the router fetch is
+    attempted at most once per FAILURE_BACKOFF_SECONDS window, never on every
+    pass.
+
+    Before this fix: exists() returning False on error made every pass look
+    "due" (Part A bug), and a failing write was retried every pass with no
+    backoff (Part B gap) -- together, a 3.6 MB router fetch on every single
+    ~30s deep-inspect pass for the duration of the outage.
+    """
+    import monitor_agent
+
+    # Redis is down for both operations this function touches.
+    monkeypatch.setattr(hotspot_cache, "exists", lambda *a, **k: None)
+    monkeypatch.setattr(hotspot_cache, "write_dataset", lambda *a, **k: False)
+
+    fetch_calls = {"n": 0}
+
+    class _CountingResource:
+        def get(self):
+            fetch_calls["n"] += 1
+            return [{"name": "alice"}]
+
+    class _CountingApi:
+        def get_resource(self, path):
+            return _CountingResource()
+
+    last_refreshed = {}
+    last_failed = {}
+    api = _CountingApi()
+
+    # 20 simulated passes at the DEEP_INSPECT_INTERVAL cadence (30s), i.e.
+    # 570s (9.5 minutes) of continuous Redis outage.
+    num_passes = 20
+    pass_interval = 30
+    for i in range(num_passes):
+        now = 1000.0 + i * pass_interval
+        monitor_agent.maybe_refresh_dataset(
+            api, "dev-1", "users", "/ip/hotspot/user", pass_interval,
+            last_refreshed, last_failed=last_failed, now=now,
+        )
+
+    # should_refresh is always True here (write never succeeds, so
+    # record_refreshed is never called) -- without the backoff this would be
+    # one router fetch per pass, i.e. num_passes (20). With a 120s backoff
+    # over ~570s elapsed, only a handful of attempts should occur.
+    elapsed = (num_passes - 1) * pass_interval
+    max_expected_attempts = elapsed // monitor_agent.FAILURE_BACKOFF_SECONDS + 1
+    assert fetch_calls["n"] >= 1
+    assert fetch_calls["n"] <= max_expected_attempts
+    assert fetch_calls["n"] < num_passes  # explicitly: NOT one fetch per pass
