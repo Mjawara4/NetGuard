@@ -64,6 +64,22 @@ describe('contrast', () => {
         }
     });
 
+    // Task 3 amendment. signal-400 has no dark-mode text use: it clears
+    // 4.5:1 on the page ground (ink-900) but not on a card's ground
+    // (ink-800), so a link inside a card would pass or fail depending on
+    // which surface it happened to sit on. signal-300 is the dark-mode
+    // accent-text token instead, chosen as the least-light shade that
+    // clears both dark grounds, so there is one rule for dark-mode accent
+    // text rather than a "which background am I on" judgment call.
+    it('signal-300 is the dark-mode accent-text token: it clears 4.5:1 on both dark grounds', () => {
+        expect(contrast(colors.signal[300], colors.ink[800])).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(colors.signal[300], colors.ink[900])).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('signal-300 does not meet 4.5:1 on a light ground, so it must stay a dark-mode-only token', () => {
+        expect(contrast(colors.signal[300], colors.ink[50])).toBeLessThan(4.5);
+    });
+
     it('up and down differ in lightness, not hue alone', () => {
         // Colour-blind safety: the spec requires a lightness difference.
         const delta = Math.abs(luminance(colors.up) - luminance(colors.down));

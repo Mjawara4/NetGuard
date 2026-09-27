@@ -55,7 +55,7 @@ export default function Signup() {
                         <Building className="text-white w-8 h-8 group-hover:scale-110 transition-transform" />
                     </div>
                     <h1 className="text-4xl font-display font-semibold text-ink-900 dark:text-ink-50 tracking-tight leading-none mb-3">
-                        Join <span className="text-signal-600 dark:text-signal-400">NetGuard</span>
+                        Join <span className="text-signal-600 dark:text-signal-300">NetGuard</span>
                     </h1>
                     <p className="text-ink-500 dark:text-ink-400 font-medium">Create your autonomous network hub.</p>
                 </div>
@@ -163,7 +163,7 @@ export default function Signup() {
                     <div className="mt-8 pt-8 border-t border-ink-50 dark:border-ink-700 text-center">
                         <p className="text-ink-500 dark:text-ink-400 text-sm font-medium">
                             Already have an account?{' '}
-                            <Link to="/login" className="text-signal-600 dark:text-signal-400 font-semibold hover:underline underline-offset-4">
+                            <Link to="/login" className="text-signal-600 dark:text-signal-300 font-semibold hover:underline underline-offset-4">
                                 Sign in
                             </Link>
                         </p>
