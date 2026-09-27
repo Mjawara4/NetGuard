@@ -76,6 +76,16 @@ describe('contrast', () => {
         expect(contrast(colors.signal[300], colors.ink[900])).toBeGreaterThanOrEqual(4.5);
     });
 
+    // Review finding: the lower bound alone doesn't stop signal-300 sliding
+    // all the way to a pale, barely-violet lavender (e.g. #F2E4F8, ~13.7 on
+    // ink-900) -- that would still pass ">= 4.5" but defeats the point of
+    // picking "the least light shade that clears both grounds". #BB86D4
+    // measures 5.94 on ink-900, so 8.0 is a ceiling with headroom that a
+    // wash-out shade cannot clear.
+    it('signal-300 is not washed out to pale lavender: it stays under 8.0 on the dark ground', () => {
+        expect(contrast(colors.signal[300], colors.ink[900])).toBeLessThan(8.0);
+    });
+
     it('signal-300 does not meet 4.5:1 on a light ground, so it must stay a dark-mode-only token', () => {
         expect(contrast(colors.signal[300], colors.ink[50])).toBeLessThan(4.5);
     });

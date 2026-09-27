@@ -6,7 +6,6 @@ const variants = {
     success: 'bg-up/10 text-ink-900 dark:bg-up/20 dark:text-ink-50',
     info: 'bg-signal-600/10 text-signal-600 dark:bg-signal-600/20 dark:text-signal-400',
     neutral: 'bg-ink-100 text-ink-600 dark:bg-ink-700 dark:text-ink-300',
-    purple: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
 };
 
 export default function Badge({ children, variant = 'neutral', className = '' }) {
