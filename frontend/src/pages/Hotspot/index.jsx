@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../api';
-import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Plus, Trash, Printer, X, Scissors, Shield, Trash2, Wifi, Clock, ArrowDownCircle, ArrowUpCircle, Settings, Download, Search, FileText, Globe, AlertCircle, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, Activity, RefreshCw, Trash, Printer, X, Scissors, Shield, Clock, Settings, Search, FileText, Globe, AlertCircle, TrendingUp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend } from 'recharts';
-import ResponsiveTable from '../../components/ResponsiveTable';
 import ResponsiveModal from '../../components/ResponsiveModal';
 import SalesForecast from '../../components/SalesForecast';
 import { MetricCard, TabButton } from './components';
+import LogsPanel from './panels/LogsPanel';
+import ReportsPanel from './panels/ReportsPanel';
+import ProfilesPanel from './panels/ProfilesPanel';
+import ActivePanel from './panels/ActivePanel';
+import UsersPanel from './panels/UsersPanel';
+import BooksPanel from './panels/BooksPanel';
+import GeneratorPanel from './panels/GeneratorPanel';
 
 // Device-scoped so two routers' in-flight generation jobs never clobber
 // each other's localStorage entry.
@@ -1031,989 +1037,93 @@ export default function Hotspot() {
 
                     {/* Active Sessions */}
                     {activeTab === 'active' && !showPrintView && (
-                        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-6 sm:p-8 border-b border-gray-50 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div>
-                                    <h2 className="text-xl font-black text-gray-900 dark:text-white">Online Users</h2>
-                                    <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase tracking-widest">{activeSessions.length} Connected</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="relative group flex-1 sm:w-64">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" size={16} />
-                                        <input
-                                            type="text"
-                                            placeholder="Search active sessions..."
-                                            value={userSearch}
-                                            onChange={(e) => setUserSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-700 border border-transparent focus:border-blue-500/30 focus:bg-white dark:focus:bg-gray-800 rounded-2xl py-2 pl-10 pr-4 text-xs font-bold text-gray-700 dark:text-gray-200 outline-none transition-all shadow-inner uppercase tracking-wide"
-                                        />
-                                    </div>
-                                    <span className="inline-flex max-w-fit bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                                        Live
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="overflow-hidden">
-                                <ResponsiveTable
-                                    data={activeSessions.filter(u => u.user.toLowerCase().includes(userSearch.toLowerCase()) || (u.mac_address || '').toLowerCase().includes(userSearch.toLowerCase()) || (u.address || '').toLowerCase().includes(userSearch.toLowerCase()))}
-                                    columns={[
-                                        {
-                                            header: 'Identity',
-                                            accessor: 'user',
-                                            render: (u) => <div className="font-bold text-gray-900 dark:text-white text-sm">{u.user}</div>
-                                        },
-                                        {
-                                            header: 'Network Info',
-                                            accessor: 'address',
-                                            render: (u) => (
-                                                <div>
-                                                    <div className="text-xs text-gray-900 dark:text-white font-mono font-bold leading-none mb-1">{u.address}</div>
-                                                    <div className="text-[10px] text-gray-400 font-mono tracking-tighter uppercase">{u.mac_address || 'Unknown MAC'}</div>
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Traffic',
-                                            accessor: 'bytes',
-                                            render: (u) => (
-                                                <div className="flex items-center gap-3 text-[10px] font-black uppercase tracking-tighter">
-                                                    <div className="flex items-center gap-1 text-emerald-600">
-                                                        <ArrowDownCircle size={12} />
-                                                        {(u.bytes_out / 1024 / 1024).toFixed(1)} MB
-                                                    </div>
-                                                    <div className="flex items-center gap-1 text-blue-600">
-                                                        <ArrowUpCircle size={12} />
-                                                        {(u.bytes_in / 1024 / 1024).toFixed(1)} MB
-                                                    </div>
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Time Online',
-                                            accessor: 'uptime',
-                                            render: (u) => <div className="text-xs text-gray-500 dark:text-gray-400 font-bold whitespace-nowrap bg-gray-50 dark:bg-gray-700 px-2 py-1 rounded-lg">{u.uptime}</div>
-                                        },
-                                        {
-                                            header: 'Time Left / Limits',
-                                            accessor: 'remaining_time',
-                                            render: (u) => (
-                                                <div className="flex flex-col gap-1">
-                                                    <div className={`text-xs font-black px-2 py-1 rounded-lg border max-w-fit ${u.remaining_time === 'UNLIM' ? 'bg-gray-50 dark:bg-gray-700 text-gray-400 border-gray-100 dark:border-gray-600' :
-                                                        u.remaining_time === '0s' ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-100 dark:border-red-900/30' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 border-blue-100 dark:border-blue-900/30'
-                                                        }`}>
-                                                        {u.remaining_time}
-                                                    </div>
-                                                    {(u.limit_uptime || u.limit_bytes_total) && (
-                                                        <div className="text-[9px] text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">
-                                                            {u.limit_uptime && <div>Limit: {u.limit_uptime}</div>}
-                                                            {u.limit_bytes_total > 0 && <div>Data: {(u.limit_bytes_total / 1024 / 1024).toFixed(0)}MB</div>}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Interrupt',
-                                            accessor: 'actions',
-                                            render: (u) => (
-                                                <div className="text-right">
-                                                    <button onClick={() => handleKick(u.id)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 dark:bg-red-900/20 rounded-lg whitespace-nowrap">
-                                                        Kick
-                                                    </button>
-                                                </div>
-                                            )
-                                        }
-                                    ]}
-                                    renderCard={(u) => (
-                                        <div className="flex flex-col gap-3">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Wifi size={16} className="text-emerald-500" />
-                                                    <span className="font-bold text-gray-900 dark:text-white text-sm">{u.user}</span>
-                                                </div>
-                                                <span className="text-[10px] font-mono text-gray-400">{u.address}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Clock size={12} />
-                                                    <span>{u.uptime} online</span>
-                                                </div>
-                                                <div className={`font-black text-[10px] uppercase ${u.remaining_time === 'UNLIM' ? 'text-gray-400' : 'text-blue-600'}`}>
-                                                    Left: {u.remaining_time}
-                                                </div>
-                                            </div>
-                                            <div className="flex justify-end border-t pt-3 mt-1">
-                                                <button onClick={() => handleKick(u.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 py-2 rounded-lg">Interrupt Session</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                    emptyMessage="No active hotspot sessions detected."
-                                />
-                            </div>
-                        </div>
+                        <ActivePanel
+                            activeSessions={activeSessions}
+                            userSearch={userSearch}
+                            setUserSearch={setUserSearch}
+                            handleKick={handleKick}
+                        />
                     )}
 
                     {/* Users Database */}
                     {activeTab === 'users' && (
-                        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="p-6 sm:p-8 border-b border-gray-50 dark:border-gray-700 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-blue-50 rounded-2xl">
-                                        <Users className="text-blue-600" size={24} />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-gray-900 dark:text-white leading-none">Voucher Database</h2>
-                                        <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase tracking-widest">{users.length} Total Records</p>
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                                    <div className="relative group flex-1 sm:w-64">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" size={18} />
-                                        <input
-                                            type="text"
-                                            placeholder="Search vouchers..."
-                                            value={userSearch}
-                                            onChange={(e) => setUserSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-700 border border-transparent focus:border-blue-500/30 focus:bg-white dark:focus:bg-gray-800 rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none transition-all shadow-inner"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={handleExportCSV}
-                                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95"
-                                        >
-                                            <Download size={16} />
-                                            Export
-                                        </button>
-
-                                        <button
-                                            onClick={handleCleanupExpired}
-                                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all active:scale-95"
-                                        >
-                                            <Trash2 size={16} />
-                                            Cleanup Expired
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                            {/* Search status indicator */}
-                            {userSearch.trim() && (
-                                <div className="px-6 pt-3">
-                                    {isSearching ? (
-                                        <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest animate-pulse">Searching router...</span>
-                                    ) : searchResults.length > 0 ? (
-                                        <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">{searchResults.length} result(s) found on router</span>
-                                    ) : (
-                                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">No results in first {users.length} vouchers — searched router directly</span>
-                                    )}
-                                </div>
-                            )}
-                            <div className="overflow-hidden">
-                                <ResponsiveTable
-                                    data={searchResults.length > 0 ? searchResults : users.filter(u => u.name.toLowerCase().includes(userSearch.toLowerCase()) || (u.comment || '').toLowerCase().includes(userSearch.toLowerCase()))}
-                                    columns={[
-                                        {
-                                            header: 'Identity',
-                                            accessor: 'name',
-                                            render: (u) => (
-                                                <div>
-                                                    <div className="font-bold text-gray-900 dark:text-white text-sm flex items-center gap-2">
-                                                        {u.name}
-                                                        {u.comment && <span className="text-[8px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded uppercase tracking-tighter">Batch: {u.comment}</span>}
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-400 font-mono tracking-tighter">PWD: {u.password}</div>
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Profile & Limits',
-                                            accessor: 'profile',
-                                            render: (u) => (
-                                                <div className="flex flex-col gap-1">
-                                                    <span className="max-w-fit px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
-                                                    {(u.limit_uptime || u.limit_bytes_total) && (
-                                                        <div className="text-[8px] text-gray-400 font-bold uppercase tracking-widest whitespace-nowrap">
-                                                            {u.limit_uptime && <span>Time: {u.limit_uptime}</span>}
-                                                            {u.limit_bytes_total > 0 && <span> • Data: {(u.limit_bytes_total / 1024 / 1024).toFixed(0)}MB</span>}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Current Usage',
-                                            accessor: 'bytes_in',
-                                            render: (u) => (
-                                                <div>
-                                                    <div className="text-xs font-bold text-gray-700 dark:text-gray-200 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB In</div>
-                                                    <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{u.uptime || '0s'} Uptime</div>
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Actions',
-                                            accessor: 'actions',
-                                            render: (u) => (
-                                                <div className="text-right flex items-center justify-end gap-2">
-                                                    {u.comment && (
-                                                        <button
-                                                            onClick={() => handleBulkDeleteByComment(u.comment)}
-                                                            className="text-orange-500 hover:text-orange-700 font-black text-[10px] uppercase tracking-widest hover:underline px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded-lg whitespace-nowrap"
-                                                            title={`Delete all users in batch ${u.comment}`}
-                                                        >
-                                                            Del Batch
-                                                        </button>
-                                                    )}
-                                                    <button onClick={() => handleDelete(u.name)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 dark:bg-red-900/20 rounded-lg whitespace-nowrap">
-                                                        Revoke
-                                                    </button>
-                                                </div>
-                                            )
-                                        }
-                                    ]}
-                                    renderCard={(u) => (
-                                        <div className="flex flex-col gap-3">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <Users size={16} className="text-blue-500" />
-                                                    <span className="font-bold text-gray-900 dark:text-white text-sm">{u.name}</span>
-                                                </div>
-                                                <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-md text-[10px] font-black uppercase text-center">{u.profile}</span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                                <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
-                                                    <div className="text-[8px] uppercase font-bold text-gray-400">Password</div>
-                                                    <div className="font-mono font-bold text-gray-700 dark:text-gray-200">{u.password}</div>
-                                                </div>
-                                                <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
-                                                    <div className="text-[8px] uppercase font-bold text-gray-400">Usage</div>
-                                                    <div className="font-mono font-bold text-gray-700 dark:text-gray-200">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
-                                                </div>
-                                            </div>
-                                            {(u.comment || u.limit_uptime || u.limit_bytes_total) && (
-                                                <div className="bg-blue-50/50 dark:bg-blue-900/20 p-2 rounded-lg text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex flex-wrap gap-2">
-                                                    {u.comment && <div className="bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-sm border border-blue-100 dark:border-blue-900/30">Batch: {u.comment}</div>}
-                                                    {u.limit_uptime && <div className="bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-sm border border-blue-100 dark:border-blue-900/30">Limit: {u.limit_uptime}</div>}
-                                                </div>
-                                            )}
-                                            <div className="flex gap-2 border-t pt-3 mt-1">
-                                                {u.comment && (
-                                                    <button onClick={() => handleBulkDeleteByComment(u.comment)} className="flex-1 text-center text-orange-500 font-bold text-[10px] uppercase bg-orange-50 dark:bg-orange-900/20 py-2 rounded-lg">Delete Batch</button>
-                                                )}
-                                                <button onClick={() => handleDelete(u.name)} className="flex-1 text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">Revoke Token</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                    emptyMessage="Voucher database is empty."
-                                />
-                            </div>
-                        </div>
+                        <UsersPanel
+                            users={users}
+                            userSearch={userSearch}
+                            setUserSearch={setUserSearch}
+                            searchResults={searchResults}
+                            isSearching={isSearching}
+                            handleDelete={handleDelete}
+                            handleExportCSV={handleExportCSV}
+                            handleCleanupExpired={handleCleanupExpired}
+                            handleBulkDeleteByComment={handleBulkDeleteByComment}
+                        />
                     )}
 
                     {/* Batch History Tab */}
                     {activeTab === 'history' && !showPrintView && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            {/* Header */}
-                            <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                                <div>
-                                    <h2 className="text-xl font-black text-gray-900 dark:text-white">Batch History</h2>
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Re-print or delete previously generated voucher batches.</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="text-right">
-                                        <div className="text-[10px] font-black uppercase text-gray-400 tracking-widest">Total Unused</div>
-                                        <div className="font-black text-emerald-600 text-lg">{batchHistory.reduce((s, b) => s + (b.count - b.used), 0)}</div>
-                                    </div>
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest">
-                                        {batchHistory.length} Batches
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Batch Cards */}
-                            {batchHistory.length === 0 ? (
-                                <div className="bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 p-12 text-center text-gray-400 text-sm font-bold">
-                                    No batches found. Generate vouchers from the Generator tab.
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {batchHistory.map((b) => {
-                                        const unused = b.count - b.used;
-                                        const usedPct = b.count > 0 ? Math.round((b.used / b.count) * 100) : 0;
-                                        return (
-                                            <div key={b.id} className="bg-white dark:bg-gray-800 rounded-[28px] border border-gray-100 dark:border-gray-700 shadow-sm p-5 flex flex-col gap-4">
-                                                {/* Batch name headline */}
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div>
-                                                        <div className="text-[9px] font-black uppercase text-gray-400 tracking-widest mb-0.5">Batch</div>
-                                                        <div className="text-base font-black text-gray-900 dark:text-white tracking-tight truncate max-w-[160px]">{b.displayName}</div>
-                                                        {/* Legacy rows have status: null (21 in production) and simply
-                                                            render without this badge, same as before this row existed. */}
-                                                        {b.status && (
-                                                            <span className={`inline-block mt-1 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-wide ${
-                                                                b.status === 'complete' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' :
-                                                                b.status === 'failed' ? 'bg-red-50 dark:bg-red-900/20 text-red-600' :
-                                                                'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                                                            }`}>{b.status}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-right shrink-0">
-                                                        <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-wide block mb-1">{b.profile}</span>
-                                                        {b.timeLimit && <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-lg text-[9px] font-black uppercase block">{b.timeLimit}</span>}
-                                                    </div>
-                                                </div>
-
-                                                {b.date && <div className="text-[9px] text-gray-400 dark:text-gray-500 font-bold -mt-2">{b.date}</div>}
-
-                                                {/* Counts */}
-                                                <div className="grid grid-cols-3 gap-2 text-center">
-                                                    <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-2">
-                                                        <div className="text-[9px] font-black uppercase text-gray-400">Total</div>
-                                                        <div className="font-black text-gray-900 dark:text-white text-lg leading-none mt-0.5">{b.count}</div>
-                                                    </div>
-                                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-2">
-                                                        <div className="text-[9px] font-black uppercase text-emerald-500">Unused</div>
-                                                        <div className="font-black text-emerald-600 text-lg leading-none mt-0.5">{unused}</div>
-                                                    </div>
-                                                    <div className="bg-orange-50 dark:bg-orange-900/20 rounded-xl p-2">
-                                                        <div className="text-[9px] font-black uppercase text-orange-400">Used</div>
-                                                        <div className="font-black text-orange-500 text-lg leading-none mt-0.5">{b.used}</div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Progress bar */}
-                                                <div>
-                                                    <div className="flex justify-between text-[9px] font-black uppercase text-gray-400 mb-1">
-                                                        <span>Usage</span><span>{usedPct}%</span>
-                                                    </div>
-                                                    <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
-                                                        <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all" style={{ width: `${usedPct}%` }} />
-                                                    </div>
-                                                </div>
-
-                                                {/* Actions */}
-                                                <div className="flex gap-2 pt-1">
-                                                    <button
-                                                        onClick={() => handleReprint(b)}
-                                                        className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100 dark:shadow-blue-900/20 transition-all active:scale-95"
-                                                    >
-                                                        <Printer size={13} /> Re-Print ({b.count})
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleBulkDeleteByComment(b.name)}
-                                                        className="p-2.5 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
-                                                        title="Delete all vouchers in this batch"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </div>
+                        <BooksPanel
+                            batchHistory={batchHistory}
+                            handleReprint={handleReprint}
+                            handleBulkDeleteByComment={handleBulkDeleteByComment}
+                        />
                     )}
 
                     {/* Hotspot Logs Tab */}
                     {activeTab === 'logs' && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                                <div>
-                                    <h2 className="text-xl font-black text-gray-900 dark:text-white">System Logs</h2>
-                                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Real-time MikroTik hotspot event logs.</p>
-                                </div>
-                                <button onClick={fetchData} className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl hover:bg-blue-100 transition-colors">
-                                    <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
-                                </button>
-                            </div>
-                            <div className="flex flex-col md:flex-row gap-4">
-                                <div className="flex-1 bg-white dark:bg-gray-800 p-4 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
-                                    <div className="relative flex-1">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                                        <input
-                                            type="text"
-                                            placeholder="Search logs (user, ip, or message)..."
-                                            value={logSearch}
-                                            onChange={(e) => setLogSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    <select
-                                        value={logFilter}
-                                        onChange={(e) => setLogFilter(e.target.value)}
-                                        className="bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-2.5 px-4 text-xs font-black uppercase tracking-widest text-gray-600 dark:text-gray-200 focus:ring-2 focus:ring-blue-500/20"
-                                    >
-                                        <option value="all">All Logs</option>
-                                        <option value="today">Today Only</option>
-                                        <option value="recent">Last Hour</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                <ResponsiveTable
-                                    data={logs.filter(l => {
-                                        const matchesSearch =
-                                            l.user_info.toLowerCase().includes(logSearch.toLowerCase()) ||
-                                            l.message.toLowerCase().includes(logSearch.toLowerCase()) ||
-                                            l.time.toLowerCase().includes(logSearch.toLowerCase());
-
-                                        if (logFilter === 'all') return matchesSearch;
-
-                                        // RouterOS heuristic: HH:MM:SS (Today) vs MMM/DD HH:MM:SS (Older)
-                                        const isToday = !l.time.includes('/') && !/[a-zA-Z]/.test(l.time.split(' ')[0]);
-
-                                        if (logFilter === 'today') return matchesSearch && isToday;
-                                        if (logFilter === 'recent') {
-                                            // Heuristic: Last 10 minutes or just top 10 logs if we can't parse
-                                            return matchesSearch && (isToday || logs.indexOf(l) < 10);
-                                        }
-                                        return matchesSearch;
-                                    })}
-                                    columns={[
-                                        {
-                                            header: 'Time',
-                                            accessor: 'time',
-                                            render: (l) => <div className="text-xs font-mono font-bold text-gray-400">{l.time}</div>
-                                        },
-                                        {
-                                            header: 'Username / IP',
-                                            accessor: 'user_info',
-                                            render: (l) => (
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                                                    <div className="font-black text-gray-900 dark:text-white text-xs uppercase">{l.user_info}</div>
-                                                </div>
-                                            )
-                                        },
-                                        {
-                                            header: 'Event Message',
-                                            accessor: 'message',
-                                            render: (l) => <div className="text-xs font-medium text-gray-600 dark:text-gray-300 max-w-md truncate">{l.message}</div>
-                                        }
-                                    ]}
-                                    renderCard={(l) => (
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-[10px] font-mono font-bold text-gray-400">{l.time}</span>
-                                                <span className="font-black text-blue-600 dark:text-blue-400 text-[10px] uppercase bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-md">{l.user_info}</span>
-                                            </div>
-                                            <p className="text-xs font-medium text-gray-700 dark:text-gray-200 leading-relaxed">{l.message}</p>
-                                        </div>
-                                    )}
-                                    emptyMessage="No hotspot logs found."
-                                />
-                            </div>
-                        </div>
+                        <LogsPanel
+                            logs={logs}
+                            logSearch={logSearch}
+                            setLogSearch={setLogSearch}
+                            logFilter={logFilter}
+                            setLogFilter={setLogFilter}
+                            loading={loading}
+                            fetchData={fetchData}
+                        />
                     )}
 
                     {/* Sales Report Tab */}
                     {activeTab === 'reports' && reportData && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            {/* Stats Controls */}
-                            <div className="flex flex-col md:flex-row gap-4 mb-6">
-                                <div className="flex-[2] bg-white dark:bg-gray-800 p-4 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row items-center gap-4">
-                                    <div className="relative flex-1 w-full">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                                        <input
-                                            type="text"
-                                            placeholder="Search sales history..."
-                                            value={reportSearch}
-                                            onChange={(e) => setReportSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-2 sm:pb-0">
-                                        {['', 'day', 'week', 'month'].map((p) => (
-                                            <button
-                                                key={p}
-                                                onClick={() => { setReportPeriod(p); setReportStartDate(''); setReportEndDate(''); }}
-                                                className={`px-4 py-2 rounded-xl text-xs font-black uppercase transition-all ${reportPeriod === p ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-gray-50 dark:bg-gray-700 text-gray-400 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
-                                            >
-                                                {p || 'All'}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="flex-1 bg-white dark:bg-gray-800 p-4 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3">
-                                    <Clock className="text-gray-400" size={18} />
-                                    <input
-                                        type="date"
-                                        value={reportStartDate}
-                                        onChange={(e) => { setReportStartDate(e.target.value); setReportPeriod(''); }}
-                                        className="bg-gray-50 dark:bg-gray-700 border-none rounded-xl py-2 px-3 text-[10px] font-black text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    />
-                                    <span className="text-gray-300 dark:text-gray-600">-</span>
-                                    <input
-                                        type="date"
-                                        value={reportEndDate}
-                                        onChange={(e) => { setReportEndDate(e.target.value); setReportPeriod(''); }}
-                                        className="bg-gray-50 dark:bg-gray-700 border-none rounded-xl py-2 px-3 text-[10px] font-black text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Revenue Summary Cards */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {Object.entries(reportData.total_revenue || {}).map(([curr, amount]) => (
-                                    <div key={curr} className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between group hover:border-emerald-200 transition-all">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:scale-110 transition-transform">
-                                                <Activity size={24} />
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-gray-400">Total Profit ({curr})</p>
-                                                <p className="text-2xl font-black text-gray-900 dark:text-white">{amount.toLocaleString()} <span className="text-xs text-emerald-600 ml-1">{curr}</span></p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                                <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between group hover:border-blue-200 transition-all">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform">
-                                            <Users size={24} />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] font-black uppercase text-gray-400">Total Vouchers</p>
-                                            <p className="text-2xl font-black text-gray-900 dark:text-white">{reportData.total_sold}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Mikhmon Breakdown Aggregates */}
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Daily Sales Breakdown */}
-                                <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                    <div className="p-6 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50">
-                                        <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                            <Clock size={16} className="text-blue-500" />
-                                            Daily Sales Summary
-                                        </h3>
-                                    </div>
-                                    <div className="max-h-[300px] overflow-y-auto">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead className="sticky top-0 bg-white dark:bg-gray-700 shadow-sm z-10">
-                                                <tr className="bg-gray-50/50 dark:bg-gray-700/50">
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Date</th>
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Qty</th>
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Revenue</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
-                                                {(reportData.daily_stats || []).map((day) => (
-                                                    <tr key={day.date} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                                        <td className="px-6 py-4 text-xs font-black text-gray-900 dark:text-white">{day.date}</td>
-                                                        <td className="px-6 py-4">
-                                                            <span className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-lg text-xs font-black">{day.count}</span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-xs font-black text-emerald-600">
-                                                            {Object.entries(day.revenue).map(([curr, amt]) => (
-                                                                <div key={curr}>{amt.toLocaleString()} {curr}</div>
-                                                            ))}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                {(!reportData.daily_stats || reportData.daily_stats.length === 0) && (
-                                                    <tr>
-                                                        <td colSpan="3" className="px-6 py-12 text-center text-xs text-gray-400 font-bold italic">No daily history for this period.</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                {/* Profile Performance */}
-                                <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                    <div className="p-6 border-b border-gray-50 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-700/50">
-                                        <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                            <Activity size={16} className="text-emerald-500" />
-                                            Best Selling Profiles
-                                        </h3>
-                                    </div>
-                                    <div className="max-h-[300px] overflow-y-auto">
-                                        <table className="w-full text-left border-collapse">
-                                            <thead className="sticky top-0 bg-white dark:bg-gray-700 shadow-sm z-10">
-                                                <tr className="bg-gray-50/50 dark:bg-gray-700/50">
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Profile</th>
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Sold</th>
-                                                    <th className="px-6 py-3 text-[9px] font-black text-gray-400 uppercase tracking-widest">Total Income</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
-                                                {(reportData.profile_stats || []).map((prof) => (
-                                                    <tr key={prof.profile} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                                        <td className="px-6 py-4 text-xs font-black text-gray-900 dark:text-white uppercase">{prof.profile}</td>
-                                                        <td className="px-6 py-4">
-                                                            <span className="bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 px-2 py-1 rounded-lg text-xs font-black">{prof.count}</span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-xs font-black text-emerald-600">
-                                                            {Object.entries(prof.revenue).map(([curr, amt]) => (
-                                                                <div key={curr}>{amt.toLocaleString()} {curr}</div>
-                                                            ))}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                                {(!reportData.profile_stats || reportData.profile_stats.length === 0) && (
-                                                    <tr>
-                                                        <td colSpan="3" className="px-6 py-12 text-center text-xs text-gray-400 font-bold italic">No profile sales data.</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Detailed Records List */}
-                            <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                <div className="p-6 border-b border-gray-50 dark:border-gray-700 flex justify-between items-center bg-gray-50/50 dark:bg-gray-700/50">
-                                    <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                        <FileText size={16} className="text-gray-400" />
-                                        Full Transaction Logs
-                                    </h3>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            disabled={reportPage === 1}
-                                            onClick={() => setReportPage(p => p - 1)}
-                                            className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 shadow-sm"
-                                        >
-                                            <Plus size={16} className="rotate-45" />
-                                        </button>
-                                        <span className="text-[10px] font-black text-gray-400 uppercase">Page {reportPage} / {Math.max(1, Math.ceil(filteredReports.length / 30))}</span>
-                                        <button
-                                            disabled={reportPage * 30 >= filteredReports.length}
-                                            onClick={() => setReportPage(p => p + 1)}
-                                            className="p-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 shadow-sm"
-                                        >
-                                            <Plus size={16} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <ResponsiveTable
-                                    data={filteredReports.slice((reportPage - 1) * 30, reportPage * 30)}
-                                    columns={[
-                                        {
-                                            header: 'Code',
-                                            accessor: 'username',
-                                            render: (r) => <div className="font-black text-gray-900 dark:text-white text-sm">{r.username}</div>
-                                        },
-                                        {
-                                            header: 'Profile',
-                                            accessor: 'profile',
-                                            render: (r) => <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg text-[9px] font-black uppercase">{r.profile}</span>
-                                        },
-                                        {
-                                            header: 'Price',
-                                            accessor: 'price',
-                                            render: (r) => <div className="font-black text-emerald-600 text-xs">{r.price.toLocaleString()} {r.currency}</div>
-                                        },
-                                        {
-                                            header: 'Time',
-                                            accessor: 'uptime',
-                                            render: (r) => <div className="text-[10px] font-bold text-blue-400">{r.uptime}</div>
-                                        },
-                                        {
-                                            header: 'Sold Date',
-                                            accessor: 'created_at',
-                                            render: (r) => <div className="text-[10px] font-bold text-gray-400 uppercase">{r.created_at}</div>
-                                        }
-                                    ]}
-                                    renderCard={(r) => (
-                                        <div className="flex justify-between items-center p-2">
-                                            <div>
-                                                <p className="font-black text-gray-900 dark:text-white uppercase text-sm">{r.username}</p>
-                                                <p className="text-[10px] font-bold text-gray-400 uppercase">{r.profile || '—'}{(r.uptime && r.uptime !== '0s') ? ` • ${r.uptime}` : ''}</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-black text-emerald-600">{r.price.toLocaleString()} {r.currency}</p>
-                                                <p className="text-[9px] font-bold text-gray-400 uppercase">{r.created_at}</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                    emptyMessage="No sales recorded on this router."
-                                />
-                            </div>
-
-                            {/* Real-time Setup Guide */}
-                            <div className="bg-blue-50/50 dark:bg-blue-900/20 p-6 rounded-[32px] border border-blue-100/50 dark:border-blue-900/30 space-y-4">
-                                <div className="flex items-center gap-3 text-blue-600">
-                                    <Activity size={20} />
-                                    <h4 className="font-black uppercase text-xs tracking-widest">Real-time Recording (Recommended)</h4>
-                                </div>
-                                <p className="text-xs font-medium text-gray-600 dark:text-gray-300 leading-relaxed">
-                                    Add this script to your MikroTik Hotspot Server's <strong>On Login</strong> field. It records the sale the moment a user logs in, with the correct profile and price.
-                                </p>
-                                <div className="bg-gray-900 rounded-2xl p-4 relative group">
-                                    <pre className="text-[10px] text-emerald-400 font-mono overflow-x-auto whitespace-pre">
-                                        {`:local userProfile [/ip hotspot user get [find name=$user] profile];\n:local postData ("{\\"device_id\\": \\"${selectedDevice}\\", \\"username\\": \\"" . $user . "\\", \\"profile\\": \\"" . $userProfile . "\\", \\"comment\\": \\"" . $comment . "\\"}");\n/tool fetch url="https://app.netguard.fun/api/v1/hotspot/record-sale" http-method=post http-data=$postData http-header-field="Content-Type: application/json" keep-result=no;`}
-                                    </pre>
-                                </div>
-                                <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium leading-relaxed">
-                                    ⚠️ The <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">$profile</code> variable is not reliably available in MikroTik login scripts — the first line explicitly looks up the user's profile from the router's user table to guarantee accuracy.
-                                </p>
-                            </div>
-                        </div>
+                        <ReportsPanel
+                            reportData={reportData}
+                            filteredReports={filteredReports}
+                            reportSearch={reportSearch}
+                            setReportSearch={setReportSearch}
+                            reportPeriod={reportPeriod}
+                            setReportPeriod={setReportPeriod}
+                            reportStartDate={reportStartDate}
+                            setReportStartDate={setReportStartDate}
+                            reportEndDate={reportEndDate}
+                            setReportEndDate={setReportEndDate}
+                            reportPage={reportPage}
+                            setReportPage={setReportPage}
+                            selectedDevice={selectedDevice}
+                        />
                     )}
 
 
                     {/* Hotspot Profiles Tab */}
                     {activeTab === 'profiles' && (
-                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 gap-6">
-                                <div>
-                                    <h2 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight">Hotspot User Profiles</h2>
-                                    <p className="text-gray-500 dark:text-gray-400 font-medium text-xs sm:text-sm">Define speed limits and simultaneous device allowances.</p>
-                                </div>
-                                <button
-                                    onClick={() => setShowProfileModal(true)}
-                                    className="bg-blue-600 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-2xl font-black text-[10px] sm:text-xs uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    <Plus size={18} /> Create Profile
-                                </button>
-                            </div>
-
-                            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                                <div className="overflow-hidden">
-                                    <ResponsiveTable
-                                        data={profiles}
-                                        columns={[
-                                            {
-                                                header: 'Profile Name',
-                                                accessor: 'name',
-                                                render: (p) => <div className="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors uppercase tracking-tight text-sm">{p.name}</div>
-                                            },
-                                            {
-                                                header: 'Bandwidth',
-                                                accessor: 'rate-limit',
-                                                render: (p) => (
-                                                    <div className="inline-flex items-center gap-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 px-3 py-1 rounded-xl text-[10px] font-black tracking-widest font-mono">
-                                                        {p['rate-limit'] || 'UNLIMITED'}
-                                                    </div>
-                                                )
-                                            },
-                                            {
-                                                header: 'Devices',
-                                                accessor: 'shared-users',
-                                                render: (p) => <div className="text-gray-900 dark:text-white font-black text-sm text-center">{p['shared-users'] || '1'}</div>
-                                            },
-                                            {
-                                                header: 'Charge',
-                                                accessor: 'price',
-                                                render: (p) => (
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedProfileSettings({
-                                                                name: p.name,
-                                                                price: p.custom_price || 0,
-                                                                currency: p.custom_currency || 'TZS'
-                                                            });
-                                                            setShowPriceModal(true);
-                                                        }}
-                                                        className="inline-flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-3 py-1 rounded-xl text-[10px] font-black tracking-widest hover:bg-emerald-100 transition-colors"
-                                                    >
-                                                        {p.custom_price ? `${p.custom_price.toLocaleString()} ${p.custom_currency || 'TZS'}` : 'SET PRICE'}
-                                                        <Settings size={12} />
-                                                    </button>
-                                                )
-                                            },
-                                            {
-                                                header: 'Active Users',
-                                                accessor: 'active_users',
-                                                render: (p) => (
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <div className={`w-1.5 h-1.5 rounded-full ${p.active_users > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'}`}></div>
-                                                        <span className={`text-[10px] font-black uppercase tracking-tight ${p.active_users > 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                                                            {p.active_users || 0} Online
-                                                        </span>
-                                                    </div>
-                                                )
-                                            },
-                                            {
-                                                header: 'Delete',
-                                                accessor: 'actions',
-                                                render: (p) => (
-                                                    <div className="text-right">
-                                                        <button
-                                                            onClick={() => handleProfileDelete(p.name)}
-                                                            className="text-red-500 hover:text-red-700 p-2 bg-red-50 dark:bg-red-900/20 rounded-xl transition-all active:scale-90"
-                                                            title="Remove Profile"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    </div>
-                                                )
-                                            }
-                                        ]}
-                                        renderCard={(p) => (
-                                            <div className="flex flex-col gap-3">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <Shield size={16} className="text-purple-500" />
-                                                        <span className="font-bold text-gray-900 dark:text-white uppercase text-sm">{p.name}</span>
-                                                    </div>
-                                                    <div className="text-xs font-black bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-lg font-mono">
-                                                        {p['rate-limit'] || 'UNLIM'}
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                                    <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg text-center">
-                                                        <div className="uppercase font-bold text-[8px] text-gray-400">Shared Devices</div>
-                                                        <div className="font-black text-gray-900 dark:text-white">{p['shared-users'] || '1'}</div>
-                                                    </div>
-                                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-lg text-center border border-emerald-100/50 dark:border-emerald-900/30">
-                                                        <div className="uppercase font-bold text-[8px] text-emerald-600 dark:text-emerald-400">Active Users</div>
-                                                        <div className="font-black text-emerald-700 dark:text-emerald-400">{p.active_users || 0} Online</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-col border-t pt-3 mt-1 gap-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedProfileSettings({
-                                                                name: p.name,
-                                                                price: p.custom_price || 0,
-                                                                currency: p.custom_currency || 'TZS'
-                                                            });
-                                                            setShowPriceModal(true);
-                                                        }}
-                                                        className="w-full text-center text-emerald-600 dark:text-emerald-400 font-bold text-[10px] uppercase bg-emerald-50 dark:bg-emerald-900/20 py-2 rounded-lg flex items-center justify-center gap-2"
-                                                    >
-                                                        <Settings size={14} /> Configure Price ({p.custom_price || '0'} {p.custom_currency || 'TZS'})
-                                                    </button>
-                                                    <button onClick={() => handleProfileDelete(p.name)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">Delete Profile</button>
-                                                </div>
-                                            </div>
-                                        )}
-                                        emptyMessage="No profiles found on this router."
-                                    />
-                                </div>
-                            </div>
-                        </div>
+                        <ProfilesPanel
+                            profiles={profiles}
+                            handleProfileDelete={handleProfileDelete}
+                            setShowProfileModal={setShowProfileModal}
+                            setShowPriceModal={setShowPriceModal}
+                            setSelectedProfileSettings={setSelectedProfileSettings}
+                        />
                     )}
 
                     {/* Batch Generator */}
                     {activeTab === 'generate' && (
-                        <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="bg-white dark:bg-gray-800 rounded-[32px] sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col md:flex-row min-h-[500px]">
-                                <div className="md:w-1/3 bg-blue-600 p-8 sm:p-12 text-white flex flex-col justify-between">
-                                    <div>
-                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6 sm:mb-8">
-                                            <Printer size={28} />
-                                        </div>
-                                        <h3 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight uppercase">Batch Engine</h3>
-                                        <p className="text-blue-100 mt-4 font-medium text-xs sm:text-sm">Create unique access codes with a single click.</p>
-                                    </div>
-                                    <div className="pt-8 hidden sm:block">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-200">Processing high-speed vouchers</p>
-                                    </div>
-                                </div>
-                                <div className="md:w-2/3 p-8 sm:p-12">
-                                    <form onSubmit={handleGenerate} className="space-y-6 sm:space-y-8">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
-                                            <div>
-                                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Token Quantity</label>
-                                                <input type="number" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black text-xl dark:text-gray-200" value={batchForm.qty} onChange={e => setBatchForm({ ...batchForm, qty: parseInt(e.target.value) })} min="1" max="1000" required />
-                                            </div>
-                                            <div>
-                                                <div className="flex justify-between items-center mb-3">
-                                                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest">Generation Mode</label>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    <select
-                                                        className="w-5/12 bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-3 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-xs dark:text-gray-200"
-                                                        value={batchForm.random_mode ? (batchForm.format === 'numeric' ? 'numeric' : 'auto') : 'prefix'}
-                                                        onChange={e => {
-                                                            const mode = e.target.value;
-                                                            if (mode === 'prefix') {
-                                                                setBatchForm({ ...batchForm, random_mode: false, prefix: '', format: 'alphanumeric' });
-                                                            } else if (mode === 'auto') {
-                                                                setBatchForm({ ...batchForm, random_mode: true, prefix: 'RAND_SEQ', format: 'alphanumeric' });
-                                                            } else if (mode === 'numeric') {
-                                                                setBatchForm({ ...batchForm, random_mode: true, prefix: 'RAND_NUM', format: 'numeric' });
-                                                            }
-                                                        }}
-                                                    >
-                                                        <option value="prefix">Prefix</option>
-                                                        <option value="auto">Auto (A-Z, 0-9)</option>
-                                                        <option value="numeric">Auto (0-9 Only)</option>
-                                                    </select>
-                                                    <input
-                                                        type="text"
-                                                        className="w-7/12 bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold disabled:opacity-50 dark:text-gray-200"
-                                                        value={batchForm.prefix}
-                                                        onChange={e => setBatchForm({ ...batchForm, prefix: e.target.value })}
-                                                        disabled={batchForm.random_mode}
-                                                        placeholder="Prefix..."
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Code Length</label>
-                                                <input type="number" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" value={batchForm.length} onChange={e => setBatchForm({ ...batchForm, length: parseInt(e.target.value) })} min="4" max="20" />
-                                            </div>
-                                        </div>
-
-                                        <div>
-                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Link Profile</label>
-                                            <select className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" value={batchForm.profile} onChange={e => setBatchForm({ ...batchForm, profile: e.target.value })}>
-                                                <option value="default">Default Profile</option>
-                                                {profiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                                            </select>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
-                                            <div>
-                                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Validity</label>
-                                                <input type="text" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" placeholder="e.g. 1h, 1d" value={batchForm.time_limit} onChange={e => setBatchForm({ ...batchForm, time_limit: e.target.value })} />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Quota</label>
-                                                <input type="text" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-3.5 sm:py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" placeholder="e.g. 1G" value={batchForm.data_limit} onChange={e => setBatchForm({ ...batchForm, data_limit: e.target.value })} />
-                                            </div>
-                                        </div>
-
-                                        {voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running') && (
-                                            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-2xl p-4 sm:p-5">
-                                                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2">
-                                                    <span>Generating vouchers…</span>
-                                                    <div className="flex items-center gap-3">
-                                                        <span>{voucherJob.created ?? 0} / {voucherJob.count}</span>
-                                                        {/* C1 manual escape hatch: clears local job-tracking state
-                                                            immediately, independent of whether VOUCHER_JOB_STALL_MS
-                                                            is the right value. Does NOT touch the server-side job --
-                                                            if it's actually still running, it keeps running regardless. */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={dismissVoucherJob}
-                                                            className="normal-case tracking-normal font-bold text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 underline decoration-dotted underline-offset-2 transition-colors"
-                                                            title="Stop tracking this batch here. If it's still running on the router, it keeps running -- check the History tab later."
-                                                        >
-                                                            Dismiss
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <div className="w-full bg-blue-100 dark:bg-blue-900/40 rounded-full h-2">
-                                                    <div
-                                                        className="h-2 rounded-full bg-blue-600 transition-all"
-                                                        style={{ width: `${voucherJob.count > 0 ? Math.min(100, Math.round(((voucherJob.created ?? 0) / voucherJob.count) * 100)) : 0}%` }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="pt-4 sm:pt-6">
-                                            <button type="submit" className="w-full py-4 sm:py-5 bg-blue-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-blue-700 shadow-2xl shadow-blue-100 transition-all active:scale-[0.98] disabled:opacity-60" disabled={loading || (voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running'))}>
-                                                {loading ? 'Processing...' : (voucherJob && (voucherJob.status === 'queued' || voucherJob.status === 'running')) ? 'Generating…' : 'Generate Hotspot Vouchers'}
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div >
+                        <GeneratorPanel
+                            batchForm={batchForm}
+                            setBatchForm={setBatchForm}
+                            profiles={profiles}
+                            voucherJob={voucherJob}
+                            loading={loading}
+                            handleGenerate={handleGenerate}
+                            dismissVoucherJob={dismissVoucherJob}
+                        />
                     )}
 
                     {/* Template Editor */}
