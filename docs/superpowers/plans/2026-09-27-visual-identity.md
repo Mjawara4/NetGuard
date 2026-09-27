@@ -506,7 +506,7 @@ export function assertTokenised(path) {
     [/font-black/, 'font-black'],
     [/uppercase/, 'uppercase'],
     [/tracking-wide(r|st)/, 'wide tracking'],
-    [/text-\[1[01]px\]/, '10-11px text'],
+    [/text-\[([0-9]|1[01])px\]/, 'sub-12px text'],
     [/shadow-blue/, 'coloured shadow'],
     [/bg-gradient-to|bg-clip-text/, 'gradient text'],
   ];
@@ -806,7 +806,7 @@ const files = sourceFiles('src');
 const BANNED = [
   [/font-black/, 'font-black'],
   [/tracking-wide(r|st)/, 'wide tracking'],
-  [/text-\[1[01]px\]/, '10-11px text'],
+  [/text-\[([0-9]|1[01])px\]/, 'sub-12px text'],
   [/rounded-(2xl|3xl|xl)/, 'a removed radius'],
   [/shadow-blue/, 'coloured shadow'],
   [/bg-gradient-to|bg-clip-text/, 'gradient text'],
@@ -840,6 +840,10 @@ In `frontend/tailwind.config.js`, add `borderRadius` at `theme` level — **not 
     theme: {
         borderRadius: {
             none: '0',
+            DEFAULT: '4px',   // REQUIRED: bare `rounded`, `rounded-t`, `rounded-l`
+                              // etc. resolve to DEFAULT. Omit it and 9 existing
+                              // uses silently flatten to square -- the exact
+                              // failure this task is ordered last to avoid.
             sm: '4px',
             md: '8px',
             lg: '14px',
