@@ -4,6 +4,12 @@ export default {
     content: [
         "./index.html",
         "./src/**/*.{js,ts,jsx,tsx}",
+        // The gate test quotes banned classes on purpose (`rounded-[32px]`,
+        // `uppercase`, `bg-gray-500`) as negative cases. Tailwind's scanner reads
+        // them as real usage and emits those utilities into the shipped
+        // stylesheet -- so the test asserting a class is gone was simultaneously
+        // putting it back. Excluded.
+        "!./src/test/**",
     ],
     theme: {
         // At `theme` level, NOT inside `extend`: this REPLACES Tailwind's

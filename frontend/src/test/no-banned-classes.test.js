@@ -132,6 +132,17 @@ describe('the radius ladder is locked', () => {
         // the app has ten of them. Without this key all ten go square silently.
         expect(LADDER.DEFAULT).toBe('4px');
         expect(Object.keys(LADDER).sort()).toEqual(['DEFAULT', 'full', 'lg', 'md', 'none', 'sm']);
+        // The VALUES are the spec's ladder, not just the key names. Asserting the
+        // keys alone left the rungs free to drift: `lg` could quietly become 13px
+        // and every other assertion here still passed.
+        expect(LADDER).toEqual({
+            none: '0',
+            DEFAULT: '4px',
+            sm: '4px',
+            md: '8px',
+            lg: '14px',
+            full: '9999px',
+        });
     });
 
     it('every rounded spelling under src/ resolves to a rung', () => {
