@@ -19,14 +19,14 @@ export default function StatCard({ label, value, icon: Icon, color = 'blue', cla
     const colors = colorMap[color] || colorMap.blue;
 
     return (
-        <div className={`bg-white dark:bg-ink-800 p-6 rounded-md border border-ink-200 dark:border-ink-800 ${className}`}>
+        <div className={`bg-white dark:bg-ink-800 p-6 rounded-md border border-ink-200 dark:border-ink-700 ${className}`}>
             {Icon && (
                 <div className={`w-12 h-12 rounded-md ${colors.bg} ${colors.darkBg} ${colors.text} ${colors.darkText} flex items-center justify-center mb-4`}>
                     <Icon size={24} />
                 </div>
             )}
-            <div className="text-3xl font-bold font-display tabular-nums text-ink-900 dark:text-white mb-1">{value}</div>
-            <div className="text-xs font-bold text-ink-400 dark:text-ink-500">{label}</div>
+            <div className="text-3xl font-bold font-display tabular-nums text-ink-900 dark:text-ink-50 mb-1">{value}</div>
+            <div className="text-xs font-medium text-ink-500 dark:text-ink-400">{label}</div>
         </div>
     );
 }

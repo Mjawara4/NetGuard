@@ -11,7 +11,7 @@ export default function Card({
 }) {
     return (
         <div
-            className={`bg-white dark:bg-ink-800 rounded-md border border-ink-200 dark:border-ink-800 overflow-hidden ${padding} ${
+            className={`bg-white dark:bg-ink-800 rounded-md border border-ink-200 dark:border-ink-700 overflow-hidden ${padding} ${
                 hover ? 'hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group' : ''
             } ${className}`}
         >

@@ -4,7 +4,7 @@ export default function PageHeader({ title, accent, subtitle, children }) {
     return (
         <div className="mb-8 sm:mb-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div>
-                <h1 className="text-3xl sm:text-4xl font-semibold text-ink-900 dark:text-ink-50 tracking-tight leading-none">
+                <h1 className="text-3xl sm:text-4xl font-semibold font-display text-ink-900 dark:text-ink-50 tracking-tight leading-none">
                     {/* signal-600 is 2.40:1 on a dark ground; the accent must drop to
                         signal-300 in dark mode, exactly as it does on the auth pages. */}
                     {title} {accent && <span className="text-signal-600 dark:text-signal-300">{accent}</span>}
