@@ -58,6 +58,14 @@ const pages = [
     'src/pages/Reports.jsx',
     'src/pages/NetworkMap.jsx',
     'src/components/Layout.jsx',
+    'src/pages/Devices.jsx',
+    'src/pages/Settings.jsx',
+    'src/pages/AdminDashboard.jsx',
+    'src/components/ResponsiveTable.jsx',
+    'src/components/ResponsiveModal.jsx',
+    'src/components/ProtectedRoute.jsx',
+    'src/components/SalesForecast.jsx',
+    'src/components/AIChatParams.jsx',
 ];
 
 describe('tokenised pages', () => {

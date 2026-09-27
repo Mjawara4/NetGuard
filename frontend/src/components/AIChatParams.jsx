@@ -70,7 +70,7 @@ const AIChatParams = () => {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="fixed bottom-6 right-6 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all z-30 animate-bounce-slow"
+                className="fixed bottom-6 right-6 p-4 bg-signal-600 text-ink-50 rounded-full shadow-lg hover:shadow-xl transition-all z-30 animate-bounce-slow"
                 aria-label="Open AI Assistant (Cmd+K)"
                 title="Open AI Assistant (Cmd+K)"
             >
@@ -82,19 +82,19 @@ const AIChatParams = () => {
     return (
         <div
             ref={containerRef}
-            className="fixed bottom-0 right-0 w-full sm:bottom-6 sm:right-6 sm:w-96 h-[80vh] max-h-[500px] bg-white dark:bg-gray-800 sm:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col z-40 border border-gray-100 dark:border-gray-700 overflow-hidden font-sans transition-all duration-300"
+            className="fixed bottom-0 right-0 w-full sm:bottom-6 sm:right-6 sm:w-96 h-[80vh] max-h-[500px] bg-white dark:bg-ink-800 sm:rounded-lg rounded-t-2xl shadow-2xl flex flex-col z-40 border border-ink-200 dark:border-ink-700 overflow-hidden font-sans transition-all duration-300"
             role="dialog"
             aria-label="AI Assistant Chat"
         >
             {/* Header */}
-            <div className="p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center shrink-0">
+            <div className="p-4 bg-signal-600 text-ink-50 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-2">
                     <Terminal size={18} />
                     <h3 className="font-semibold text-sm">NetGuard AI Assistant</h3>
                 </div>
                 <button
                     onClick={() => setIsOpen(false)}
-                    className="hover:bg-white/20 p-1 rounded-full text-white/80 hover:text-white transition"
+                    className="hover:bg-white/20 p-1 rounded-full text-ink-50/80 hover:text-ink-50 transition"
                     aria-label="Close chat"
                 >
                     <X size={18} />
@@ -102,20 +102,20 @@ const AIChatParams = () => {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50 dark:bg-gray-900/50">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-ink-50 dark:bg-ink-900/50">
                 {messages.map((msg, idx) => (
                     <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed shadow-sm ${msg.role === 'user'
-                            ? 'bg-blue-600 text-white rounded-tr-none'
-                            : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-600 rounded-tl-none'
-                            } ${msg.isError ? 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 border-red-100 dark:border-red-800' : ''}`}>
+                        <div className={`max-w-[85%] p-3 rounded-lg text-sm leading-relaxed shadow-sm ${msg.role === 'user'
+                            ? 'bg-signal-600 text-ink-50 rounded-tr-none'
+                            : 'bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50 border border-ink-200 dark:border-ink-700 rounded-tl-none'
+                            } ${msg.isError ? 'bg-down/10 text-down dark:bg-down/30 dark:text-ink-100 border-down/20 dark:border-down/30' : ''}`}>
                             <p>{msg.text}</p>
                         </div>
                     </div>
                 ))}
                 {isLoading && (
                     <div className="flex justify-start">
-                        <div className="bg-white dark:bg-gray-700 p-3 rounded-2xl rounded-tl-none border dark:border-gray-600 shadow-sm flex items-center gap-2 text-gray-500 dark:text-gray-400 text-xs">
+                        <div className="bg-white dark:bg-ink-800 p-3 rounded-lg rounded-tl-none border dark:border-ink-700 shadow-sm flex items-center gap-2 text-ink-500 dark:text-ink-400 text-xs">
                             <Loader size={14} className="animate-spin" />
                             <span>Thinking...</span>
                         </div>
@@ -125,19 +125,19 @@ const AIChatParams = () => {
             </div>
 
             {/* Input */}
-            <form onSubmit={handleSubmit} className="p-3 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex gap-2 shrink-0">
+            <form onSubmit={handleSubmit} className="p-3 bg-white dark:bg-ink-800 border-t dark:border-ink-700 flex gap-2 shrink-0">
                 <input
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Ask about your network..."
-                    className="flex-1 bg-gray-100 dark:bg-gray-900 border-none rounded-xl px-4 py-2 text-sm dark:text-white focus:ring-2 focus:ring-blue-500/50 focus:bg-white dark:focus:bg-gray-900 transition-all outline-none"
+                    className="flex-1 bg-ink-100 dark:bg-ink-900 border-none rounded-md px-4 py-2 text-sm dark:text-ink-50 focus:ring-2 focus:ring-signal-500/50 focus:bg-white dark:focus:bg-ink-900 transition-all outline-none"
                     autoFocus
                 />
                 <button
                     type="submit"
                     disabled={isLoading || !query.trim()}
-                    className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="p-2 bg-signal-600 text-ink-50 rounded-md hover:bg-signal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     aria-label="Send message"
                 >
                     <Send size={18} />

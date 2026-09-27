@@ -69,17 +69,17 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2 space-y-6">
                         <Card padding="p-0">
-                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                            <div className="p-6 border-b border-ink-200 dark:border-ink-700 flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                                        <Key className="w-5 h-5 text-blue-500" />
+                                    <h2 className="text-lg font-bold text-ink-900 dark:text-ink-50 flex items-center gap-2">
+                                        <Key className="w-5 h-5 text-signal-600 dark:text-signal-300" />
                                         API Keys
                                     </h2>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage keys for external integrations like Hotfly.net.</p>
+                                    <p className="text-sm text-ink-500 dark:text-ink-400 mt-1">Manage keys for external integrations like Hotfly.net.</p>
                                 </div>
                                 <button
                                     onClick={() => setCreateModalOpen(true)}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-black flex items-center gap-2 transition-colors shadow-lg shadow-blue-100 dark:shadow-blue-900/20"
+                                    className="bg-signal-600 hover:bg-signal-700 text-ink-50 px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-colors shadow-lg"
                                 >
                                     <Plus size={18} />
                                     Create New Key
@@ -93,17 +93,17 @@ export default function SettingsPage() {
                                         {
                                             header: 'Description',
                                             accessor: 'description',
-                                            render: (key) => <span className="font-bold text-gray-900 dark:text-white">{key.description || 'Untitled Key'}</span>
+                                            render: (key) => <span className="font-bold text-ink-900 dark:text-ink-50">{key.description || 'Untitled Key'}</span>
                                         },
                                         {
                                             header: 'Key Preview',
                                             accessor: 'key',
-                                            render: (key) => <span className="font-mono text-gray-500 dark:text-gray-400 text-xs">{key.key.substring(0, 10)}...****************</span>
+                                            render: (key) => <span className="font-mono text-ink-500 dark:text-ink-400 text-xs">{key.key.substring(0, 10)}...****************</span>
                                         },
                                         {
                                             header: 'Created',
                                             accessor: 'created_at',
-                                            render: (key) => <span className="text-gray-500 dark:text-gray-400">{new Date(key.created_at).toLocaleDateString()}</span>
+                                            render: (key) => <span className="text-ink-500 dark:text-ink-400">{new Date(key.created_at).toLocaleDateString()}</span>
                                         },
                                         {
                                             header: 'Status',
@@ -121,7 +121,7 @@ export default function SettingsPage() {
                                                 <div className="text-right">
                                                     <button
                                                         onClick={() => handleRevokeKey(key.id)}
-                                                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                        className="p-2 text-ink-500 hover:text-down hover:bg-down/20 dark:hover:bg-down/20 rounded-lg transition-colors dark:text-ink-400"
                                                         aria-label="Revoke key"
                                                     >
                                                         <Trash2 size={16} />
@@ -134,21 +134,21 @@ export default function SettingsPage() {
                                         <div className="flex flex-col gap-3">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <Key size={16} className="text-blue-500" />
-                                                    <span className="font-bold text-gray-900 dark:text-white text-sm">{key.description || 'Untitled Key'}</span>
+                                                    <Key size={16} className="text-signal-600 dark:text-signal-300" />
+                                                    <span className="font-bold text-ink-900 dark:text-ink-50 text-sm">{key.description || 'Untitled Key'}</span>
                                                 </div>
                                                 <Badge variant={key.is_active ? 'success' : 'critical'}>
                                                     {key.is_active ? 'Active' : 'Revoked'}
                                                 </Badge>
                                             </div>
-                                            <div className="bg-gray-50 dark:bg-gray-900 p-2 rounded-lg text-[10px] font-mono text-gray-500 dark:text-gray-400 break-all">
+                                            <div className="bg-ink-50 dark:bg-ink-900 p-2 rounded-lg text-xs font-mono text-ink-500 dark:text-ink-400 break-all">
                                                 {key.key.substring(0, 10)}...****************
                                             </div>
-                                            <div className="flex justify-between items-center text-xs text-gray-400 dark:text-gray-500">
+                                            <div className="flex justify-between items-center text-xs text-ink-500 dark:text-ink-400">
                                                 <span>Created: {new Date(key.created_at).toLocaleDateString()}</span>
                                             </div>
-                                            <div className="flex justify-end border-t dark:border-gray-700 pt-3 mt-1">
-                                                <button onClick={() => handleRevokeKey(key.id)} className="w-full text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">Revoke Key</button>
+                                            <div className="flex justify-end border-t dark:border-ink-700 pt-3 mt-1">
+                                                <button onClick={() => handleRevokeKey(key.id)} className="w-full text-center text-down font-bold text-xs bg-down/10 dark:bg-down/20 py-2 rounded-lg dark:text-ink-100">Revoke Key</button>
                                             </div>
                                         </div>
                                     )}
@@ -160,65 +160,65 @@ export default function SettingsPage() {
 
                     <div className="lg:col-span-1">
                         <Card padding="p-0" className="sticky top-6">
-                            <div className="p-6 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/30">
-                                <h2 className="text-lg font-black text-blue-900 dark:text-blue-300 flex items-center gap-2">
-                                    <Shield className="w-5 h-5 text-blue-600" />
+                            <div className="p-6 bg-signal-600/5 dark:bg-signal-600/10 border-b border-signal-600/20 dark:border-signal-600/30">
+                                <h2 className="text-lg font-bold text-signal-700 dark:text-ink-50 flex items-center gap-2">
+                                    <Shield className="w-5 h-5 text-signal-600 dark:text-signal-300" />
                                     API Integration Reference
                                 </h2>
                             </div>
-                            <div className="p-6 space-y-6 text-sm text-gray-600 dark:text-gray-300 leading-relaxed max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar">
+                            <div className="p-6 space-y-6 text-sm text-ink-500 dark:text-ink-100 leading-relaxed max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar">
                                 <div className="space-y-2">
-                                    <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                        <span className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-[10px]">1</span>
+                                    <h3 className="font-bold text-ink-900 dark:text-ink-50 text-xs flex items-center gap-2">
+                                        <span className="w-5 h-5 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-ink-50 rounded-lg flex items-center justify-center text-xs">1</span>
                                         Authentication
                                     </h3>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Include your API Key in the <code className="font-bold text-blue-600 dark:text-blue-400">X-API-Key</code> header.</p>
-                                    <div className="bg-gray-900 text-gray-100 p-3 rounded-lg font-mono text-[10px] border border-gray-700 shadow-inner">
+                                    <p className="text-xs text-ink-500 dark:text-ink-400">Include your API Key in the <code className="font-bold text-signal-600 dark:text-signal-300">X-API-Key</code> header.</p>
+                                    <div className="bg-ink-900 text-ink-50 p-3 rounded-lg font-mono text-xs border border-ink-700 shadow-inner">
                                         X-API-Key: ng_sk_...
                                     </div>
                                 </div>
 
-                                <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
-                                    <h3 className="font-black text-gray-900 dark:text-white mb-2 uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                        <span className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-[10px]">2</span>
+                                <div className="p-4 bg-ink-50 dark:bg-ink-900 rounded-md border border-ink-200 dark:border-ink-700">
+                                    <h3 className="font-bold text-ink-900 dark:text-ink-50 mb-2 text-xs flex items-center gap-2">
+                                        <span className="w-5 h-5 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-ink-50 rounded-lg flex items-center justify-center text-xs">2</span>
                                         Base API URL
                                     </h3>
-                                    <div className="font-mono text-blue-600 dark:text-blue-400 select-all break-all text-xs font-bold">https://app.netguard.fun/api/v1</div>
-                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 font-medium">All endpoints below are relative to this base URL.</p>
+                                    <div className="font-mono text-signal-600 dark:text-signal-300 select-all break-all text-xs font-bold">https://app.netguard.fun/api/v1</div>
+                                    <p className="text-xs text-ink-500 dark:text-ink-400 mt-2 font-medium">All endpoints below are relative to this base URL.</p>
                                 </div>
 
                                 <div className="space-y-2">
-                                    <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                        <span className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-[10px]">3</span>
+                                    <h3 className="font-bold text-ink-900 dark:text-ink-50 text-xs flex items-center gap-2">
+                                        <span className="w-5 h-5 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-ink-50 rounded-lg flex items-center justify-center text-xs">3</span>
                                         Scope & Permissions
                                     </h3>
                                     <div className="space-y-3">
                                         <div className="flex gap-2">
-                                            <div className="w-1 h-auto bg-blue-500 rounded-full"></div>
+                                            <div className="w-1 h-auto bg-signal-500 rounded-full"></div>
                                             <div className="flex-1">
-                                                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Organization Scoped</p>
-                                                <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">Keys only access data within your specific organization.</p>
+                                                <p className="text-xs font-bold text-ink-900 dark:text-ink-100">Organization Scoped</p>
+                                                <p className="text-xs text-ink-500 dark:text-ink-400 leading-tight">Keys only access data within your specific organization.</p>
                                             </div>
                                         </div>
                                         <div className="flex gap-2">
-                                            <div className="w-1 h-auto bg-green-500 rounded-full"></div>
+                                            <div className="w-1 h-auto bg-up rounded-full"></div>
                                             <div className="flex-1">
-                                                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Full Programmatic Access</p>
-                                                <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">Manage Inventory, Hotspot users, and view real-time metrics.</p>
+                                                <p className="text-xs font-bold text-ink-900 dark:text-ink-100">Full Programmatic Access</p>
+                                                <p className="text-xs text-ink-500 dark:text-ink-400 leading-tight">Manage Inventory, Hotspot users, and view real-time metrics.</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="space-y-6 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                    <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest flex items-center gap-2">
-                                        <span className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-[10px]">4</span>
+                                <div className="space-y-6 pt-4 border-t border-ink-200 dark:border-ink-700">
+                                    <h3 className="font-bold text-ink-900 dark:text-ink-50 text-xs flex items-center gap-2">
+                                        <span className="w-5 h-5 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-ink-50 rounded-lg flex items-center justify-center text-xs">4</span>
                                         Key Endpoints
                                     </h3>
 
                                     <div className="space-y-3">
-                                        <h4 className="font-black text-gray-400 dark:text-gray-500 text-[10px] uppercase tracking-tighter flex items-center gap-1.5">
-                                            <span className="p-1 bg-gray-100 dark:bg-gray-700 rounded">Inventory</span> Management
+                                        <h4 className="font-bold text-ink-900 dark:text-ink-50 text-xs tracking-tighter flex items-center gap-1.5">
+                                            <span className="p-1 bg-ink-100 dark:bg-ink-800 rounded">Inventory</span> Management
                                         </h4>
                                         <div className="grid gap-2">
                                             {[
@@ -227,35 +227,35 @@ export default function SettingsPage() {
                                                 { method: 'GET', path: '/inventory/sites', desc: 'List all organization sites' },
                                                 { method: 'POST', path: '/inventory/devices/{id}/provision-wireguard', desc: 'Get MikroTik VPN script' }
                                             ].map((ep, i) => (
-                                                <div key={i} className="group p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors border border-transparent hover:border-gray-100 dark:hover:border-gray-700">
+                                                <div key={i} className="group p-2 hover:bg-ink-50 dark:hover:bg-ink-800 rounded-lg transition-colors border border-transparent hover:border-ink-200 dark:hover:border-ink-700">
                                                     <div className="flex items-center gap-2">
-                                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ep.method === 'GET' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'}`}>{ep.method}</span>
-                                                        <code className="text-xs font-bold text-gray-700 dark:text-gray-300">{ep.path}</code>
+                                                        <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-signal-600/10 dark:bg-signal-600/20 text-signal-700 dark:text-ink-50">{ep.method}</span>
+                                                        <code className="text-xs font-bold text-ink-900 dark:text-ink-100">{ep.path}</code>
                                                     </div>
-                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 pl-1">{ep.desc}</p>
+                                                    <p className="text-xs text-ink-500 dark:text-ink-400 mt-1 pl-1">{ep.desc}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
-                                    <h3 className="font-black text-gray-900 dark:text-white uppercase text-[10px] tracking-widest mb-3 flex items-center gap-2">
-                                        <span className="w-5 h-5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center text-[10px]">5</span>
+                                <div className="pt-6 border-t border-ink-200 dark:border-ink-700">
+                                    <h3 className="font-bold text-ink-900 dark:text-ink-50 text-xs mb-3 flex items-center gap-2">
+                                        <span className="w-5 h-5 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-ink-50 rounded-lg flex items-center justify-center text-xs">5</span>
                                         CURL Example
                                     </h3>
-                                    <div className="bg-gray-900 text-gray-400 p-3 rounded-lg font-mono text-[9px] overflow-x-auto border border-gray-700 leading-normal">
-                                        <span className="text-blue-400">curl</span> -X GET <span className="text-green-400">"https://app.netguard.fun/api/v1/inventory/devices"</span> \<br />
-                                        &nbsp;&nbsp;&nbsp;&nbsp; -H <span className="text-orange-400">"X-API-Key: YOUR_KEY"</span>
+                                    <div className="bg-ink-900 text-ink-300 p-3 rounded-lg font-mono text-xs overflow-x-auto border border-ink-700 leading-normal">
+                                        <span className="text-ink-50">curl</span> -X GET <span className="text-ink-100">"https://app.netguard.fun/api/v1/inventory/devices"</span> \<br />
+                                        &nbsp;&nbsp;&nbsp;&nbsp; -H <span className="text-ink-100">"X-API-Key: YOUR_KEY"</span>
                                     </div>
                                 </div>
 
-                                <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 mt-6 group hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors">
-                                    <h4 className="font-black text-red-900 dark:text-red-300 text-[10px] uppercase mb-2 flex items-center gap-2">
-                                        <Shield size={14} className="text-red-600 animate-pulse" />
+                                <div className="p-4 bg-down/10 dark:bg-down/10 rounded-md border border-down/20 dark:border-down/30 mt-6 group hover:bg-down/20 dark:hover:bg-down/20 transition-colors">
+                                    <h4 className="font-bold text-down dark:text-ink-100 text-xs mb-2 flex items-center gap-2">
+                                        <Shield size={14} className="text-down animate-pulse dark:text-ink-100" />
                                         Security Protocol
                                     </h4>
-                                    <ul className="text-[10px] text-red-700 dark:text-red-400 space-y-1.5 font-medium leading-tight">
+                                    <ul className="text-xs text-down dark:text-ink-100 space-y-1.5 font-medium leading-tight">
                                         <li>• Treat keys as sensitive as your main password.</li>
                                         <li>• Never commit keys to version control.</li>
                                         <li>• Revoke immediately if compromised.</li>
@@ -279,26 +279,26 @@ export default function SettingsPage() {
                 >
                     {!createdKey ? (
                         <form onSubmit={handleCreateKey} className="pb-4">
-                            <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Enter a description to identify this key.</p>
+                            <p className="text-ink-500 dark:text-ink-400 text-sm mb-6">Enter a description to identify this key.</p>
                             <input
                                 type="text"
                                 placeholder="e.g. Hotfly Production"
                                 required
                                 value={newKeyDescription}
                                 onChange={(e) => setNewKeyDescription(e.target.value)}
-                                className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl py-4 px-5 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-300 dark:placeholder:text-gray-600 focus:ring-2 focus:ring-blue-500/20 outline-none mb-6"
+                                className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-4 px-5 text-sm font-bold text-ink-900 dark:text-ink-50 placeholder:text-ink-500 dark:placeholder:text-ink-400 focus:ring-2 focus:ring-signal-500/20 outline-none mb-6"
                             />
                             <div className="flex gap-3">
                                 <button
                                     type="button"
                                     onClick={() => setCreateModalOpen(false)}
-                                    className="flex-1 py-3 font-bold text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl transition-colors"
+                                    className="flex-1 py-3 font-bold text-ink-500 hover:bg-ink-50 dark:hover:bg-ink-800 rounded-md transition-colors dark:text-ink-400"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-100 dark:shadow-blue-900/20"
+                                    className="flex-1 py-3 bg-signal-600 hover:bg-signal-700 text-ink-50 font-bold rounded-md transition-colors shadow-lg"
                                 >
                                     Generate
                                 </button>
@@ -307,19 +307,19 @@ export default function SettingsPage() {
                     ) : (
                         <div className="pb-4">
                             <div className="text-center mb-6">
-                                <p className="text-gray-500 dark:text-gray-400 text-sm">Copy this key now. You won&apos;t see it again.</p>
+                                <p className="text-ink-500 dark:text-ink-400 text-sm">Copy this key now. You won&apos;t see it again.</p>
                             </div>
 
-                            <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 mb-6 border border-gray-100 dark:border-gray-700 relative group">
-                                <code className="text-sm font-mono text-gray-800 dark:text-gray-200 break-all">
+                            <div className="bg-ink-50 dark:bg-ink-900 rounded-md p-4 mb-6 border border-ink-200 dark:border-ink-700 relative group">
+                                <code className="text-sm font-mono text-ink-900 dark:text-ink-100 break-all">
                                     {createdKey.key}
                                 </code>
                                 <button
                                     onClick={() => copyToClipboard(createdKey.key)}
-                                    className="absolute top-2 right-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 text-gray-500 hover:text-blue-600 transition-colors"
+                                    className="absolute top-2 right-2 p-2 bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 text-ink-500 hover:text-signal-600 transition-colors dark:text-ink-400"
                                     aria-label="Copy key"
                                 >
-                                    {copied ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+                                    {copied ? <Check size={16} className="text-up dark:text-ink-100" /> : <Copy size={16} />}
                                 </button>
                             </div>
 
@@ -328,7 +328,7 @@ export default function SettingsPage() {
                                     setCreateModalOpen(false);
                                     setCreatedKey(null);
                                 }}
-                                className="w-full py-4 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl transition-colors shadow-lg"
+                                className="w-full py-4 bg-ink-900 hover:bg-ink-800 text-ink-50 font-bold rounded-md transition-colors shadow-lg"
                             >
                                 Done
                             </button>
@@ -363,38 +363,38 @@ const PasswordChangeSection = () => {
     return (
         <div className="lg:col-span-3">
             <Card padding="p-0">
-                <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-                    <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
-                        <Lock className="w-5 h-5 text-purple-500" />
+                <div className="p-6 border-b border-ink-200 dark:border-ink-700">
+                    <h2 className="text-lg font-bold text-ink-900 dark:text-ink-50 flex items-center gap-2">
+                        <Lock className="w-5 h-5 text-signal-600 dark:text-signal-300" />
                         Profile Settings
                     </h2>
                 </div>
                 <div className="p-6">
                     <form onSubmit={handleChangePassword} className="max-w-md space-y-4">
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Current Password</label>
+                            <label className="block text-sm font-bold text-ink-900 dark:text-ink-100 mb-1">Current Password</label>
                             <input
                                 type="password"
                                 required
                                 value={oldPassword}
                                 onChange={e => setOldPassword(e.target.value)}
-                                className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl py-3 px-4 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-3 px-4 text-sm font-medium text-ink-900 dark:text-ink-50 focus:ring-2 focus:ring-signal-500/20 outline-none"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">New Password</label>
+                            <label className="block text-sm font-bold text-ink-900 dark:text-ink-100 mb-1">New Password</label>
                             <input
                                 type="password"
                                 required
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
-                                className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl py-3 px-4 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 outline-none"
+                                className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-3 px-4 text-sm font-medium text-ink-900 dark:text-ink-50 focus:ring-2 focus:ring-signal-500/20 outline-none"
                             />
                         </div>
                         <button
                             type="submit"
                             disabled={loading}
-                            className="bg-gray-900 hover:bg-gray-800 text-white px-6 py-3 rounded-xl text-sm font-bold transition-colors shadow-lg disabled:opacity-50"
+                            className="bg-ink-900 hover:bg-ink-800 text-ink-50 px-6 py-3 rounded-md text-sm font-bold transition-colors shadow-lg disabled:opacity-50"
                         >
                             {loading ? 'Updating...' : 'Update Password'}
                         </button>

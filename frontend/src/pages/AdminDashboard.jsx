@@ -64,7 +64,7 @@ export default function AdminDashboard() {
                 <PageHeader title="Super Admin" accent="Console" subtitle="System-wide user management and security auditing." />
 
                 <div className="mb-10">
-                    <div className="flex bg-white dark:bg-gray-800 p-1.5 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 gap-1.5 w-fit overflow-x-auto no-scrollbar">
+                    <div className="flex bg-white dark:bg-ink-800 p-1.5 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 gap-1.5 w-fit overflow-x-auto no-scrollbar">
                         <TabButton id="users" label="User Management" icon={Users} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="security" label="Security Audit" icon={Shield} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="account" label="My Account" icon={UserCircle} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -72,7 +72,7 @@ export default function AdminDashboard() {
                 </div>
 
                 {activeTab === 'users' && (
-                    <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <div className="bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 overflow-hidden">
                         <ResponsiveTable
                             data={users}
                             columns={[
@@ -81,8 +81,8 @@ export default function AdminDashboard() {
                                     accessor: 'full_name',
                                     render: (u) => (
                                         <div>
-                                            <div className="font-bold text-gray-900 dark:text-white">{u.full_name}</div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">{u.email}</div>
+                                            <div className="font-bold text-ink-900 dark:text-ink-50">{u.full_name}</div>
+                                            <div className="text-xs text-ink-500 dark:text-ink-400">{u.email}</div>
                                         </div>
                                     )
                                 },
@@ -98,8 +98,8 @@ export default function AdminDashboard() {
                                     accessor: 'is_active',
                                     render: (u) => (
                                         u.is_active ?
-                                            <span className="text-emerald-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={14} /> Active</span> :
-                                            <span className="text-red-500 font-bold text-xs flex items-center gap-1"><XCircle size={14} /> Inactive</span>
+                                            <span className="text-up font-bold text-xs flex items-center gap-1 dark:text-ink-100"><CheckCircle size={14} /> Active</span> :
+                                            <span className="text-down font-bold text-xs flex items-center gap-1 dark:text-ink-100"><XCircle size={14} /> Inactive</span>
                                     )
                                 },
                                 {
@@ -111,19 +111,19 @@ export default function AdminDashboard() {
                                                 <>
                                                     <button
                                                         onClick={() => handleAction(u.id, 'update', { is_active: !u.is_active, role: u.role })}
-                                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-colors ${u.is_active ? 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400'}`}
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${u.is_active ? 'bg-down/10 text-ink-900 hover:bg-down/20 dark:bg-down/20 dark:text-ink-50' : 'bg-up/10 text-ink-900 hover:bg-up/20 dark:bg-up/20 dark:text-ink-50'}`}
                                                     >
                                                         {u.is_active ? 'Deactivate' : 'Activate'}
                                                     </button>
                                                     <button
                                                         onClick={() => handleAction(u.id, 'reset_password')}
-                                                        className="px-3 py-1.5 bg-yellow-50 text-yellow-600 hover:bg-yellow-100 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 dark:bg-yellow-900/20 dark:text-yellow-400"
+                                                        className="px-3 py-1.5 bg-warn/10 text-ink-900 hover:bg-warn/20 rounded-lg text-xs font-bold flex items-center gap-1 dark:bg-warn/20 dark:text-ink-50"
                                                     >
                                                         <Key size={12} /> Reset
                                                     </button>
                                                     <button
                                                         onClick={() => handleAction(u.id, 'delete')}
-                                                        className="px-3 py-1.5 bg-gray-100 text-gray-600 hover:bg-gray-200 rounded-lg text-[10px] font-black uppercase dark:bg-gray-700 dark:text-gray-300"
+                                                        className="px-3 py-1.5 bg-ink-100 text-ink-500 hover:bg-ink-200 rounded-lg text-xs font-bold dark:bg-ink-800 dark:text-ink-100"
                                                     >
                                                         <Trash2 size={12} />
                                                     </button>
@@ -137,22 +137,22 @@ export default function AdminDashboard() {
                                 <div className="flex flex-col gap-3">
                                     <div className="flex items-center justify-between">
                                         <div>
-                                            <div className="font-bold text-gray-900 dark:text-white">{u.full_name}</div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">{u.email}</div>
+                                            <div className="font-bold text-ink-900 dark:text-ink-50">{u.full_name}</div>
+                                            <div className="text-xs text-ink-500 dark:text-ink-400">{u.email}</div>
                                         </div>
                                         <Badge variant="neutral">{u.role}</Badge>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {u.is_active ?
-                                            <span className="text-emerald-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={14} /> Active</span> :
-                                            <span className="text-red-500 font-bold text-xs flex items-center gap-1"><XCircle size={14} /> Inactive</span>
+                                            <span className="text-up font-bold text-xs flex items-center gap-1 dark:text-ink-100"><CheckCircle size={14} /> Active</span> :
+                                            <span className="text-down font-bold text-xs flex items-center gap-1 dark:text-ink-100"><XCircle size={14} /> Inactive</span>
                                         }
                                     </div>
                                     {u.role !== 'super_admin' && (
-                                        <div className="flex gap-2 pt-2 border-t dark:border-gray-700">
-                                            <button onClick={() => handleAction(u.id, 'update', { is_active: !u.is_active, role: u.role })} className="flex-1 text-center py-2 rounded-lg text-[10px] font-black uppercase bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300">Toggle</button>
-                                            <button onClick={() => handleAction(u.id, 'reset_password')} className="flex-1 text-center py-2 rounded-lg text-[10px] font-black uppercase bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400">Reset</button>
-                                            <button onClick={() => handleAction(u.id, 'delete')} className="flex-1 text-center py-2 rounded-lg text-[10px] font-black uppercase bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400">Delete</button>
+                                        <div className="flex gap-2 pt-2 border-t dark:border-ink-700">
+                                            <button onClick={() => handleAction(u.id, 'update', { is_active: !u.is_active, role: u.role })} className="flex-1 text-center py-2 rounded-lg text-xs font-bold bg-ink-50 dark:bg-ink-800 text-ink-500 dark:text-ink-100">Toggle</button>
+                                            <button onClick={() => handleAction(u.id, 'reset_password')} className="flex-1 text-center py-2 rounded-lg text-xs font-bold bg-warn/10 dark:bg-warn/20 text-warn dark:text-ink-100">Reset</button>
+                                            <button onClick={() => handleAction(u.id, 'delete')} className="flex-1 text-center py-2 rounded-lg text-xs font-bold bg-down/10 dark:bg-down/20 text-down dark:text-ink-100">Delete</button>
                                         </div>
                                     )}
                                 </div>
@@ -172,13 +172,13 @@ export default function AdminDashboard() {
                 )}
 
                 {activeTab === 'account' && (
-                    <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden max-w-2xl">
-                        <div className="p-8 border-b border-gray-100 dark:border-gray-700">
-                            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                                <Key className="w-6 h-6 text-purple-600" />
+                    <div className="bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 overflow-hidden max-w-2xl">
+                        <div className="p-8 border-b border-ink-200 dark:border-ink-700">
+                            <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50 flex items-center gap-3">
+                                <Key className="w-6 h-6 text-signal-600 dark:text-signal-300" />
                                 Change My Password
                             </h2>
-                            <p className="text-gray-500 dark:text-gray-400 mt-2">Update the password for your Super Admin account.</p>
+                            <p className="text-ink-500 dark:text-ink-400 mt-2">Update the password for your Super Admin account.</p>
                         </div>
                         <div className="p-8">
                             <PasswordChangeForm />
@@ -193,9 +193,9 @@ export default function AdminDashboard() {
 const TabButton = ({ id, label, icon: Icon, activeTab, setActiveTab }) => (
     <button
         onClick={() => setActiveTab(id)}
-        className={`px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === id
-            ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 dark:shadow-blue-900/30'
-            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 dark:hover:text-gray-300'
+        className={`px-6 py-3 rounded-lg font-bold text-xs flex items-center gap-2 transition-all whitespace-nowrap ${activeTab === id
+            ? 'bg-signal-600 text-ink-50 shadow-lg'
+            : 'text-ink-500 dark:text-ink-400 hover:text-ink-900 hover:bg-ink-50 dark:hover:bg-ink-700 dark:hover:text-ink-100'
             }`}
     >
         <Icon size={16} /> {label}
@@ -225,31 +225,31 @@ const PasswordChangeForm = () => {
     return (
         <form onSubmit={handleChangePassword} className="space-y-4">
             <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Current Password</label>
+                <label className="block text-sm font-bold text-ink-900 dark:text-ink-100 mb-1">Current Password</label>
                 <input
                     type="password"
                     required
                     value={oldPassword}
                     onChange={e => setOldPassword(e.target.value)}
-                    className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl py-3 px-4 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 outline-none"
+                    className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-3 px-4 text-sm font-medium text-ink-900 dark:text-ink-50 focus:ring-2 focus:ring-signal-500/20 outline-none"
                     placeholder="Enter current password"
                 />
             </div>
             <div>
-                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">New Password</label>
+                <label className="block text-sm font-bold text-ink-900 dark:text-ink-100 mb-1">New Password</label>
                 <input
                     type="password"
                     required
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-xl py-3 px-4 text-sm font-medium text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 outline-none"
+                    className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-3 px-4 text-sm font-medium text-ink-900 dark:text-ink-50 focus:ring-2 focus:ring-signal-500/20 outline-none"
                     placeholder="Enter new password"
                 />
             </div>
             <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gray-900 hover:bg-gray-800 text-white py-3 rounded-xl text-sm font-bold transition-colors shadow-lg disabled:opacity-50"
+                className="w-full bg-ink-900 hover:bg-ink-800 text-ink-50 py-3 rounded-md text-sm font-bold transition-colors shadow-lg disabled:opacity-50"
             >
                 {loading ? 'Updating...' : 'Update Password'}
             </button>

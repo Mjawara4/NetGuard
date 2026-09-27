@@ -30,13 +30,13 @@ const SalesForecast = () => {
     };
 
     if (loading) return (
-        <div className="p-8 flex justify-center items-center text-gray-500 dark:text-gray-400">
+        <div className="p-8 flex justify-center items-center text-ink-500 dark:text-ink-400">
             <Loader className="animate-spin mr-2" /> Loading AI Forecast...
         </div>
     );
 
     if (error) return (
-        <div className="p-8 text-center text-red-500 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-100 dark:border-red-800">
+        <div className="p-8 text-center text-down bg-down/10 dark:bg-down/20 rounded-md border border-down/20 dark:border-down/30 dark:text-ink-100">
             <AlertCircle className="mx-auto mb-2" />
             {error}
         </div>
@@ -45,14 +45,14 @@ const SalesForecast = () => {
     return (
         <div className="space-y-6 animate-fade-in">
             {/* Summary Card */}
-            <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl p-6 text-white shadow-lg">
+            <div className="bg-signal-600 rounded-lg p-6 text-ink-50 shadow-lg">
                 <div className="flex items-start justify-between">
                     <div>
                         <h3 className="text-lg font-semibold opacity-90 mb-1">AI Sales Prediction</h3>
                         <p className="text-2xl font-bold tracking-tight">Next 7 Days</p>
                     </div>
-                    <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
-                        <TrendingUp size={24} className="text-white" />
+                    <div className="p-3 bg-white/20 rounded-md backdrop-blur-sm">
+                        <TrendingUp size={24} className="text-ink-50" />
                     </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-white/20">
@@ -64,9 +64,9 @@ const SalesForecast = () => {
             </div>
 
             {/* Chart */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-                <h4 className="font-semibold text-gray-700 dark:text-gray-200 mb-6 flex items-center gap-2">
-                    <Calendar size={18} className="text-gray-400 dark:text-gray-500" />
+            <div className="bg-white dark:bg-ink-800 p-6 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700">
+                <h4 className="font-semibold text-ink-900 dark:text-ink-100 mb-6 flex items-center gap-2">
+                    <Calendar size={18} className="text-ink-500 dark:text-ink-400" />
                     Forecast Visualization
                 </h4>
                 <div className="h-[300px] w-full">

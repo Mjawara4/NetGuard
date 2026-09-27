@@ -9,7 +9,7 @@ import Layout from './Layout';
 // to ship in the entry chunk.
 const ContentFallback = () => (
     <div className="flex items-center justify-center h-full min-h-[50vh]" role="status" aria-label="Loading content">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-300 dark:border-ink-700 border-t-signal-600 dark:border-t-signal-300" />
     </div>
 );
 

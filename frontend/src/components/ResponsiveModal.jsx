@@ -52,7 +52,7 @@ const ResponsiveModal = ({ isOpen, onClose, title, children, size = 'md' }) => {
                 aria-modal="true"
                 aria-labelledby="modal-title"
                 className={`
-                    relative w-full bg-white dark:bg-gray-800 md:rounded-2xl shadow-xl
+                    relative w-full bg-white dark:bg-ink-800 md:rounded-lg shadow-xl
                     flex flex-col max-h-[90vh] md:max-h-[85vh]
                     ${sizeClasses[size]}
                     animate-slide-up md:animate-scale-in
@@ -60,11 +60,11 @@ const ResponsiveModal = ({ isOpen, onClose, title, children, size = 'md' }) => {
                 `}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
-                    <h3 id="modal-title" className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+                <div className="flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-700 shrink-0">
+                    <h3 id="modal-title" className="text-lg font-semibold text-ink-900 dark:text-ink-50">{title}</h3>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors text-gray-500 dark:text-gray-400"
+                        className="p-2 hover:bg-ink-100 dark:hover:bg-ink-700 rounded-full transition-colors text-ink-500 dark:text-ink-400"
                         aria-label="Close modal"
                     >
                         <X size={20} />
