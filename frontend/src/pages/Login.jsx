@@ -37,16 +37,16 @@ export default function Login() {
         <div className="min-h-screen bg-ink-50 dark:bg-ink-900 flex flex-col items-center justify-center p-6 sm:p-10">
             <div className="w-full max-w-[400px]">
                 <div className="text-center mb-10">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-signal-600 rounded-md shadow-xl mb-6 group animate-in zoom-in duration-700">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-signal-600 rounded-md shadow-xl mb-6 group">
                         <ShieldCheck className="text-white w-8 h-8 group-hover:scale-110 transition-transform" />
                     </div>
                     <h1 className="text-4xl font-display font-semibold text-ink-900 dark:text-ink-50 tracking-tight leading-none mb-3">
-                        NetGuard <span className="text-signal-600">AI</span>
+                        NetGuard <span className="text-signal-600 dark:text-signal-400">AI</span>
                     </h1>
                     <p className="text-ink-500 dark:text-ink-400 font-medium">Autonomous Network Management</p>
                 </div>
 
-                <div className="bg-white dark:bg-ink-800 rounded-md border border-ink-100 dark:border-ink-700 p-8 sm:p-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                <div className="bg-white dark:bg-ink-800 rounded-md border border-ink-100 dark:border-ink-700 p-8 sm:p-10">
                     {error && (
                         <div className="mb-6 p-4 bg-down/10 dark:bg-down/20 border border-down/20 dark:border-down/30 rounded-md text-ink-900 dark:text-ink-50 text-xs font-bold flex items-center gap-3">
                             <div className="w-1.5 h-1.5 rounded-full bg-down animate-pulse"></div>
@@ -56,7 +56,7 @@ export default function Login() {
 
                     <form onSubmit={handleLogin} className="space-y-6">
                         <div className="space-y-1.5">
-                            <label htmlFor="email" className="text-xs font-bold text-ink-400 dark:text-ink-500 ml-1">Email</label>
+                            <label htmlFor="email" className="text-xs font-bold text-ink-500 dark:text-ink-400 ml-1">Email</label>
                             <div className="relative group">
                                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400 group-focus-within:text-signal-500 transition-colors" />
                                 <input
@@ -72,7 +72,7 @@ export default function Login() {
                         </div>
 
                         <div className="space-y-1.5">
-                            <label htmlFor="password" className="text-xs font-bold text-ink-400 dark:text-ink-500 ml-1">Password</label>
+                            <label htmlFor="password" className="text-xs font-bold text-ink-500 dark:text-ink-400 ml-1">Password</label>
                             <div className="relative group">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400 group-focus-within:text-signal-500 transition-colors" />
                                 <input
@@ -101,9 +101,9 @@ export default function Login() {
                     </form>
 
                     <div className="mt-8 pt-8 border-t border-ink-50 dark:border-ink-700 text-center">
-                        <p className="text-ink-400 dark:text-ink-500 text-sm font-medium">
+                        <p className="text-ink-500 dark:text-ink-400 text-sm font-medium">
                             New here?{' '}
-                            <Link to="/signup" className="text-signal-600 font-semibold hover:underline underline-offset-4">
+                            <Link to="/signup" className="text-signal-600 dark:text-signal-400 font-semibold hover:underline underline-offset-4">
                                 Create account
                             </Link>
                         </p>
