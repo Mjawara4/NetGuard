@@ -6,7 +6,7 @@ export default function Skeleton({ className = '', count = 1 }) {
             {Array.from({ length: count }).map((_, i) => (
                 <div
                     key={i}
-                    className={`animate-pulse bg-gray-200 dark:bg-gray-700 rounded-2xl ${className}`}
+                    className={`animate-pulse bg-ink-200 dark:bg-ink-700 rounded-md ${className}`}
                 />
             ))}
         </>

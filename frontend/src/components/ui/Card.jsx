@@ -6,12 +6,12 @@ export default function Card({
     hover = false,
     padding = 'p-6 sm:p-8',
     icon: Icon,
-    iconColor = 'text-blue-600',
-    iconBg = 'bg-blue-50',
+    iconColor = 'text-signal-600',
+    iconBg = 'bg-signal-600/10',
 }) {
     return (
         <div
-            className={`bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden ${padding} ${
+            className={`bg-white dark:bg-ink-800 rounded-md border border-ink-200 dark:border-ink-800 overflow-hidden ${padding} ${
                 hover ? 'hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group' : ''
             } ${className}`}
         >
