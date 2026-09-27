@@ -59,12 +59,25 @@ ink: {
 
 ```js
 signal: {
+  300: '#BB86D4',   // dark-mode accent TEXT only — see note below
   400: '#A971C4',
   500: '#8F4FAF',
   600: '#7C3E9C',   // primary — buttons, active nav, focus rings
   700: '#653180',
 }
 ```
+
+`signal-300` was added during implementation, not designed up front. Browser
+measurement found accent links on a card's `ink-800` fill at 3.65:1 in dark mode
+— `signal-400` clears the page ground `ink-900` but not the cards that sit on
+it. `#BB86D4` is the least-light shade clearing 4.5:1 on **both** dark grounds
+(4.66 on `ink-800`, 5.94 on `ink-900`), chosen so it stays recognisably violet
+rather than washing out to pale lavender.
+
+It is **dark-mode-only**: 2.63:1 on `ink-50`, so it must never appear without a
+`dark:` prefix. `signal-600` is its light-mode counterpart. The token test
+enforces both a floor and a ceiling on it, the ceiling being what stops a later
+"just make it lighter" edit from turning the accent pale.
 
 Chosen because: it is not the framework default; it collides with **no** status semantic (unlike amber, which fights "warning", or teal, which fights "success"); it holds contrast on both `ink-50` and `ink-950`; and saturated violet is market-adjacent in West African telecom without imitating any operator's brand.
 
