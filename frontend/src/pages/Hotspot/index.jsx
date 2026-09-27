@@ -763,7 +763,7 @@ export default function Hotspot() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
+        <div className="min-h-screen bg-ink-50 dark:bg-ink-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <style>{`
                 @media print {
                     @page { margin: 5mm; size: auto; }
@@ -804,22 +804,22 @@ export default function Hotspot() {
                 {/* Page Header */}
                 <div className="mb-8 sm:mb-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 no-print">
                     <div>
-                        <h1 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white dark:text-white tracking-tight leading-none">
-                            Hotspot <span className="text-blue-600">Controller</span>
+                        <h1 className="text-3xl sm:text-4xl font-semibold text-ink-900 dark:text-ink-50 tracking-tight leading-none">
+                            Hotspot <span className="text-signal-600 dark:text-signal-300">Controller</span>
                         </h1>
-                        <p className="text-gray-500 dark:text-gray-400 dark:text-gray-400 mt-2 font-medium text-sm sm:text-base">Enterprise voucher management and hotspot profile orchestration.</p>
+                        <p className="text-ink-500 dark:text-ink-400 mt-2 font-medium text-sm sm:text-base">Enterprise voucher management and hotspot profile orchestration.</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex flex-col items-end gap-1 px-3">
                             <div className="flex items-center gap-1.5">
-                                <div className={`w-2 h-2 rounded-full ${healthStatus === 'online' ? 'bg-emerald-500 animate-pulse' : healthStatus === 'offline' ? 'bg-red-500' : 'bg-gray-300'}`}></div>
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${healthStatus === 'online' ? 'text-emerald-600' : healthStatus === 'offline' ? 'text-red-600' : 'text-gray-400'}`}>
+                                <div className={`w-2 h-2 rounded-full ${healthStatus === 'online' ? 'bg-up animate-pulse' : healthStatus === 'offline' ? 'bg-down' : 'bg-ink-300'}`}></div>
+                                <span className={`text-xs font-semibold ${healthStatus === 'online' ? 'text-up dark:text-ink-100' : healthStatus === 'offline' ? 'text-down dark:text-ink-100' : 'text-ink-500 dark:text-ink-400'}`}>
                                     {healthStatus === 'online' ? 'Sync Active' : healthStatus === 'offline' ? 'Sync Failed' : 'Checking...'}
                                 </span>
                             </div>
                         </div>
                         <select
-                            className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl px-4 sm:px-5 py-3 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-gray-700 dark:text-gray-200 flex-1 lg:min-w-[240px] text-sm sm:text-base"
+                            className="bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 rounded-lg px-4 sm:px-5 py-3 shadow-sm focus:ring-2 focus:ring-signal-500 outline-none transition-all font-bold text-ink-900 dark:text-ink-100 flex-1 lg:min-w-[240px] text-sm sm:text-base"
                             value={selectedDevice || ''}
                             onChange={e => setSelectedDevice(e.target.value)}
                         >
@@ -828,15 +828,15 @@ export default function Hotspot() {
                         </select>
                         <button
                             onClick={refreshCurrentTab}
-                            className="bg-white dark:bg-gray-800 p-3 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-all active:scale-95 flex-shrink-0"
+                            className="bg-white dark:bg-ink-800 p-3 border border-ink-200 dark:border-ink-700 rounded-lg shadow-sm hover:bg-ink-50 dark:hover:bg-ink-700 text-ink-500 dark:text-ink-100 transition-all active:scale-95 flex-shrink-0"
                             title="Refresh Data"
                         >
-                            <RefreshCw size={22} className={(loading || isRefreshing || prefetching) ? 'animate-spin text-blue-600' : ''} />
+                            <RefreshCw size={22} className={(loading || isRefreshing || prefetching) ? 'animate-spin text-signal-600' : ''} />
                         </button>
                     </div>
                     {prefetching && (
                         <div className="no-print mt-3 flex justify-end">
-                            <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                            <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-signal-600/10 dark:bg-signal-600/20 text-ink-900 dark:text-ink-50 rounded-md text-xs font-semibold">
                                 <RefreshCw size={12} className="animate-spin" /> Preloading all tabs...
                             </span>
                         </div>
@@ -845,11 +845,11 @@ export default function Hotspot() {
 
                 {/* Navigation Bar */}
                 <div className="mb-8 sm:mb-10 no-print">
-                    <div className="flex bg-white dark:bg-gray-800 p-1.5 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
+                    <div className="flex bg-white dark:bg-ink-800 p-1.5 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 gap-1.5 overflow-x-auto no-scrollbar scroll-smooth">
                         <TabButton id="dashboard" label="Dashboard" icon={LayoutDashboard} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="active" label="Active" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="users" label="Vouchers" icon={CreditCard} activeTab={activeTab} setActiveTab={setActiveTab} />
-                        <TabButton id="history" label="Batches" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
+                        <TabButton id="history" label="Books" icon={Search} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="logs" label="Logs" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="reports" label="Report" icon={FileText} activeTab={activeTab} setActiveTab={setActiveTab} />
                         <TabButton id="forecast" label="AI Forecast" icon={TrendingUp} activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -870,7 +870,7 @@ export default function Hotspot() {
                     {activeTab === 'dashboard' && !showPrintView && dashboardData && (
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                             {/* Dashboard Headline Stats */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 dark:text-white">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 dark:text-ink-50">
                                 <MetricCard title="Active Sessions" value={dashboardData.active_count} icon={Users} color="blue" />
                                 <MetricCard title="Total Vouchers" value={dashboardData.total_vouchers} icon={CreditCard} color="indigo" />
                                 <MetricCard title="Data (Current Sessions)" value={`${dashboardData.total_data_mb}MB`} icon={Activity} color="emerald" />
@@ -880,35 +880,35 @@ export default function Hotspot() {
                             {/* System Info Stats */}
                             {systemInfo && (
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                                    <div className="bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm flex items-center justify-between">
                                         <div className="flex items-center gap-2">
-                                            <div className="p-2 rounded-lg bg-orange-50 text-orange-600"><Activity size={16} /></div>
-                                            <span className="text-[10px] font-black uppercase text-gray-400">CPU Load</span>
+                                            <div className="p-2 rounded-lg bg-warn/10 text-warn dark:text-ink-100"><Activity size={16} /></div>
+                                            <span className="text-xs font-bold text-ink-500 dark:text-ink-400">CPU Load</span>
                                         </div>
-                                        <span className="font-black text-gray-900 dark:text-white">{systemInfo.cpu_load}%</span>
+                                        <span className="font-bold text-ink-900 dark:text-ink-50">{systemInfo.cpu_load}%</span>
                                     </div>
-                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                                    <div className="bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm flex items-center justify-between">
                                         <div className="flex items-center gap-2">
-                                            <div className="p-2 rounded-lg bg-pink-50 text-pink-600"><CreditCard size={16} /></div>
-                                            <span className="text-[10px] font-black uppercase text-gray-400">Memory</span>
+                                            <div className="p-2 rounded-lg bg-signal-600/10 text-signal-600 dark:text-signal-300"><CreditCard size={16} /></div>
+                                            <span className="text-xs font-bold text-ink-500 dark:text-ink-400">Memory</span>
                                         </div>
-                                        <span className="font-black text-gray-900 dark:text-white">{Math.round(systemInfo.free_memory)}MB / {Math.round(systemInfo.total_memory)}MB</span>
+                                        <span className="font-bold text-ink-900 dark:text-ink-50">{Math.round(systemInfo.free_memory)}MB / {Math.round(systemInfo.total_memory)}MB</span>
                                     </div>
-                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                                    <div className="bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm flex items-center justify-between">
                                         <div className="flex items-center gap-2">
-                                            <div className="p-2 rounded-lg bg-cyan-50 text-cyan-600"><Clock size={16} /></div>
-                                            <span className="text-[10px] font-black uppercase text-gray-400">Router Uptime</span>
+                                            <div className="p-2 rounded-lg bg-signal-600/10 text-signal-600 dark:text-signal-300"><Clock size={16} /></div>
+                                            <span className="text-xs font-bold text-ink-500 dark:text-ink-400">Router Uptime</span>
                                         </div>
-                                        <span className="font-black text-gray-900 dark:text-white truncate max-w-[120px]">{systemInfo.uptime}</span>
+                                        <span className="font-bold font-mono text-ink-900 dark:text-ink-50 truncate max-w-[120px]">{systemInfo.uptime}</span>
                                     </div>
                                 </div>
                             )}
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                 {/* Profile Distribution Chart */}
-                                <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700">
-                                    <h3 className="text-lg font-black text-gray-900 dark:text-white mb-6 uppercase tracking-tight flex items-center gap-2">
-                                        <Activity size={20} className="text-blue-500" />
+                                <div className="bg-white dark:bg-ink-800 p-6 sm:p-8 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700">
+                                    <h3 className="text-lg font-semibold text-ink-900 dark:text-ink-50 mb-6 tracking-tight flex items-center gap-2">
+                                        <Activity size={20} className="text-signal-600 dark:text-signal-300" />
                                         Voucher Distribution
                                     </h3>
                                     <div className="h-[300px] w-full">
@@ -924,45 +924,49 @@ export default function Hotspot() {
                                                     dataKey="value"
                                                 >
                                                     {dashboardData.profile_distribution.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444'][index % 5]} />
+                                                        <Cell key={`cell-${index}`} fill={['#7C3E9C', '#2F7D62', '#8A6114', '#A971C4', '#9A3A22'][index % 5]} />
                                                     ))}
                                                 </Pie>
                                                 <RechartsTooltip />
-                                                <Legend />
+                                                {/* Recharts colours legend labels with the slice fill, which
+                                                    measures 1.89-2.64:1 for the profile names on the dark card.
+                                                    The swatch already carries the colour; the label takes the
+                                                    body token. */}
+                                                <Legend formatter={(value) => <span className="text-ink-900 dark:text-ink-50">{value}</span>} />
                                             </PieChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
 
                                 {/* Quick Actions / Status */}
-                                <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between">
+                                <div className="bg-white dark:bg-ink-800 p-6 sm:p-8 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 flex flex-col justify-between">
                                     <div>
-                                        <h3 className="text-lg font-black text-gray-900 dark:text-white mb-4 uppercase tracking-tight">Sync Status</h3>
+                                        <h3 className="text-lg font-semibold text-ink-900 dark:text-ink-50 mb-4 tracking-tight">Sync Status</h3>
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl">
+                                            <div className="flex items-center justify-between p-4 bg-ink-50 dark:bg-ink-800/50 rounded-lg">
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`p-2 rounded-lg ${healthStatus === 'online' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                                                    <div className={`p-2 rounded-lg ${healthStatus === 'online' ? 'bg-up/20 text-up' : 'bg-down/20 text-down'} dark:text-ink-100`}>
                                                         <Globe size={18} />
                                                     </div>
-                                                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200">Router Integration</span>
+                                                    <span className="text-sm font-bold text-ink-900 dark:text-ink-100">Router Integration</span>
                                                 </div>
-                                                <span className={`text-xs font-black uppercase ${healthStatus === 'online' ? 'text-emerald-600' : 'text-red-600'}`}>{healthStatus}</span>
+                                                <span className={`text-xs font-bold ${healthStatus === 'online' ? 'text-up' : 'text-down'} dark:text-ink-100`}>{healthStatus}</span>
                                             </div>
-                                            <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl">
+                                            <div className="flex items-center justify-between p-4 bg-ink-50 dark:bg-ink-800/50 rounded-lg">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
+                                                    <div className="p-2 rounded-lg bg-signal-600/10 text-signal-600 dark:text-signal-300">
                                                         <Activity size={18} />
                                                     </div>
-                                                    <span className="text-sm font-bold text-gray-700 dark:text-gray-200">API Latency</span>
+                                                    <span className="text-sm font-bold text-ink-900 dark:text-ink-100">API Latency</span>
                                                 </div>
-                                                <span className="text-xs font-black uppercase text-blue-600">Optimal</span>
+                                                <span className="text-xs font-bold text-signal-600 dark:text-signal-300">Optimal</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div className="mt-6 flex gap-3">
-                                        <button onClick={() => setActiveTab('generate')} className="flex-1 bg-blue-600 text-white py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-100">Quick Generate</button>
-                                        <button onClick={() => setActiveTab('active')} className="flex-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-gray-600 dark:text-gray-300 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest">View Sessions</button>
+                                        <button onClick={() => setActiveTab('generate')} className="flex-1 bg-signal-600 text-white py-3 rounded-lg font-semibold text-xs shadow-lg">Quick Print</button>
+                                        <button onClick={() => setActiveTab('active')} className="flex-1 bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 text-ink-500 dark:text-ink-100 py-3 rounded-lg font-semibold text-xs">View Sessions</button>
                                     </div>
                                 </div>
                             </div>
@@ -970,15 +974,15 @@ export default function Hotspot() {
                     )}
                     {/* Print View Overlay/Content */}
                     {showPrintView && (
-                        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl border border-blue-100 dark:border-blue-900/30 overflow-hidden animate-in fade-in zoom-in duration-300 mb-8 no-print">
-                            <div className="bg-blue-600 p-6 flex flex-col sm:flex-row justify-between items-center text-white gap-4">
+                        <div className="bg-white dark:bg-ink-800 rounded-lg shadow-xl border border-signal-600/20 dark:border-signal-600/30 overflow-hidden animate-in fade-in zoom-in duration-300 mb-8 no-print">
+                            <div className="bg-signal-600 p-6 flex flex-col sm:flex-row justify-between items-center text-white gap-4">
                                 <div className="flex items-center gap-4">
                                     <div className="bg-white/20 p-2 rounded-lg">
                                         <Printer size={20} />
                                     </div>
                                     <div>
-                                        <h3 className="font-black uppercase tracking-tight text-sm sm:text-base">Print Preview</h3>
-                                        <p className="text-blue-100 text-[10px] sm:text-xs font-medium">Ready to export {safeGeneratedBatch.length} vouchers</p>
+                                        <h3 className="font-semibold tracking-tight text-sm sm:text-base">Print Preview</h3>
+                                        <p className="text-ink-100 text-xs font-medium">Ready to export {safeGeneratedBatch.length} vouchers</p>
                                         {/* Honest short-batch / failed-job disclosure (Task 5): a job can
                                             legitimately finish "complete" with fewer vouchers than requested
                                             (the router's collision budget can run out), and a "failed" job's
@@ -986,23 +990,23 @@ export default function Hotspot() {
                                             differ -- a full/normal batch (and reprints, which clear voucherJob)
                                             render exactly as before. */}
                                         {voucherJob && (voucherJob.status === 'complete' || voucherJob.status === 'failed') && voucherJob.count > safeGeneratedBatch.length && (
-                                            <p className="text-amber-200 text-[10px] sm:text-xs font-black uppercase tracking-wide mt-0.5">
+                                            <p className="text-ink-50 text-xs font-bold mt-0.5">
                                                 {safeGeneratedBatch.length} / {voucherJob.count} {voucherJob.status === 'failed' ? 'created before job failed' : 'complete'}
                                             </p>
                                         )}
                                     </div>
                                 </div>
                                 <div className="flex gap-3 w-full sm:w-auto">
-                                    <button onClick={() => setShowPrintView(false)} className="flex-1 sm:flex-none px-5 py-2 hover:bg-white/10 rounded-xl font-bold text-[10px] sm:text-xs uppercase transition-colors border border-white/20">Close</button>
-                                    <button onClick={() => window.print()} className="flex-1 sm:flex-none bg-white text-blue-600 px-6 py-2 rounded-xl font-black text-[10px] sm:text-xs uppercase shadow-lg transition-all active:scale-95">Print Now</button>
+                                    <button onClick={() => setShowPrintView(false)} className="flex-1 sm:flex-none px-5 py-2 hover:bg-white/10 rounded-md font-semibold text-xs transition-colors border border-white/20">Close</button>
+                                    <button onClick={() => window.print()} className="flex-1 sm:flex-none bg-white text-signal-600 px-6 py-2 rounded-md font-semibold text-xs shadow-lg transition-all active:scale-95">Print Now</button>
                                 </div>
                             </div>
-                            <div className="p-4 sm:p-8 bg-gray-50 dark:bg-gray-900/50 grid grid-cols-2 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto max-h-[400px]">
+                            <div className="p-4 sm:p-8 bg-ink-50 dark:bg-ink-900/50 grid grid-cols-2 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 overflow-y-auto max-h-[400px]">
                                 {safeGeneratedBatch.map((u, i) => (
-                                    <div key={i} className="bg-white dark:bg-gray-800 p-3 sm:p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-center">
-                                        <div className="text-[8px] sm:text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1">Voucher</div>
-                                        <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base sm:text-lg'} font-mono font-black py-1 sm:py-2 rounded-lg border mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '15', borderColor: template.color_primary + '30' }}>{u.username}</div>
-                                        <div className="text-[7px] sm:text-[8px] text-gray-400 dark:text-gray-500 uppercase font-bold">LIM: {batchForm.time_limit || 'UNLIM'}</div>
+                                    <div key={i} className="bg-white dark:bg-ink-800 p-3 sm:p-4 rounded-md border border-ink-200 dark:border-ink-700 shadow-sm text-center">
+                                        <div className="text-xs font-medium text-ink-500 dark:text-ink-400 mb-1">Voucher</div>
+                                        <div className={`${u.username.length > 8 ? 'text-xs' : 'text-base sm:text-lg'} font-mono font-bold py-1 sm:py-2 rounded-lg border mb-1 sm:mb-2 transition-all`} style={{ color: template.color_primary, backgroundColor: template.color_primary + '15', borderColor: template.color_primary + '30' }}>{u.username}</div>
+                                        <div className="text-xs text-ink-500 dark:text-ink-400 font-medium">Lim: {batchForm.time_limit || 'Unlim'}</div>
                                     </div>
                                 ))}
                             </div>
@@ -1014,22 +1018,22 @@ export default function Hotspot() {
                     {/* Hidden Print Area (Physical Print) */}
                     <div className="hidden print:grid print:grid-cols-5 print:gap-2 print:p-2" id="printable-area">
                         {safeGeneratedBatch.map((u, i) => (
-                            <div key={i} className="voucher-card p-2 rounded-lg border border-gray-200 text-center bg-white flex flex-col justify-center min-h-[85px] overflow-hidden break-inside-avoid shadow-sm relative">
+                            <div key={i} className="voucher-card p-2 rounded-lg border border-ink-200 text-center bg-white flex flex-col justify-center min-h-[85px] overflow-hidden break-inside-avoid shadow-sm relative">
                                 {/* Cut Guides */}
-                                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-gray-300"></div>
-                                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-gray-300"></div>
-                                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-gray-300"></div>
-                                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-gray-300"></div>
+                                <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-ink-300"></div>
+                                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-ink-300"></div>
+                                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-ink-300"></div>
+                                <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-ink-300"></div>
 
-                                <div className="text-[10px] font-black uppercase tracking-widest leading-none mb-2 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
-                                    <div className={`${u.username.length > 8 ? 'text-[10px]' : 'text-base'} font-black leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1 transition-all`} style={{ color: template.color_primary }}>{u.username}</div>
+                                <div className="text-xs font-bold leading-none mb-2 print-header" style={{ color: template.color_primary }}>{template.header_text}</div>
+                                <div className="bg-signal-600/10 border border-signal-600/20 rounded-md py-1.5 mb-1.5 w-full flex justify-center items-center print-bg print-border overflow-hidden" style={{ backgroundColor: template.color_primary + '10', borderColor: template.color_primary + '30' }}>
+                                    <div className={`${u.username.length > 8 ? 'text-xs' : 'text-base'} font-bold leading-none tracking-tight print-header whitespace-nowrap overflow-hidden text-ellipsis px-1 transition-all`} style={{ color: template.color_primary }}>{u.username}</div>
                                 </div>
-                                <div className="text-[8px] font-bold text-gray-400 uppercase leading-none mb-0.5" style={{ color: template.color_primary }}>
+                                <div className="text-xs font-bold text-ink-500 leading-none mb-0.5" style={{ color: template.color_primary }}>
                                     {template.footer_text}
                                 </div>
-                                <div className="text-[8px] font-bold text-gray-400 uppercase leading-none">
-                                    LIM: {batchForm.time_limit || 'UNLIM'}
+                                <div className="text-xs font-bold text-ink-500 leading-none">
+                                    Lim: {batchForm.time_limit || 'Unlim'}
                                 </div>
                             </div>
                         ))}
@@ -1129,48 +1133,48 @@ export default function Hotspot() {
                     {/* Template Editor */}
                     {activeTab === 'templates' && (
                         <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="bg-white dark:bg-gray-800 rounded-[32px] sm:rounded-[40px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col md:flex-row min-h-[500px]">
-                                <div className="md:w-1/3 bg-gray-900 p-8 sm:p-12 text-white flex flex-col justify-between">
+                            <div className="bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 overflow-hidden flex flex-col md:flex-row min-h-[500px]">
+                                <div className="md:w-1/3 bg-ink-900 p-8 sm:p-12 text-white flex flex-col justify-between">
                                     <div>
-                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6 sm:mb-8">
+                                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white/10 rounded-lg flex items-center justify-center mb-6 sm:mb-8">
                                             <Printer size={28} />
                                         </div>
-                                        <h3 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight uppercase">Print Styles</h3>
-                                        <p className="text-gray-400 mt-4 font-medium text-xs sm:text-sm">Customize how your vouchers look when printed.</p>
+                                        <h3 className="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">Print Styles</h3>
+                                        <p className="text-ink-400 mt-4 font-medium text-xs sm:text-sm">Customize how your vouchers look when printed.</p>
                                     </div>
                                 </div>
                                 <div className="md:w-2/3 p-8 sm:p-12">
                                     <form onSubmit={saveTemplate} className="space-y-6">
                                         <div>
-                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Header Text</label>
-                                            <input type="text" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" value={template.header_text} onChange={e => setTemplate({ ...template, header_text: e.target.value })} />
+                                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Header Text</label>
+                                            <input type="text" className="w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg px-5 py-4 focus:ring-2 focus:ring-signal-500 transition-all font-bold dark:text-ink-100" value={template.header_text} onChange={e => setTemplate({ ...template, header_text: e.target.value })} />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Footer Text</label>
-                                            <input type="text" className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold dark:text-gray-200" value={template.footer_text} onChange={e => setTemplate({ ...template, footer_text: e.target.value })} />
+                                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Footer Text</label>
+                                            <input type="text" className="w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg px-5 py-4 focus:ring-2 focus:ring-signal-500 transition-all font-bold dark:text-ink-100" value={template.footer_text} onChange={e => setTemplate({ ...template, footer_text: e.target.value })} />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Primary Color</label>
+                                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Primary Color</label>
                                             <div className="flex gap-4 items-center">
-                                                <input type="color" className="h-12 w-24 rounded-xl cursor-pointer border-none p-1 bg-gray-50 dark:bg-gray-700" value={template.color_primary} onChange={e => setTemplate({ ...template, color_primary: e.target.value })} />
-                                                <span className="font-mono text-gray-500 dark:text-gray-400 text-sm font-bold">{template.color_primary}</span>
+                                                <input type="color" className="h-12 w-24 rounded-md cursor-pointer border-none p-1 bg-ink-50 dark:bg-ink-800" value={template.color_primary} onChange={e => setTemplate({ ...template, color_primary: e.target.value })} />
+                                                <span className="font-mono text-ink-500 dark:text-ink-400 text-sm font-bold">{template.color_primary}</span>
                                             </div>
                                         </div>
 
                                         <div className="pt-6">
-                                            <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-blue-700 shadow-xl transition-all active:scale-[0.98]" disabled={loading}>
+                                            <button type="submit" className="w-full py-4 bg-signal-600 text-white rounded-lg font-semibold text-xs sm:text-sm hover:bg-signal-700 shadow-xl transition-all active:scale-[0.98]" disabled={loading}>
                                                 {loading ? 'Saving...' : 'Save Template'}
                                             </button>
                                         </div>
                                     </form>
-                                    <div className="mt-8 pt-8 border-t border-gray-100 dark:border-gray-700">
-                                        <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Preview</h4>
-                                        <div className="w-48 mx-auto p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center bg-gray-50 dark:bg-gray-700/50">
-                                            <div className="text-[10px] font-black uppercase tracking-widest leading-none mb-2" style={{ color: template.color_primary }}>{template.header_text}</div>
+                                    <div className="mt-8 pt-8 border-t border-ink-200 dark:border-ink-700">
+                                        <h4 className="text-xs font-medium text-ink-500 dark:text-ink-400 mb-4">Preview</h4>
+                                        <div className="w-48 mx-auto p-4 border border-dashed border-ink-300 dark:border-ink-700 rounded-lg text-center bg-ink-50 dark:bg-ink-800/50">
+                                            <div className="text-xs font-bold leading-none mb-2" style={{ color: template.color_primary }}>{template.header_text}</div>
                                             <div className="border rounded-md py-3 mb-2 w-full flex justify-center items-center" style={{ borderColor: template.color_primary + '40', backgroundColor: template.color_primary + '15' }}>
-                                                <div className="font-mono text-xl font-black leading-none tracking-tight" style={{ color: template.color_primary }}>abc1234</div>
+                                                <div className="font-mono text-xl font-bold leading-none tracking-tight" style={{ color: template.color_primary }}>abc1234</div>
                                             </div>
-                                            <div className="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase">{template.footer_text}</div>
+                                            <div className="text-xs font-bold text-ink-500 dark:text-ink-400">{template.footer_text}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1189,13 +1193,13 @@ export default function Hotspot() {
                 size="lg"
             >
                 <div className="pb-4">
-                    <p className="text-blue-600 text-xs sm:text-sm mb-6 font-medium">Configure network limitations for this profile.</p>
+                    <p className="text-signal-600 text-xs sm:text-sm mb-6 font-medium dark:text-signal-300">Configure network limitations for this profile.</p>
                     <form onSubmit={handleProfileAdd} className="space-y-8">
                         <div>
-                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Profile Name</label>
+                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Profile Name</label>
                             <input
                                 type="text"
-                                className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black dark:text-gray-200"
+                                className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg px-5 py-4 focus:ring-2 focus:ring-signal-500 transition-all font-bold dark:text-ink-100"
                                 value={profileForm.name}
                                 onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
                                 placeholder="e.g. ULTRA_FAST_MONTHLY"
@@ -1204,20 +1208,20 @@ export default function Hotspot() {
                         </div>
                         <div className="grid grid-cols-2 gap-8">
                             <div>
-                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Rate Limit (Up/Down)</label>
+                                <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Rate Limit (Up/Down)</label>
                                 <input
                                     type="text"
-                                    className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-bold font-mono dark:text-gray-200"
+                                    className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg px-5 py-4 focus:ring-2 focus:ring-signal-500 transition-all font-bold font-mono dark:text-ink-100"
                                     value={profileForm.rateLimit}
                                     onChange={e => setProfileForm({ ...profileForm, rateLimit: e.target.value })}
                                     placeholder="5M/5M"
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest">Shared Device Count</label>
+                                <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-3">Shared Device Count</label>
                                 <input
                                     type="number"
-                                    className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 transition-all font-black dark:text-gray-200"
+                                    className="w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg px-5 py-4 focus:ring-2 focus:ring-signal-500 transition-all font-bold dark:text-ink-100"
                                     value={profileForm.sharedUsers}
                                     onChange={e => setProfileForm({ ...profileForm, sharedUsers: parseInt(e.target.value) })}
                                     min="1"
@@ -1226,8 +1230,8 @@ export default function Hotspot() {
                             </div>
                         </div>
                         <div className="pt-6 flex gap-4">
-                            <button type="button" onClick={() => setShowProfileModal(false)} className="flex-1 px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest text-gray-400 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">Abort</button>
-                            <button type="submit" className="flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-95">Create Profile</button>
+                            <button type="button" onClick={() => setShowProfileModal(false)} className="flex-1 px-6 py-4 rounded-lg font-bold text-xs text-ink-500 dark:text-ink-100 hover:bg-ink-50 dark:hover:bg-ink-700 transition-colors">Abort</button>
+                            <button type="submit" className="flex-1 px-6 py-4 bg-signal-600 text-white rounded-lg font-bold text-xs hover:bg-signal-700 shadow-xl transition-all active:scale-95">Create Profile</button>
                         </div>
                     </form>
                 </div>
@@ -1242,24 +1246,24 @@ export default function Hotspot() {
                 <form onSubmit={handleUpdatePriceSettings} className="space-y-6">
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Voucher Price</label>
+                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Voucher Price</label>
                             <input
                                 type="number"
                                 required
                                 value={selectedProfileSettings.price}
                                 onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, price: parseFloat(e.target.value) })}
-                                className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-3 px-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-3 px-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none focus:ring-2 focus:ring-up/20"
                                 placeholder="e.g. 500"
                             />
                         </div>
                         <div>
-                            <label className="block text-[10px] font-black uppercase text-gray-400 mb-2">Currency Symbol (e.g. TZS, $, UGX)</label>
+                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Currency Symbol (e.g. TZS, $, UGX)</label>
                             <input
                                 type="text"
                                 required
                                 value={selectedProfileSettings.currency || template.default_currency || 'TZS'}
                                 onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, currency: e.target.value.toUpperCase() })}
-                                className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-3 px-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-3 px-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none focus:ring-2 focus:ring-up/20"
                                 placeholder="TZS"
                             />
                         </div>
@@ -1268,14 +1272,14 @@ export default function Hotspot() {
                         <button
                             type="button"
                             onClick={() => setShowPriceModal(false)}
-                            className="flex-1 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest text-gray-400 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-all active:scale-95"
+                            className="flex-1 px-6 py-3 rounded-lg font-bold text-xs text-ink-500 dark:text-ink-100 bg-ink-50 dark:bg-ink-800 hover:bg-ink-100 dark:hover:bg-ink-700 transition-all active:scale-95"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
                             disabled={loading}
-                            className="flex-1 bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="flex-1 bg-up text-white px-6 py-3 rounded-lg font-bold text-xs hover:bg-up/90 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             {loading ? <RefreshCw className="animate-spin" size={16} /> : <Settings size={16} />} Save Changes
                         </button>

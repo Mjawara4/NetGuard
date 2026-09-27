@@ -5,31 +5,31 @@ import ResponsiveTable from '../../../components/ResponsiveTable';
 export default function LogsPanel({ logs, logSearch, setLogSearch, logFilter, setLogFilter, loading, fetchData }) {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-6 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
+            <div className="flex items-center justify-between bg-white dark:bg-ink-800 p-6 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm">
                 <div>
-                    <h2 className="text-xl font-black text-gray-900 dark:text-white">System Logs</h2>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Real-time MikroTik hotspot event logs.</p>
+                    <h2 className="text-xl font-semibold text-ink-900 dark:text-ink-50">System Logs</h2>
+                    <p className="text-ink-500 dark:text-ink-400 text-sm font-medium">Real-time MikroTik hotspot event logs.</p>
                 </div>
-                <button onClick={fetchData} className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl hover:bg-blue-100 transition-colors">
+                <button onClick={fetchData} className="p-3 bg-signal-600/10 dark:bg-signal-600/20 text-signal-600 dark:text-signal-300 rounded-lg hover:bg-signal-600/10 transition-colors">
                     <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                 </button>
             </div>
             <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 bg-white dark:bg-gray-800 p-4 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                <div className="flex-1 bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm flex items-center gap-4">
                     <div className="relative flex-1">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-500 dark:text-ink-400" size={18} />
                         <input
                             type="text"
                             placeholder="Search logs (user, ip, or message)..."
                             value={logSearch}
                             onChange={(e) => setLogSearch(e.target.value)}
-                            className="w-full bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/20"
+                            className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-2.5 pl-12 pr-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none focus:ring-2 focus:ring-signal-500/20"
                         />
                     </div>
                     <select
                         value={logFilter}
                         onChange={(e) => setLogFilter(e.target.value)}
-                        className="bg-gray-50 dark:bg-gray-700 border-none rounded-2xl py-2.5 px-4 text-xs font-black uppercase tracking-widest text-gray-600 dark:text-gray-200 focus:ring-2 focus:ring-blue-500/20"
+                        className="bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-2.5 px-4 text-xs font-bold text-ink-500 dark:text-ink-100 focus:ring-2 focus:ring-signal-500/20"
                     >
                         <option value="all">All Logs</option>
                         <option value="today">Today Only</option>
@@ -38,7 +38,7 @@ export default function LogsPanel({ logs, logSearch, setLogSearch, logFilter, se
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div className="bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 overflow-hidden">
                 <ResponsiveTable
                     data={logs.filter(l => {
                         const matchesSearch =
@@ -62,31 +62,31 @@ export default function LogsPanel({ logs, logSearch, setLogSearch, logFilter, se
                         {
                             header: 'Time',
                             accessor: 'time',
-                            render: (l) => <div className="text-xs font-mono font-bold text-gray-400">{l.time}</div>
+                            render: (l) => <div className="text-xs font-mono font-bold text-ink-500 dark:text-ink-400">{l.time}</div>
                         },
                         {
                             header: 'Username / IP',
                             accessor: 'user_info',
                             render: (l) => (
                                 <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-                                    <div className="font-black text-gray-900 dark:text-white text-xs uppercase">{l.user_info}</div>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-signal-500"></div>
+                                    <div className="font-bold text-ink-900 dark:text-ink-50 text-xs font-mono">{l.user_info}</div>
                                 </div>
                             )
                         },
                         {
                             header: 'Event Message',
                             accessor: 'message',
-                            render: (l) => <div className="text-xs font-medium text-gray-600 dark:text-gray-300 max-w-md truncate">{l.message}</div>
+                            render: (l) => <div className="text-xs font-medium text-ink-900 dark:text-ink-100 max-w-md truncate">{l.message}</div>
                         }
                     ]}
                     renderCard={(l) => (
                         <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-mono font-bold text-gray-400">{l.time}</span>
-                                <span className="font-black text-blue-600 dark:text-blue-400 text-[10px] uppercase bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-md">{l.user_info}</span>
+                                <span className="text-xs font-mono font-bold text-ink-500 dark:text-ink-400">{l.time}</span>
+                                <span className="font-bold font-mono text-ink-900 dark:text-ink-50 text-xs bg-signal-600/10 dark:bg-signal-600/20 px-2 py-0.5 rounded-md">{l.user_info}</span>
                             </div>
-                            <p className="text-xs font-medium text-gray-700 dark:text-gray-200 leading-relaxed">{l.message}</p>
+                            <p className="text-xs font-medium text-ink-900 dark:text-ink-100 leading-relaxed">{l.message}</p>
                         </div>
                     )}
                     emptyMessage="No hotspot logs found."

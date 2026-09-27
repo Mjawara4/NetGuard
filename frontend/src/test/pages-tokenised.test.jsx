@@ -66,6 +66,15 @@ const pages = [
     'src/components/ProtectedRoute.jsx',
     'src/components/SalesForecast.jsx',
     'src/components/AIChatParams.jsx',
+    'src/pages/Hotspot/index.jsx',
+    'src/pages/Hotspot/components.jsx',
+    'src/pages/Hotspot/panels/UsersPanel.jsx',
+    'src/pages/Hotspot/panels/ActivePanel.jsx',
+    'src/pages/Hotspot/panels/ProfilesPanel.jsx',
+    'src/pages/Hotspot/panels/GeneratorPanel.jsx',
+    'src/pages/Hotspot/panels/BooksPanel.jsx',
+    'src/pages/Hotspot/panels/LogsPanel.jsx',
+    'src/pages/Hotspot/panels/ReportsPanel.jsx',
 ];
 
 describe('tokenised pages', () => {

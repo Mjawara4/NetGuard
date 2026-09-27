@@ -4,33 +4,33 @@ import ResponsiveTable from '../../../components/ResponsiveTable';
 
 export default function UsersPanel({ users, userSearch, setUserSearch, searchResults, isSearching, handleDelete, handleExportCSV, handleCleanupExpired, handleBulkDeleteByComment }) {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="p-6 sm:p-8 border-b border-gray-50 dark:border-gray-700 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="bg-white dark:bg-ink-800 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="p-6 sm:p-8 border-b border-ink-200 dark:border-ink-700 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div className="flex items-center gap-4">
-                    <div className="p-3 bg-blue-50 rounded-2xl">
-                        <Users className="text-blue-600" size={24} />
+                    <div className="p-3 bg-signal-600/10 rounded-lg">
+                        <Users className="text-signal-600 dark:text-signal-300" size={24} />
                     </div>
                     <div>
-                        <h2 className="text-xl font-black text-gray-900 dark:text-white leading-none">Voucher Database</h2>
-                        <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase tracking-widest">{users.length} Total Records</p>
+                        <h2 className="text-xl font-semibold text-ink-900 dark:text-ink-50 leading-none">Voucher Database</h2>
+                        <p className="text-ink-500 dark:text-ink-400 text-xs mt-1 font-medium">{users.length} total records</p>
                     </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                     <div className="relative group flex-1 sm:w-64">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 transition-colors group-focus-within:text-blue-500" size={18} />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-500 transition-colors group-focus-within:text-signal-600 dark:text-ink-400" size={18} />
                         <input
                             type="text"
                             placeholder="Search vouchers..."
                             value={userSearch}
                             onChange={(e) => setUserSearch(e.target.value)}
-                            className="w-full bg-gray-50 dark:bg-gray-700 border border-transparent focus:border-blue-500/30 focus:bg-white dark:focus:bg-gray-800 rounded-2xl py-2.5 pl-12 pr-4 text-sm font-bold text-gray-700 dark:text-gray-200 outline-none transition-all shadow-inner"
+                            className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border border-transparent focus:border-signal-500/30 focus:bg-white dark:focus:bg-ink-800 rounded-lg py-2.5 pl-12 pr-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none transition-all shadow-inner"
                         />
                     </div>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleExportCSV}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-95"
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-ink-800 border border-ink-200 dark:border-ink-700 px-4 py-2.5 rounded-lg text-xs font-semibold text-ink-500 dark:text-ink-100 hover:bg-ink-50 dark:hover:bg-ink-700 transition-all active:scale-95"
                         >
                             <Download size={16} />
                             Export
@@ -38,10 +38,10 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
 
                         <button
                             onClick={handleCleanupExpired}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all active:scale-95"
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-down/10 dark:bg-down/20 border border-down/20 dark:border-down/30 px-4 py-2.5 rounded-lg text-xs font-semibold text-down dark:text-ink-100 hover:bg-down/20 transition-all active:scale-95"
                         >
                             <Trash2 size={16} />
-                            Cleanup Expired
+                            Cleanup expired
                         </button>
                     </div>
                 </div>
@@ -50,11 +50,11 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
             {userSearch.trim() && (
                 <div className="px-6 pt-3">
                     {isSearching ? (
-                        <span className="text-[10px] font-black uppercase text-blue-500 tracking-widest animate-pulse">Searching router...</span>
+                        <span className="text-xs font-semibold text-signal-600 dark:text-signal-300 animate-pulse">Searching router...</span>
                     ) : searchResults.length > 0 ? (
-                        <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest">{searchResults.length} result(s) found on router</span>
+                        <span className="text-xs font-semibold text-up dark:text-ink-100">{searchResults.length} result(s) found on router</span>
                     ) : (
-                        <span className="text-[10px] font-black uppercase text-gray-400 tracking-widest">No results in first {users.length} vouchers — searched router directly</span>
+                        <span className="text-xs font-medium text-ink-500 dark:text-ink-400">No results in first {users.length} vouchers — searched router directly</span>
                     )}
                 </div>
             )}
@@ -67,11 +67,11 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                             accessor: 'name',
                             render: (u) => (
                                 <div>
-                                    <div className="font-bold text-gray-900 dark:text-white text-sm flex items-center gap-2">
+                                    <div className="font-bold text-ink-900 dark:text-ink-50 text-sm flex items-center gap-2">
                                         {u.name}
-                                        {u.comment && <span className="text-[8px] bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded uppercase tracking-tighter">Batch: {u.comment}</span>}
+                                        {u.comment && <span className="text-xs font-medium bg-ink-100 dark:bg-ink-800 text-ink-900 dark:text-ink-400 px-1.5 py-0.5 rounded">Book: {u.comment}</span>}
                                     </div>
-                                    <div className="text-[10px] text-gray-400 font-mono tracking-tighter">PWD: {u.password}</div>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 font-mono">Pwd: {u.password}</div>
                                 </div>
                             )
                         },
@@ -80,10 +80,10 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                             accessor: 'profile',
                             render: (u) => (
                                 <div className="flex flex-col gap-1">
-                                    <span className="max-w-fit px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-black uppercase whitespace-nowrap">{u.profile}</span>
+                                    <span className="max-w-fit px-3 py-1 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-lg text-xs font-semibold whitespace-nowrap">{u.profile}</span>
                                     {(u.limit_uptime || u.limit_bytes_total) && (
-                                        <div className="text-[8px] text-gray-400 font-bold uppercase tracking-widest whitespace-nowrap">
-                                            {u.limit_uptime && <span>Time: {u.limit_uptime}</span>}
+                                        <div className="text-xs text-ink-500 dark:text-ink-400 font-medium whitespace-nowrap">
+                                            {u.limit_uptime && <span className="font-mono">Time: {u.limit_uptime}</span>}
                                             {u.limit_bytes_total > 0 && <span> • Data: {(u.limit_bytes_total / 1024 / 1024).toFixed(0)}MB</span>}
                                         </div>
                                     )}
@@ -95,8 +95,8 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                             accessor: 'bytes_in',
                             render: (u) => (
                                 <div>
-                                    <div className="text-xs font-bold text-gray-700 dark:text-gray-200 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB In</div>
-                                    <div className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{u.uptime || '0s'} Uptime</div>
+                                    <div className="text-xs font-bold text-ink-900 dark:text-ink-100 whitespace-nowrap">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB In</div>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 font-mono">{u.uptime || '0s'} uptime</div>
                                 </div>
                             )
                         },
@@ -108,13 +108,13 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                                     {u.comment && (
                                         <button
                                             onClick={() => handleBulkDeleteByComment(u.comment)}
-                                            className="text-orange-500 hover:text-orange-700 font-black text-[10px] uppercase tracking-widest hover:underline px-2 py-1 bg-orange-50 dark:bg-orange-900/20 rounded-lg whitespace-nowrap"
-                                            title={`Delete all users in batch ${u.comment}`}
+                                            className="text-ink-900 dark:text-ink-50 font-semibold text-xs hover:underline px-2 py-1 bg-warn/10 dark:bg-warn/20 rounded-lg whitespace-nowrap"
+                                            title={`Delete every voucher in book ${u.comment}`}
                                         >
-                                            Del Batch
+                                            Del book
                                         </button>
                                     )}
-                                    <button onClick={() => handleDelete(u.name)} className="text-red-500 hover:text-red-700 font-black text-[10px] uppercase tracking-widest hover:underline px-3 py-1.5 bg-red-50 dark:bg-red-900/20 rounded-lg whitespace-nowrap">
+                                    <button onClick={() => handleDelete(u.name)} className="text-down dark:text-ink-100 font-semibold text-xs hover:underline px-3 py-1.5 bg-down/10 dark:bg-down/20 rounded-lg whitespace-nowrap">
                                         Revoke
                                     </button>
                                 </div>
@@ -125,32 +125,32 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                         <div className="flex flex-col gap-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <Users size={16} className="text-blue-500" />
-                                    <span className="font-bold text-gray-900 dark:text-white text-sm">{u.name}</span>
+                                    <Users size={16} className="text-signal-600 dark:text-signal-300" />
+                                    <span className="font-bold text-ink-900 dark:text-ink-50 text-sm">{u.name}</span>
                                 </div>
-                                <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-md text-[10px] font-black uppercase text-center">{u.profile}</span>
+                                <span className="px-2 py-0.5 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-md text-xs font-semibold text-center">{u.profile}</span>
                             </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-                                <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
-                                    <div className="text-[8px] uppercase font-bold text-gray-400">Password</div>
-                                    <div className="font-mono font-bold text-gray-700 dark:text-gray-200">{u.password}</div>
+                            <div className="grid grid-cols-2 gap-2 text-xs text-ink-500 dark:text-ink-400">
+                                <div className="bg-ink-50 dark:bg-ink-800/50 p-2 rounded-lg">
+                                    <div className="text-xs font-medium text-ink-500 dark:text-ink-400">Password</div>
+                                    <div className="font-mono font-bold text-ink-900 dark:text-ink-100">{u.password}</div>
                                 </div>
-                                <div className="bg-gray-50 dark:bg-gray-700/50 p-2 rounded-lg">
-                                    <div className="text-[8px] uppercase font-bold text-gray-400">Usage</div>
-                                    <div className="font-mono font-bold text-gray-700 dark:text-gray-200">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
+                                <div className="bg-ink-50 dark:bg-ink-800/50 p-2 rounded-lg">
+                                    <div className="text-xs font-medium text-ink-500 dark:text-ink-400">Usage</div>
+                                    <div className="font-mono font-bold text-ink-900 dark:text-ink-100">{(u.bytes_in / 1024 / 1024).toFixed(1)} MB</div>
                                 </div>
                             </div>
                             {(u.comment || u.limit_uptime || u.limit_bytes_total) && (
-                                <div className="bg-blue-50/50 dark:bg-blue-900/20 p-2 rounded-lg text-[8px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex flex-wrap gap-2">
-                                    {u.comment && <div className="bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-sm border border-blue-100 dark:border-blue-900/30">Batch: {u.comment}</div>}
-                                    {u.limit_uptime && <div className="bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded shadow-sm border border-blue-100 dark:border-blue-900/30">Limit: {u.limit_uptime}</div>}
+                                <div className="bg-signal-600/5 dark:bg-signal-600/20 p-2 rounded-lg text-xs font-medium text-ink-900 dark:text-ink-50 flex flex-wrap gap-2">
+                                    {u.comment && <div className="bg-white dark:bg-ink-800 px-1.5 py-0.5 rounded shadow-sm border border-signal-600/20 dark:border-signal-600/30">Book: {u.comment}</div>}
+                                    {u.limit_uptime && <div className="bg-white dark:bg-ink-800 px-1.5 py-0.5 rounded shadow-sm border border-signal-600/20 dark:border-signal-600/30">Limit: {u.limit_uptime}</div>}
                                 </div>
                             )}
-                            <div className="flex gap-2 border-t pt-3 mt-1">
+                            <div className="flex gap-2 border-t border-ink-200 dark:border-ink-700 pt-3 mt-1">
                                 {u.comment && (
-                                    <button onClick={() => handleBulkDeleteByComment(u.comment)} className="flex-1 text-center text-orange-500 font-bold text-[10px] uppercase bg-orange-50 dark:bg-orange-900/20 py-2 rounded-lg">Delete Batch</button>
+                                    <button onClick={() => handleBulkDeleteByComment(u.comment)} className="flex-1 text-center text-ink-900 dark:text-ink-50 font-semibold text-xs bg-warn/10 dark:bg-warn/20 py-2 rounded-lg">Delete book</button>
                                 )}
-                                <button onClick={() => handleDelete(u.name)} className="flex-1 text-center text-red-500 font-bold text-[10px] uppercase bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">Revoke Token</button>
+                                <button onClick={() => handleDelete(u.name)} className="flex-1 text-center text-down dark:text-ink-100 font-semibold text-xs bg-down/10 dark:bg-down/20 py-2 rounded-lg">Revoke token</button>
                             </div>
                         </div>
                     )}

@@ -78,7 +78,7 @@ function goToGenerator() {
 }
 
 function goToHistory() {
-    fireEvent.click(screen.getByRole('button', { name: /Batches/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Books/i }));
 }
 
 // The Print Preview overlay and the hidden (print-only) area both render
@@ -102,7 +102,7 @@ describe('Voucher generation background job', () => {
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         await waitFor(() => {
@@ -131,7 +131,7 @@ describe('Voucher generation background job', () => {
 
         vi.useFakeTimers();
         try {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
 
             // The submit POST and the poll's first (immediate) GET are both
             // microtask-resolved promises, not timers -- advancing by 0ms
@@ -167,7 +167,7 @@ describe('Voucher generation background job', () => {
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         await waitFor(() => {
@@ -232,7 +232,7 @@ describe('Voucher generation background job', () => {
 
         goToGenerator();
         await waitFor(() => {
-            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Print \d+ vouchers/i })).not.toBeDisabled();
         });
 
         // The interval must actually be stopped, not just the state cleared --
@@ -258,7 +258,7 @@ describe('Voucher generation background job', () => {
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         await waitFor(() => {
@@ -406,7 +406,7 @@ describe('C1: stuck-job stall detection and manual dismiss', () => {
             expect(api.get.mock.calls.filter(([url]) => url.includes('/hotspot/jobs/job-stuck')).length).toBe(pollsAtGiveUp);
 
             fireEvent.click(screen.getByRole('button', { name: /Generator/i }));
-            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Print \d+ vouchers/i })).not.toBeDisabled();
         } finally {
             vi.useRealTimers();
             alertSpy.mockRestore();
@@ -452,10 +452,10 @@ describe('C1: stuck-job stall detection and manual dismiss', () => {
             expect(alertSpy).not.toHaveBeenCalled();
 
             fireEvent.click(screen.getByRole('button', { name: /Generator/i }));
-            // Still running, so the submit button reads "Generating…" rather
+            // Still running, so the submit button reads "Printing…" rather
             // than its idle label -- match either so this doesn't hinge on
             // which one is showing, only on it being disabled.
-            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers|Generating/i })).toBeDisabled();
+            expect(screen.getByRole('button', { name: /Print \d+ vouchers|Printing/i })).toBeDisabled();
         } finally {
             vi.useRealTimers();
             alertSpy.mockRestore();
@@ -561,7 +561,7 @@ describe('C1: stuck-job stall detection and manual dismiss', () => {
 
         vi.useFakeTimers();
         try {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
             await act(async () => {
                 await vi.advanceTimersByTimeAsync(0);
             });
@@ -572,7 +572,7 @@ describe('C1: stuck-job stall detection and manual dismiss', () => {
             fireEvent.click(dismissButton);
 
             expect(localStorage.getItem(JOB_KEY)).toBeNull();
-            expect(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i })).not.toBeDisabled();
+            expect(screen.getByRole('button', { name: /Print \d+ vouchers/i })).not.toBeDisabled();
             // The progress panel (and its Dismiss button) is gone along with it.
             expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument();
 
@@ -613,7 +613,7 @@ describe('C2: version-skew safety (array legacy response, non-array generatedBat
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         await waitFor(() => {
@@ -639,7 +639,7 @@ describe('C2: version-skew safety (array legacy response, non-array generatedBat
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         // Renders as an empty batch instead of crashing on
@@ -676,7 +676,7 @@ describe('I3: enqueue-failure detail surfaced, no polling started', () => {
         goToGenerator();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /Generate Hotspot Vouchers/i }));
+            fireEvent.click(screen.getByRole('button', { name: /Print \d+ vouchers/i }));
         });
 
         expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('could not be queued'));
