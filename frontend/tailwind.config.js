@@ -6,6 +6,23 @@ export default {
         "./src/**/*.{js,ts,jsx,tsx}",
     ],
     theme: {
+        // At `theme` level, NOT inside `extend`: this REPLACES Tailwind's
+        // default radius scale, so every off-ladder spelling (`rounded-xl`,
+        // `rounded-2xl`, `rounded-t-3xl`, `rounded-[32px]`) stops resolving and
+        // emits nothing at all. `no-banned-classes.test.js` proves that no such
+        // spelling survives anywhere under src/.
+        //
+        // DEFAULT is mandatory and must stay: a bare `rounded`, `rounded-t` or
+        // `rounded-tl` resolves to `borderRadius.DEFAULT`, and the app has ten
+        // of those. Dropping this key squares all ten silently, with no error.
+        borderRadius: {
+            none: '0',
+            DEFAULT: '4px',
+            sm: '4px',
+            md: '8px',
+            lg: '14px',
+            full: '9999px',
+        },
         extend: {
             padding: {
                 'safe-top': 'env(safe-area-inset-top)',

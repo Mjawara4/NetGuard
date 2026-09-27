@@ -3,34 +3,39 @@
 @tailwind utilities;
 
 body {
-  background-color: #f3f4f6;
-  color: #1f2937;
+  /* Tokens, applied rather than hard-coded: the ground and the body text are
+     the one pair no page can override, so they must come from the same scale
+     as everything else. */
+  @apply bg-ink-100 text-ink-900;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
 .dark body {
-  background-color: #0f172a;
-  color: #f1f5f9;
+  @apply bg-ink-950 text-ink-100;
 }
 
 @layer base {
+  /* The app's global focus ring. Measured against its own offset:
+     signal-500 on ink-50 = 5.04:1, signal-300 on ink-900 = 5.94:1, both well
+     clear of the 3:1 floor for a non-text indicator. signal-500 on ink-900 is
+     only 3.10:1, which is why the ring colour carries a dark half too. */
   *:focus-visible {
-    @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-white dark:ring-offset-gray-900;
+    @apply outline-none ring-2 ring-signal-500 dark:ring-signal-300 ring-offset-2 ring-offset-ink-50 dark:ring-offset-ink-900;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition font-medium;
+    @apply bg-signal-600 text-ink-50 px-4 py-2 rounded hover:bg-signal-700 transition font-medium;
   }
 
   .input-field {
-    @apply w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white;
+    @apply w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-signal-500 bg-white;
   }
 
   .page-container {
-    @apply min-h-screen bg-gray-50 dark:bg-gray-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12;
+    @apply min-h-screen bg-ink-50 dark:bg-ink-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12;
   }
 
   .content-max {

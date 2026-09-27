@@ -96,22 +96,22 @@ class ChunkErrorBoundary extends React.Component {
                 // componentDidCatch). Show a neutral placeholder rather than
                 // nothing while navigation completes.
                 return (
-                    <div className="flex items-center justify-center min-h-screen bg-white text-gray-600">
+                    <div className="flex items-center justify-center min-h-screen bg-white dark:bg-ink-900 text-ink-500 dark:text-ink-400">
                         <p>Loading the latest version…</p>
                     </div>
                 );
             }
             return (
-                <div className="flex flex-col items-center justify-center gap-4 min-h-screen bg-white px-6 text-center text-gray-900">
+                <div className="flex flex-col items-center justify-center gap-4 min-h-screen bg-white dark:bg-ink-900 px-6 text-center text-ink-900 dark:text-ink-100">
                     <h1 className="text-xl font-semibold">A new version is available</h1>
-                    <p className="max-w-sm text-gray-600">
+                    <p className="max-w-sm text-ink-500 dark:text-ink-400">
                         This app was updated since you opened it. Please reload
                         the page to continue.
                     </p>
                     <button
                         type="button"
                         onClick={this.handleManualReload}
-                        className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                        className="rounded bg-signal-600 px-4 py-2 text-ink-50 hover:bg-signal-700"
                     >
                         Reload
                     </button>

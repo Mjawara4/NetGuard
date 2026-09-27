@@ -56,7 +56,7 @@ const ResponsiveModal = ({ isOpen, onClose, title, children, size = 'md' }) => {
                     flex flex-col max-h-[90vh] md:max-h-[85vh]
                     ${sizeClasses[size]}
                     animate-slide-up md:animate-scale-in
-                    rounded-t-2xl md:mx-4
+                    rounded-t-md md:mx-4
                 `}
             >
                 {/* Header */}

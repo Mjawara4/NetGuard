@@ -127,7 +127,7 @@ export default function Hotspot() {
         header_text: "Wi-Fi Voucher",
         footer_text: "Thank you for visiting!",
         logo_url: "",
-        color_primary: "#2563EB"
+        color_primary: "#7C3E9C"
     });
 
     useEffect(() => {
@@ -789,7 +789,7 @@ export default function Hotspot() {
                         break-inside: avoid !important;
                         page-break-after: auto;
                         
-                        border: 1px dashed #ccc; 
+                        border: 1px dashed #BAC2BF; 
                         box-sizing: border-box;
                     }
                     

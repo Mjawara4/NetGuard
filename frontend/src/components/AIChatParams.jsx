@@ -82,7 +82,7 @@ const AIChatParams = () => {
     return (
         <div
             ref={containerRef}
-            className="fixed bottom-0 right-0 w-full sm:bottom-6 sm:right-6 sm:w-96 h-[80vh] max-h-[500px] bg-white dark:bg-ink-800 sm:rounded-lg rounded-t-2xl shadow-2xl flex flex-col z-40 border border-ink-200 dark:border-ink-700 overflow-hidden font-sans transition-all duration-300"
+            className="fixed bottom-0 right-0 w-full sm:bottom-6 sm:right-6 sm:w-96 h-[80vh] max-h-[500px] bg-white dark:bg-ink-800 sm:rounded-lg rounded-t-md shadow-2xl flex flex-col z-40 border border-ink-200 dark:border-ink-700 overflow-hidden font-sans transition-all duration-300"
             role="dialog"
             aria-label="AI Assistant Chat"
         >

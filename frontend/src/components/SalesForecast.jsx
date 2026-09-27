@@ -74,32 +74,32 @@ const SalesForecast = () => {
                         <AreaChart data={data}>
                             <defs>
                                 <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                                    <stop offset="5%" stopColor="#7C3E9C" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#7C3E9C" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ECEFEE" />
                             <XAxis
                                 dataKey="date"
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fill: '#9ca3af', fontSize: 12 }}
+                                tick={{ fill: '#939E9A', fontSize: 12 }}
                                 dy={10}
                             />
                             <YAxis
                                 axisLine={false}
                                 tickLine={false}
-                                tick={{ fill: '#9ca3af', fontSize: 12 }}
+                                tick={{ fill: '#939E9A', fontSize: 12 }}
                                 tickFormatter={(value) => `${value.toLocaleString()}`}
                             />
                             <Tooltip
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                cursor={{ stroke: '#8b5cf6', strokeWidth: 2 }}
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                cursor={{ stroke: '#7C3E9C', strokeWidth: 2 }}
                             />
                             <Area
                                 type="monotone"
                                 dataKey="predicted_sales"
-                                stroke="#8b5cf6"
+                                stroke="#7C3E9C"
                                 strokeWidth={3}
                                 fillOpacity={1}
                                 fill="url(#colorSales)"

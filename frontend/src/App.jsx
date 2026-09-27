@@ -19,7 +19,7 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 // skeleton here would itself have to ship in the entry chunk.
 const RouteFallback = () => (
     <div className="flex items-center justify-center min-h-screen">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-ink-300 dark:border-ink-700 border-t-signal-600 dark:border-t-signal-300" />
     </div>
 );
 
