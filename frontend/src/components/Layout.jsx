@@ -17,16 +17,16 @@ const SidebarItem = ({ to, icon: Icon, label, onClick, collapsed, badge }) => {
             to={to}
             onClick={onClick}
             aria-current={isActive ? 'page' : undefined}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 dark:shadow-blue-900/30 translate-x-1'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-blue-600 dark:hover:text-blue-400'
+            className={`flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-300 ${isActive
+                ? 'bg-signal-600 text-white shadow-lg translate-x-1'
+                : 'text-ink-500 dark:text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-800 hover:text-signal-600 dark:hover:text-signal-300'
                 }`}
             title={collapsed ? label : undefined}
         >
             <div className="relative">
-                <Icon size={20} className={isActive ? 'text-white' : 'text-gray-400 dark:text-gray-500'} />
+                <Icon size={20} className={isActive ? 'text-white' : 'text-ink-500 dark:text-ink-400'} />
                 {badge > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-down text-white text-xs font-semibold rounded-full flex items-center justify-center">
                         {badge > 9 ? '9+' : badge}
                     </span>
                 )}
@@ -88,15 +88,15 @@ export default function Layout({ children }) {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
 
     return (
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        <div className="flex h-screen bg-ink-50 dark:bg-ink-900 overflow-hidden">
             {/* Mobile Header */}
-            <div className="lg:hidden fixed top-0 left-0 right-0 min-h-16 bg-white dark:bg-gray-800 border-b dark:border-gray-700 shadow-sm z-40 flex items-center justify-between px-6 pt-safe-top">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent my-4">
+            <div className="lg:hidden fixed top-0 left-0 right-0 min-h-16 bg-white dark:bg-ink-800 border-b border-ink-200 dark:border-ink-700 shadow-sm z-40 flex items-center justify-between px-6 pt-safe-top">
+                <h1 className="text-xl font-display font-semibold text-ink-900 dark:text-ink-50 my-4">
                     NetGuard AI
                 </h1>
                 <button
                     onClick={toggleMobileMenu}
-                    className="p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 transition-colors"
+                    className="p-2 text-ink-500 dark:text-ink-400 hover:text-signal-600 dark:hover:text-signal-300 transition-colors"
                     aria-label="Toggle navigation menu"
                     aria-expanded={isMobileMenuOpen}
                 >
@@ -115,22 +115,22 @@ export default function Layout({ children }) {
 
             {/* Sidebar */}
             <div className={`
-                fixed inset-y-0 left-0 ${sidebarWidth} bg-white dark:bg-gray-800 border-r dark:border-gray-700 shadow-sm flex flex-col z-50 transition-all duration-300 transform
+                fixed inset-y-0 left-0 ${sidebarWidth} bg-white dark:bg-ink-800 border-r border-ink-200 dark:border-ink-700 shadow-sm flex flex-col z-50 transition-all duration-300 transform
                 lg:translate-x-0 lg:static lg:inset-0
                 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
             `}>
-                <div className="p-6 border-b dark:border-gray-700 hidden lg:flex items-center justify-between">
+                <div className="p-6 border-b border-ink-200 dark:border-ink-700 hidden lg:flex items-center justify-between">
                     {!isCollapsed && (
                         <div>
-                            <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                            <h1 className="text-2xl font-display font-semibold text-ink-900 dark:text-ink-50">
                                 NetGuard AI
                             </h1>
-                            <p className="text-xs text-gray-400 mt-1">Advanced Network OS</p>
+                            <p className="text-xs text-ink-500 dark:text-ink-400 mt-1">Advanced Network OS</p>
                         </div>
                     )}
                     <button
                         onClick={toggleCollapse}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        className="p-1.5 text-ink-500 dark:text-ink-400 hover:text-signal-600 dark:hover:text-signal-300 hover:bg-ink-100 dark:hover:bg-ink-700 rounded-md transition-colors"
                         aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         title={isCollapsed ? 'Expand' : 'Collapse'}
                     >
@@ -139,8 +139,8 @@ export default function Layout({ children }) {
                 </div>
 
                 {/* Mobile Title (visible in sidebar when open) */}
-                <div className="p-6 border-b dark:border-gray-700 lg:hidden">
-                    <h1 className="text-xl font-bold text-blue-600">Navigation</h1>
+                <div className="p-6 border-b border-ink-200 dark:border-ink-700 lg:hidden">
+                    <h1 className="text-xl font-display font-semibold text-signal-600 dark:text-signal-300">Navigation</h1>
                 </div>
 
                 <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -157,24 +157,28 @@ export default function Layout({ children }) {
                     )}
                 </nav>
 
-                <div className="p-4 border-t dark:border-gray-700 space-y-2">
+                <div className="p-4 border-t border-ink-200 dark:border-ink-700 space-y-2">
                     <button
                         onClick={toggleTheme}
-                        className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                        className="flex items-center gap-3 px-4 py-3 w-full text-left text-ink-500 dark:text-ink-400 hover:bg-ink-100 dark:hover:bg-ink-700 rounded-md transition-colors"
                         aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
                     >
                         {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
                         {!isCollapsed && <span className="font-medium">{theme === 'light' ? 'Dark Mode' : 'Light Mode'}</span>}
                     </button>
+                    {/* `down` measures 1.87:1 on the dark sidebar fill, so the destructive
+                        hue cannot carry the label in dark mode. Per the spec, destructive
+                        actions are marked by weight and position rather than hue alone;
+                        the `down` hover wash keeps the cue where it stays legible. */}
                     <button
                         onClick={handleLogout}
-                        className="flex items-center gap-3 px-4 py-3 w-full text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        className="flex items-center gap-3 px-4 py-3 w-full text-left text-down dark:text-ink-100 hover:bg-down/10 dark:hover:bg-down/20 rounded-md transition-colors"
                     >
                         <LogOut size={20} />
                         {!isCollapsed && <span className="font-medium">Logout</span>}
                     </button>
                     {!isCollapsed && (
-                        <div className="mt-4 text-xs text-center text-gray-400">
+                        <div className="mt-4 text-xs text-center text-ink-500 dark:text-ink-400">
                             v1.0.0
                         </div>
                     )}

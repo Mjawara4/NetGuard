@@ -33,9 +33,17 @@ export default function NetworkMap() {
             const newEdges = [];
 
             // 1. Internet Cloud Node
+            // This node's fill is `transparent`, so its label sits on the page
+            // ground and does need a dark variant -- unlike the device nodes below.
             newNodes.push({
                 id: 'internet',
-                data: { label: <div className="flex flex-col items-center"><Cloud size={32} color="#3b82f6" /> Internet</div> },
+                data: {
+                    label: (
+                        <div className="flex flex-col items-center text-ink-900 dark:text-ink-100">
+                            <Cloud size={32} className="text-signal-600 dark:text-signal-300" /> Internet
+                        </div>
+                    )
+                },
                 position: { x: 400, y: 0 },
                 style: { width: 100, height: 80, border: 'none', background: 'transparent' }
             });
@@ -45,10 +53,11 @@ export default function NetworkMap() {
                 const siteNodeId = `site-${site.id}`;
                 newNodes.push({
                     id: siteNodeId,
-                    data: { label: <div className="font-bold p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 shadow dark:text-white">{site.name}</div> },
+                    data: { label: <div className="font-bold p-2 border border-ink-300 dark:border-ink-600 rounded-sm bg-white dark:bg-ink-700 shadow text-ink-900 dark:text-ink-50">{site.name}</div> },
                     position: { x: 200 + (idx * 300), y: 150 },
                     type: 'group',
-                    style: { width: 300, height: 400, backgroundColor: 'rgba(240, 240, 240, 0.5)' }
+                    // ink-100 at 50%. React Flow group fills take a literal colour.
+                    style: { width: 300, height: 400, backgroundColor: 'rgba(236, 239, 238, 0.5)' }
                 });
 
                 // Connect Internet to Site (Conceptual)
@@ -64,16 +73,25 @@ export default function NetworkMap() {
 
                     const isOnline = dev.is_active;
 
+                    // BUG FIX, not a restyle. A default React Flow node is filled
+                    // `background-color: white` by reactflow's own stylesheet, which has
+                    // no dark variant -- the node stays white in dark mode. The old
+                    // `dark:text-white` therefore painted white text on a white box:
+                    // measured 1.00:1, i.e. every device label on this map was
+                    // literally invisible at night. Colours inside these nodes are
+                    // deliberately light-mode-only, because the ground they sit on is
+                    // white in BOTH themes; adding a dark: variant here is what
+                    // created the bug.
                     newNodes.push({
                         id: devNodeId,
                         data: {
                             label: (
                                 <div className="flex flex-col items-center">
-                                    <div className={`p-2 rounded-full ${isOnline ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
+                                    <div className={`p-2 rounded-full ${isOnline ? 'bg-up/10 text-up' : 'bg-down/10 text-down'}`}>
                                         <Icon size={24} />
                                     </div>
-                                    <div className="text-xs font-bold mt-1 max-w-[100px] truncate dark:text-white">{dev.name}</div>
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{dev.ip_address}</div>
+                                    <div className="text-xs font-bold mt-1 max-w-[100px] truncate text-ink-900">{dev.name}</div>
+                                    <div className="text-xs text-ink-500">{dev.ip_address}</div>
                                 </div>
                             )
                         },
@@ -82,7 +100,8 @@ export default function NetworkMap() {
                     });
 
                     if (dev.device_type === 'router') {
-                        newEdges.push({ id: `e-internet-${devNodeId}`, source: 'internet', target: devNodeId, animated: true, style: { stroke: '#22c55e', strokeWidth: 2 } });
+                        // `up`, as a literal -- React Flow edge strokes take no classes.
+                        newEdges.push({ id: `e-internet-${devNodeId}`, source: 'internet', target: devNodeId, animated: true, style: { stroke: '#2F7D62', strokeWidth: 2 } });
                     } else {
                         const siteRouter = siteDevices.find(d => d.device_type === 'router');
                         if (siteRouter) {
@@ -103,15 +122,15 @@ export default function NetworkMap() {
     };
 
     return (
-        <div className="h-screen w-full bg-gray-50 dark:bg-gray-900 flex flex-col">
-            <div className="bg-white dark:bg-gray-800 shadow p-4 z-10">
+        <div className="h-screen w-full bg-ink-50 dark:bg-ink-900 flex flex-col">
+            <div className="bg-white dark:bg-ink-800 shadow p-4 z-10">
                 <PageHeader title="Network" accent="Topology" subtitle="Visualize your infrastructure and device relationships." />
             </div>
             {loading && (
                 <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
-                        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                        <p className="font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest text-xs animate-pulse">Mapping topology...</p>
+                        <div className="w-12 h-12 border-4 border-signal-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                        <p className="font-medium text-ink-500 dark:text-ink-400 text-xs animate-pulse">Mapping topology...</p>
                     </div>
                 </div>
             )}
