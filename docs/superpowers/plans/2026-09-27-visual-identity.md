@@ -21,13 +21,51 @@
 - Label floor **12px** (`text-xs`). `text-[10px]` → 0 uses.
 - Radius ladder: `sm` 4px, `md` 8px, `lg` 14px. `rounded-full` survives only for circular things.
 - One webfont: **Instrument Sans**, headings and numerals only; body stays `system-ui`. Subset latin, preloaded. **If the entry bundle passes ~110 KB, drop the webfont entirely and use system-ui** — the spec authorises that fallback.
-- Frontend test baseline: **33 passing** (5 files). None may regress.
+- Frontend test baseline: **67 passing** (8 files) as of Task 3. None may regress. (Was 33/5 when this plan was written; Tasks 1-3 added the rest.)
 - `npm run check:bundle` must keep passing its 350 KB entry budget.
 - Text contrast ≥ 4.5:1 (3:1 at 24px+).
 - Dark mode must keep working on every page.
 - `/opt/netguard/frontend` is bind-mounted only for the *dev* server; the deployed frontend is built into its image, so nothing reaches production until an explicit rebuild. Work in a worktree regardless.
-- node/npm are not installed on the host. Run everything containerized: `docker run --rm -v <worktree>/frontend:/app -w /app node:18-alpine npm test`
+- node **is** installed on the host now (v24, added 2026-09-27 so Playwright could run), so `npx vitest run` works directly from `frontend/`. The containerized route still works if needed.
 - `frontend/node_modules` is tracked in git and will be dirty after `npm install`. **Never `git add -A`.**
+
+### Verification is measured in a browser, not asserted from source
+
+**This applies to every task that changes how anything looks.** It was added
+after Task 3 passed every source-level test while shipping a link at 1.14:1 and
+placeholders at 1.70:1. Source greps prove a class is absent; they cannot prove
+the result is legible.
+
+Use `.superpowers/sdd/2026-09-27-visual-identity/verify/measure.mjs` with
+`fixtures.json`. It drives headless Chromium, walks every rendered text node
+*including form values and `::placeholder`*, composites the full ancestor alpha
+stack, and compares computed colours at WCAG thresholds.
+
+```bash
+cp .superpowers/sdd/2026-09-27-visual-identity/verify/measure.mjs \
+   .superpowers/sdd/2026-09-27-visual-identity/verify/fixtures.json /tmp/pwshot/
+cd /tmp/pwshot && node measure.mjs http://127.0.0.1:5199 <route> <label> [--public] [--min-nodes=N]
+```
+
+Non-negotiables, each learned from a failure:
+
+- **Playwright resolves only from `/tmp/pwshot`.** Do not add it as a repo dependency.
+- **`verify/check.mjs` is retired.** It could not authenticate, so on any protected
+  route it measured the login page under the requested label — the completely
+  unmigrated Dashboard reported "0 contrast failure(s)". It also read `rgba` as
+  opaque, giving every semantic wash a fictional ratio, and it never sampled
+  inputs, which is how the 1.70:1 placeholders passed.
+- **`--public`** for `/login` and `/signup`; everything else needs the seeded
+  token. Dashboard is at `/`, not `/dashboard`.
+- **`--min-nodes`** just under the page's current node count. A page that renders
+  nothing must not be able to report success.
+- **Restart the dev server after any `tailwind.config.js` edit.** Vite does not
+  pick up theme keys via HMR and will serve stale CSS. Confirm with
+  `curl -sS http://127.0.0.1:5199/src/index.css | grep -c <new-token>`.
+- **Both themes, zero failures, before you commit.**
+
+`.superpowers/sdd/**` is gitignored, so this tooling is not in version control.
+If it should outlive the branch it needs a home under `frontend/scripts/`.
 - Commits local only. Never push — the remote carries a plaintext PAT.
 
 ### The substitution table
