@@ -6,8 +6,11 @@ const colorMap = {
     emerald: { bg: 'bg-up/10', text: 'text-ink-900', darkBg: 'dark:bg-up/20', darkText: 'dark:text-ink-50' },
     red: { bg: 'bg-down/10', text: 'text-ink-900', darkBg: 'dark:bg-down/20', darkText: 'dark:text-ink-50' },
     orange: { bg: 'bg-warn/10', text: 'text-ink-900', darkBg: 'dark:bg-warn/20', darkText: 'dark:text-ink-50' },
-    pink: { bg: 'bg-pink-50', text: 'text-pink-600', darkBg: 'dark:bg-pink-900/20', darkText: 'dark:text-pink-400' },
-    cyan: { bg: 'bg-cyan-50', text: 'text-cyan-600', darkBg: 'dark:bg-cyan-900/20', darkText: 'dark:text-cyan-400' },
+    // pink/cyan carried no semantic meaning -- they were decorative variety.
+    // The spec allows three semantics plus one accent, so they collapse to the
+    // accent like blue/indigo rather than becoming a fourth and fifth hue.
+    pink: { bg: 'bg-signal-600/10', text: 'text-signal-600', darkBg: 'dark:bg-signal-600/20', darkText: 'dark:text-signal-400' },
+    cyan: { bg: 'bg-signal-600/10', text: 'text-signal-600', darkBg: 'dark:bg-signal-600/20', darkText: 'dark:text-signal-400' },
     yellow: { bg: 'bg-warn/10', text: 'text-ink-900', darkBg: 'dark:bg-warn/20', darkText: 'dark:text-ink-50' },
     gray: { bg: 'bg-ink-50', text: 'text-ink-600', darkBg: 'dark:bg-ink-900/20', darkText: 'dark:text-ink-400' },
 };
