@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import api from '../api';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Loader2, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -34,53 +34,55 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] dark:bg-gray-900 flex flex-col items-center justify-center p-6 sm:p-10">
+        <div className="min-h-screen bg-ink-50 dark:bg-ink-900 flex flex-col items-center justify-center p-6 sm:p-10">
             <div className="w-full max-w-[400px]">
                 <div className="text-center mb-10">
-                    <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl shadow-xl shadow-blue-100 dark:shadow-blue-900/20 mb-6 group animate-in zoom-in duration-700">
+                    <div className="inline-flex items-center justify-center w-16 h-16 bg-signal-600 rounded-md shadow-xl mb-6 group animate-in zoom-in duration-700">
                         <ShieldCheck className="text-white w-8 h-8 group-hover:scale-110 transition-transform" />
                     </div>
-                    <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight leading-none mb-3">
-                        NetGuard <span className="text-blue-600">AI</span>
+                    <h1 className="text-4xl font-display font-semibold text-ink-900 dark:text-ink-50 tracking-tight leading-none mb-3">
+                        NetGuard <span className="text-signal-600">AI</span>
                     </h1>
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">Autonomous Network Management</p>
+                    <p className="text-ink-500 dark:text-ink-400 font-medium">Autonomous Network Management</p>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-[32px] shadow-2xl shadow-blue-50 dark:shadow-none border border-gray-100 dark:border-gray-700 p-8 sm:p-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                <div className="bg-white dark:bg-ink-800 rounded-md border border-ink-100 dark:border-ink-700 p-8 sm:p-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
                     {error && (
-                        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-2xl text-red-600 dark:text-red-400 text-xs font-bold uppercase tracking-wider flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+                        <div className="mb-6 p-4 bg-down/10 dark:bg-down/20 border border-down/20 dark:border-down/30 rounded-md text-ink-900 dark:text-ink-50 text-xs font-bold flex items-center gap-3">
+                            <div className="w-1.5 h-1.5 rounded-full bg-down animate-pulse"></div>
                             {error}
                         </div>
                     )}
 
                     <form onSubmit={handleLogin} className="space-y-6">
                         <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] ml-1">Email Identity</label>
+                            <label htmlFor="email" className="text-xs font-bold text-ink-400 dark:text-ink-500 ml-1">Email</label>
                             <div className="relative group">
-                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400 group-focus-within:text-signal-500 transition-colors" />
                                 <input
+                                    id="email"
                                     type="email"
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     placeholder="administrator@netguard.ai"
-                                    className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-gray-900 dark:text-white placeholder:text-gray-300 dark:placeholder:text-gray-600 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
+                                    className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-4 pl-12 pr-4 text-sm font-bold text-ink-900 dark:text-white placeholder:text-ink-300 dark:placeholder:text-ink-600 focus:ring-2 focus:ring-signal-500/20 transition-all outline-none"
                                 />
                             </div>
                         </div>
 
                         <div className="space-y-1.5">
-                            <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-[0.2em] ml-1">Password</label>
+                            <label htmlFor="password" className="text-xs font-bold text-ink-400 dark:text-ink-500 ml-1">Password</label>
                             <div className="relative group">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400 group-focus-within:text-signal-500 transition-colors" />
                                 <input
+                                    id="password"
                                     type="password"
                                     required
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="••••••••••••"
-                                    className="w-full bg-gray-50 dark:bg-gray-900 border-none rounded-2xl py-4 pl-12 pr-4 text-base font-bold text-gray-900 dark:text-white placeholder:text-gray-300 dark:placeholder:text-gray-600 focus:ring-2 focus:ring-blue-500/20 transition-all outline-none"
+                                    className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-4 pl-12 pr-4 text-base font-bold text-ink-900 dark:text-white placeholder:text-ink-300 dark:placeholder:text-ink-600 focus:ring-2 focus:ring-signal-500/20 transition-all outline-none"
                                 />
                             </div>
                         </div>
@@ -88,24 +90,21 @@ export default function Login() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-black py-4 px-4 rounded-2xl shadow-xl shadow-blue-200 dark:shadow-blue-900/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest text-xs mt-4"
+                            className="w-full bg-signal-600 hover:bg-signal-700 disabled:bg-signal-400 text-white font-semibold py-4 px-4 rounded-md shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-xs mt-4"
                         >
                             {loading ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
                             ) : (
-                                <>
-                                    Access Console
-                                    <ArrowRight className="w-5 h-5" />
-                                </>
+                                'Sign in'
                             )}
                         </button>
                     </form>
 
-                    <div className="mt-8 pt-8 border-t border-gray-50 dark:border-gray-700 text-center">
-                        <p className="text-gray-400 dark:text-gray-500 text-sm font-medium">
-                            New operator?{' '}
-                            <Link to="/signup" className="text-blue-600 font-black hover:underline underline-offset-4">
-                                Create Account
+                    <div className="mt-8 pt-8 border-t border-ink-50 dark:border-ink-700 text-center">
+                        <p className="text-ink-400 dark:text-ink-500 text-sm font-medium">
+                            New here?{' '}
+                            <Link to="/signup" className="text-signal-600 font-semibold hover:underline underline-offset-4">
+                                Create account
                             </Link>
                         </p>
                     </div>
