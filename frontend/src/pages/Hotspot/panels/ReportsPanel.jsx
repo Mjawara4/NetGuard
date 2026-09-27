@@ -1,6 +1,7 @@
 import React from 'react';
 import { Activity, Clock, FileText, Plus, Search, Users } from 'lucide-react';
 import ResponsiveTable from '../../../components/ResponsiveTable';
+import { bandFor } from '../profileBand';
 
 export default function ReportsPanel({ reportData, filteredReports, reportSearch, setReportSearch, reportPeriod, setReportPeriod, reportStartDate, setReportStartDate, reportEndDate, setReportEndDate, reportPage, setReportPage, selectedDevice }) {
     return (
@@ -140,7 +141,12 @@ export default function ReportsPanel({ reportData, filteredReports, reportSearch
                             <tbody className="divide-y divide-ink-200 dark:divide-ink-700">
                                 {(reportData.profile_stats || []).map((prof) => (
                                     <tr key={prof.profile} className="hover:bg-ink-50 dark:hover:bg-ink-700/50 transition-colors">
-                                        <td className="px-6 py-4 text-xs font-bold text-ink-900 dark:text-ink-50 font-mono">{prof.profile}</td>
+                                        <td className="px-6 py-4 text-xs font-bold text-ink-900 dark:text-ink-50 font-mono">
+                                            <span className="inline-flex items-center gap-2">
+                                                <span className={`w-[5px] h-3 rounded-full shrink-0 ${bandFor(prof.profile)}`} aria-hidden="true"></span>
+                                                {prof.profile}
+                                            </span>
+                                        </td>
                                         <td className="px-6 py-4">
                                             <span className="bg-signal-600/10 dark:bg-signal-600/20 text-ink-900 dark:text-ink-50 px-2 py-1 rounded-lg text-xs font-bold">{prof.count}</span>
                                         </td>
@@ -198,7 +204,12 @@ export default function ReportsPanel({ reportData, filteredReports, reportSearch
                         {
                             header: 'Profile',
                             accessor: 'profile',
-                            render: (r) => <span className="px-2 py-0.5 bg-signal-600/10 dark:bg-signal-600/20 text-ink-900 dark:text-ink-50 rounded-lg text-xs font-semibold">{r.profile}</span>
+                            render: (r) => (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-signal-600/10 dark:bg-signal-600/20 text-ink-900 dark:text-ink-50 rounded-lg text-xs font-semibold">
+                                    <span className={`w-[5px] h-3 rounded-full shrink-0 ${bandFor(r.profile)}`} aria-hidden="true"></span>
+                                    {r.profile}
+                                </span>
+                            )
                         },
                         {
                             header: 'Price',
@@ -220,7 +231,10 @@ export default function ReportsPanel({ reportData, filteredReports, reportSearch
                         <div className="flex justify-between items-center p-2">
                             <div>
                                 <p className="font-bold text-ink-900 dark:text-ink-50 text-sm font-mono">{r.username}</p>
-                                <p className="text-xs font-medium text-ink-500 dark:text-ink-400">{r.profile || '—'}{(r.uptime && r.uptime !== '0s') ? ` • ${r.uptime}` : ''}</p>
+                                <p className="text-xs font-medium text-ink-500 dark:text-ink-400 flex items-center gap-1.5">
+                                    {r.profile && <span className={`w-[5px] h-3 rounded-full shrink-0 ${bandFor(r.profile)}`} aria-hidden="true"></span>}
+                                    <span>{r.profile || '—'}{(r.uptime && r.uptime !== '0s') ? ` • ${r.uptime}` : ''}</span>
+                                </p>
                             </div>
                             <div className="text-right">
                                 <p className="font-bold text-up dark:text-ink-100">{r.price.toLocaleString()} {r.currency}</p>

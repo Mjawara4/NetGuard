@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, Search, Trash2, Users } from 'lucide-react';
 import ResponsiveTable from '../../../components/ResponsiveTable';
+import { bandFor } from '../profileBand';
 
 export default function UsersPanel({ users, userSearch, setUserSearch, searchResults, isSearching, handleDelete, handleExportCSV, handleCleanupExpired, handleBulkDeleteByComment }) {
     return (
@@ -80,7 +81,10 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                             accessor: 'profile',
                             render: (u) => (
                                 <div className="flex flex-col gap-1">
-                                    <span className="max-w-fit px-3 py-1 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-lg text-xs font-semibold whitespace-nowrap">{u.profile}</span>
+                                    <span className="max-w-fit inline-flex items-center gap-1.5 px-3 py-1 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-lg text-xs font-semibold whitespace-nowrap">
+                                        <span className={`w-[5px] h-3 rounded-full shrink-0 ${bandFor(u.profile)}`} aria-hidden="true"></span>
+                                        {u.profile}
+                                    </span>
                                     {(u.limit_uptime || u.limit_bytes_total) && (
                                         <div className="text-xs text-ink-500 dark:text-ink-400 font-medium whitespace-nowrap">
                                             {u.limit_uptime && <span className="font-mono">Time: {u.limit_uptime}</span>}
@@ -128,7 +132,10 @@ export default function UsersPanel({ users, userSearch, setUserSearch, searchRes
                                     <Users size={16} className="text-signal-600 dark:text-signal-300" />
                                     <span className="font-bold text-ink-900 dark:text-ink-50 text-sm">{u.name}</span>
                                 </div>
-                                <span className="px-2 py-0.5 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-md text-xs font-semibold text-center">{u.profile}</span>
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 rounded-md text-xs font-semibold text-center">
+                                    <span className={`w-[5px] h-3 rounded-full shrink-0 ${bandFor(u.profile)}`} aria-hidden="true"></span>
+                                    {u.profile}
+                                </span>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs text-ink-500 dark:text-ink-400">
                                 <div className="bg-ink-50 dark:bg-ink-800/50 p-2 rounded-lg">

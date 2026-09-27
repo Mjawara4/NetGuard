@@ -57,7 +57,7 @@ const SalesForecast = () => {
                 </div>
                 <div className="mt-4 pt-4 border-t border-white/20">
                     <p className="text-sm font-medium opacity-95 flex items-start gap-2">
-                        <span className="bg-white/20 p-1 rounded text-xs px-2">Analysis</span>
+                        <span className="bg-ink-900/20 p-1 rounded text-xs px-2">Analysis</span>
                         {trend || "Sales are expected to follow current trends."}
                     </p>
                 </div>
