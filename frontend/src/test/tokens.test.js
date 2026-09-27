@@ -77,3 +77,73 @@ describe('display font', () => {
         expect(config.theme.extend.fontFamily.display).toContain('system-ui');
     });
 });
+
+describe('semantic tint compositing', () => {
+    // Task 2 amendment. The kit renders semantic "wash" chips as a flat
+    // token composited over the page ground at low alpha — e.g. Badge.jsx's
+    // `bg-down/10 ... dark:bg-down/20` — not a literal Tailwind shade. A
+    // contrast check on the raw token alone (as above) says nothing about
+    // what actually paints once that alpha is applied, so it is computed
+    // here instead of eyeballed.
+    //
+    // Alphas are read from where the kit actually uses them, not assumed:
+    // grepping 'up/', 'down/', 'warn/' across Badge.jsx and StatCard.jsx
+    // shows every semantic wash uses the same pair, no exceptions —
+    // 10% in light mode, 20% in dark mode.
+    const LIGHT_ALPHA = 0.10;
+    const DARK_ALPHA = 0.20;
+
+    // Straight per-channel linear interpolation on the 8-bit sRGB values.
+    // This is what `background-color` with alpha actually composites to in
+    // a browser over an opaque parent — do not lift this into linear-light
+    // space, that would answer a different question than the one on screen.
+    function composite(fgHex, bgHex, alpha) {
+        const f = fgHex.replace('#', '');
+        const b = bgHex.replace('#', '');
+        const channels = [0, 2, 4].map((i) => {
+            const fv = parseInt(f.slice(i, i + 2), 16);
+            const bv = parseInt(b.slice(i, i + 2), 16);
+            return Math.round(fv * alpha + bv * (1 - alpha));
+        });
+        return '#' + channels.map((v) => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    const semantics = { up: colors.up, down: colors.down, warn: colors.warn };
+
+    for (const [name, hex] of Object.entries(semantics)) {
+        it(`${name}'s light-mode wash is distinguishable from the page ground`, () => {
+            const tint = composite(hex, colors.ink[50], LIGHT_ALPHA);
+            expect(contrast(tint, colors.ink[50])).toBeGreaterThan(1.1);
+        });
+
+        it(`${name}'s dark-mode wash is distinguishable from the page ground`, () => {
+            const tint = composite(hex, colors.ink[900], DARK_ALPHA);
+            expect(contrast(tint, colors.ink[900])).toBeGreaterThan(1.1);
+        });
+
+        // The kit's original design used the semantic itself as the wash's
+        // text/icon colour (`text-down dark:text-down`, etc). Computed, that
+        // pattern's contrast falls monotonically as alpha rises — the
+        // composite converges toward the text colour itself as alpha
+        // approaches 1, so alpha=0 (no wash at all) is the *best* case, not
+        // the worst. Even at alpha=0, a semantic's direct contrast against
+        // ink-900 tops out at 3.36 (up), 3.02 (warn), 2.39 (down) — all
+        // below 4.5, at any alpha, in dark mode. No alpha change and no
+        // amount of darkening the token fixes this: darkening only helps
+        // the light-ground comparison and makes the dark-ground one worse.
+        // Badge.jsx and StatCard.jsx were changed to use neutral ink as the
+        // wash's text/icon colour instead (ink-900 on the light wash,
+        // ink-50 on the dark wash) — the semantic hue now lives only in the
+        // background. This asserts that shipped pairing actually clears
+        // 4.5:1, in both modes, for all three semantics.
+        it(`${name}'s wash is readable with neutral ink text in light mode`, () => {
+            const tint = composite(hex, colors.ink[50], LIGHT_ALPHA);
+            expect(contrast(colors.ink[900], tint)).toBeGreaterThanOrEqual(4.5);
+        });
+
+        it(`${name}'s wash is readable with neutral ink text in dark mode`, () => {
+            const tint = composite(hex, colors.ink[900], DARK_ALPHA);
+            expect(contrast(colors.ink[50], tint)).toBeGreaterThanOrEqual(4.5);
+        });
+    }
+});
