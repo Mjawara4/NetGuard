@@ -113,7 +113,8 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
 
     # Validate WireGuard server endpoint (IPv4 or hostname)
     # Hostname pattern: alphanumeric, dots, hyphens
-    if not re.match(r"^[A-Za-z0-9.-]+$", wg_server_endpoint):
+    # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
+    if not re.compile(r"[A-Za-z0-9.-]+").fullmatch(wg_server_endpoint):
         raise ValueError(
             f"wg_server_endpoint {wg_server_endpoint!r} must be a valid IPv4 address or hostname"
         )
@@ -126,22 +127,24 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         pass
 
     # Validate WireGuard keys (base64, at least 40 chars)
-    base64_pattern = re.compile(r"^[A-Za-z0-9+/=]+$")
+    # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
+    base64_pattern = re.compile(r"[A-Za-z0-9+/=]+")
     for name, key in (("wg_private_key", wg_private_key),
                       ("wg_server_public_key", wg_server_public_key)):
-        if not base64_pattern.match(key):
+        if not base64_pattern.fullmatch(key):
             raise ValueError(f"{name} must be base64-encoded")
         if len(key) < 40:
             raise ValueError(f"{name} must be at least 40 characters")
 
     # Validate API password (alphanumeric only)
-    if not re.match(r"^[A-Za-z0-9]+$", api_password):
+    # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
+    if not re.compile(r"[A-Za-z0-9]+").fullmatch(api_password):
         raise ValueError(
             "api_password must contain only alphanumeric characters"
         )
 
-    # Validate WireGuard server port
-    if not isinstance(wg_server_port, int) or wg_server_port < 1 or wg_server_port > 65535:
+    # Validate WireGuard server port (reject bool; bool is subclass of int in Python)
+    if isinstance(wg_server_port, bool) or not isinstance(wg_server_port, int) or wg_server_port < 1 or wg_server_port > 65535:
         raise ValueError(
             f"wg_server_port must be an integer between 1 and 65535, got {wg_server_port}"
         )

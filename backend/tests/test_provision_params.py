@@ -201,3 +201,37 @@ def test_rejects_ipv6_lan():
 def test_rejects_ipv6_wg_client_ip():
     with pytest.raises(ValueError, match="IPv4"):
         build_params(**{**OK, "wg_client_ip": "fd00::1"})
+
+
+# Trailing newline rejection tests for regex validators (C1 bug prevention)
+def test_rejects_wg_server_endpoint_with_trailing_newline():
+    """wg_server_endpoint must reject trailing newlines via fullmatch()"""
+    with pytest.raises(ValueError, match="wg_server_endpoint"):
+        build_params(**{**OK, "wg_server_endpoint": "vpn.example.com\n"})
+
+
+def test_rejects_wg_private_key_with_trailing_newline():
+    """wg_private_key must reject trailing newlines via fullmatch()"""
+    with pytest.raises(ValueError, match="wg_private_key"):
+        valid_key = "cHJpdmF0ZS1rZXktbm90LXJlYWwtYnV0LWxvbmctZW5vdWdo"
+        build_params(**{**OK, "wg_private_key": valid_key + "\n"})
+
+
+def test_rejects_wg_server_public_key_with_trailing_newline():
+    """wg_server_public_key must reject trailing newlines via fullmatch()"""
+    with pytest.raises(ValueError, match="wg_server_public_key"):
+        valid_key = "c2VydmVyLXB1YmxpYy1rZXktbm90LXJlYWwtYnV0LWxvbmc="
+        build_params(**{**OK, "wg_server_public_key": valid_key + "\n"})
+
+
+def test_rejects_api_password_with_trailing_newline():
+    """api_password must reject trailing newlines via fullmatch()"""
+    with pytest.raises(ValueError, match="api_password"):
+        build_params(**{**OK, "api_password": "SecurePass123\n"})
+
+
+# Bool rejection test
+def test_rejects_wg_server_port_as_bool():
+    """wg_server_port must reject bool (bool is subclass of int in Python)"""
+    with pytest.raises(ValueError, match="wg_server_port"):
+        build_params(**{**OK, "wg_server_port": True})
