@@ -132,9 +132,5 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
                  "www.msftconnecttest.com", p.hotspot_dns_name):
         lines.append(f"/ip hotspot walled-garden add dst-host={host} {TAG}")
-    lines.append(
-        "/ip hotspot walled-garden ip add dst-address=162.159.200.1 "
-        f"action=accept {TAG}"
-    )
     lines.append("# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.")
     return lines

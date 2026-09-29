@@ -58,14 +58,17 @@ def test_default_tier_is_updated_in_place_with_sharing_4_and_no_session_timeout(
     assert "[find" in toks and "name=default]" in toks
     assert "shared-users=4" in toks
     assert not any(t.startswith("session-timeout=") for t in toks)
-    assert "add-mac-cookie=yes" in toks
+    for common in ("add-mac-cookie=yes", "mac-cookie-timeout=3d",
+                   "idle-timeout=5m", "keepalive-timeout=2m"):
+        assert common in toks, common
 
 
-def test_no_tier_is_rate_limited():
-    # Explicitly specified: bandwidth is unshaped, tiers differ by duration.
-    for l in sections.voucher_profiles(P):
-        if not l.startswith("#"):
-            assert "rate-limit" not in l, l
+def test_nothing_in_the_hotspot_is_rate_limited():
+    for fn in (sections.voucher_profiles, sections.hotspot_server):
+        for line in fn(P):
+            if line.strip().startswith("#"):
+                continue          # the explanatory comment names the rule
+            assert "rate-limit" not in line, f"{fn.__name__}: {line}"
 
 
 def test_walled_garden_allows_each_probe_host_on_its_own_line():
@@ -74,11 +77,6 @@ def test_walled_garden_allows_each_probe_host_on_its_own_line():
                  "www.msftconnecttest.com", "login.netguard.local"):
         l = line_with(ls, f"/ip hotspot walled-garden add dst-host={host} ")
         assert 'comment="NetGuard"' in l
-
-
-def test_walled_garden_ntp_ip_entry_exists():
-    l = line_with(sections.walled_garden(P), "/ip hotspot walled-garden ip add ")
-    assert "action=accept" in l.split()
 
 
 def test_walled_garden_ends_with_the_visible_payment_todo():
@@ -93,7 +91,7 @@ def test_walled_garden_objects_are_attributable():
         if " add " in l and not l.startswith("#"):
             seen += 1
             assert 'comment="NetGuard"' in l, l
-    assert seen == 5
+    assert seen == 4
 
 
 def test_hotspot_objects_do_not_carry_comment():
