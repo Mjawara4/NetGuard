@@ -483,9 +483,33 @@ def text(lines):
 
 
 def test_preflight_refuses_routeros_6():
-    t = text(sections.preflight(P))
-    assert "/system resource get version" in t
-    assert ":error" in t
+    # NOT "these two substrings appear somewhere in preflight" -- the hotspot and
+    # wireguard guards already contain `:error`, and `get version` appears in the
+    # banner, so that form passes with the whole version guard DELETED. Confirmed
+    # survived mutation in the Task 4 review. Assert the guard as one unit.
+    lines = sections.preflight(P)
+    guard = [l for l in lines if "get version" in l and ":error" in l]
+    assert guard, "no single line both reads the version and errors on it"
+    assert any("7" in l for l in guard), "version guard does not name the floor"
+
+
+def test_preflight_greenfield_guards_actually_error():
+    # Same trap: asserting the substrings `/ip hotspot find` and
+    # `wireguard-netguard` survives removing the `:error` that makes them a
+    # guard rather than a print.
+    lines = sections.preflight(P)
+    for probe in ("/ip hotspot find", "wireguard-netguard"):
+        guard = [l for l in lines if probe in l and ":error" in l]
+        assert guard, f"{probe} is checked but does not abort"
+
+
+def test_clock_enables_the_ntp_client():
+    # Voucher durations are enforced by the router's clock, so an NTP client
+    # that is configured but not ENABLED is a silent revenue bug. Asserting the
+    # servers alone survived deleting `set enabled=yes`.
+    t = text(sections.identity_and_clock(P))
+    assert "/system ntp client set" in t
+    assert "enabled=yes" in t
 
 
 def test_preflight_is_the_greenfield_guard():
@@ -569,7 +593,13 @@ blocked and that enabling it needs a physical button press or a cold reboot.
 enables the NTP client with `time.cloudflare.com,time.google.com`.
 
 `bridge(p)` creates `bridge-hotspot` and adds `ether2`–`ether8` plus the
-wireless interface as ports. `ether1` stays out — it is the WAN uplink. Leave
+wireless interfaces as ports. Guard every port add on the interface existing
+(`:if ([:len [/interface find where name="X"]] > 0)`), because customers
+provision boards with fewer ports than the reference L009. Include a guarded
+`wlan1` alongside `wifi1`/`wifi2`: the L009 uses the new `/interface wifi`
+stack, but an older board self-provisioned by a customer exposes `wlan1`, and
+without it that router gets NO radio in the bridge — a hotspot with no wireless,
+which looks like a working install. `ether1` stays out — it is the WAN uplink. Leave
 the SFP port out with a comment saying it is the likely distribution uplink.
 
 `addressing(p)` creates the pool, the `/ip address` on the bridge, the DHCP
