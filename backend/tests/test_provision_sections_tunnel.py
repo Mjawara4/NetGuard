@@ -118,3 +118,64 @@ def test_api_user_comment_is_present_on_group_and_user():
     for prefix in ("/user group add ", "/user add "):
         (line,) = [l for l in ls if l.startswith(prefix)]
         assert line.endswith(' comment="NetGuard API"'), line
+
+
+def test_capsman_does_not_require_peer_certificates_by_decision():
+    c = cmds(sections.capsman(P), "/interface wifi capsman set ")
+    assert "require-peer-certificate=no" in c, (
+        "require-peer-certificate is 'no' by decision, not oversight: per-AP certificates are not "
+        "viable for 100+ self-provisioned APs and would break plug-in-any-port adoption. The risk "
+        "(any LAN/bridge host can adopt as a CAP) is bounded by interfaces=<bridge>, and documented "
+        "in sections.capsman. Do not flip this without changing that decision."
+    )
+    assert "ACCEPTED RISK" in text(sections.capsman(P))
+
+
+def test_capsman_ssid_is_the_site_slug():
+    # The name customers see on their phones.
+    cfg = cmds(sections.capsman(P), "/interface wifi configuration add ")
+    assert "ssid=serrekunda-counter" in cfg
+
+
+def _wg_generator_tokens():
+    """key=value tokens per command, parsed from WireGuardService's own script."""
+    from app.services.wireguard import WireGuardService
+    script = WireGuardService.generate_mikrotik_script(
+        "cHJpdmF0ZS1rZXktbm90LXJlYWwtcHJpdmF0ZS1rZXk=", "10.13.13.7",
+        "c2VydmVyLWtleS1ub3QtcmVhbC1zZXJ2ZXIta2V5LW4=", "74.208.167.166", 51820)
+    out, menu = {}, None
+    for line in script.replace("\\\n", " ").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("/"):
+            menu = line
+            continue
+        if line.startswith("add "):
+            out[menu] = dict(t.split("=", 1) for t in line.split() if "=" in t)
+    return out
+
+
+def test_sections_wireguard_has_not_drifted_from_the_wireguard_service():
+    # NetGuard reaches each device at its tunnel address; provisioned and
+    # re-keyed routers must agree on these values.
+    theirs = _wg_generator_tokens()
+    ours = sections.wireguard(P)
+
+    def mine(prefix):
+        return dict(t.split("=", 1) for t in cmds(ours, prefix) if "=" in t)
+
+    iface = mine("/interface wireguard add ")
+    peer = mine("/interface wireguard peers add ")
+    route = mine("/ip route add ")
+    addr = mine("/ip address add ")
+    t_iface, t_peer = theirs["/interface wireguard"], theirs["/interface wireguard peers"]
+    t_route, t_addr = theirs["/ip route"], theirs["/ip address"]
+    for k in ("name", "listen-port", "mtu"):
+        assert iface[k] == t_iface[k], k
+    for k in ("allowed-address", "interface", "persistent-keepalive"):
+        assert peer[k] == t_peer[k], k
+    for k in ("dst-address", "gateway", "distance", "routing-table", "scope", "target-scope"):
+        assert route[k] == t_route[k], k
+    for k in ("address", "interface", "network"):
+        assert addr[k] == t_addr[k].replace("{client_ip}", "10.13.13.7"), k
