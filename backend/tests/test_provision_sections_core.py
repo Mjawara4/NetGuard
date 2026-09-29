@@ -1,0 +1,101 @@
+from app.services.provisioning.params import build_params
+from app.services.provisioning import sections
+
+P = build_params(
+    site_slug="serrekunda-counter",
+    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZw==",
+    wg_client_ip="10.13.13.7",
+    wg_server_public_key="c2VydmVyLWtleS1ub3QtcmVhbC1wYWRkaW5nLXBhZGRpbmc=",
+    wg_server_endpoint="74.208.167.166", wg_server_port=51820,
+    api_password="Xk7mQp2rTz9wLb4nHc6v",
+)
+
+
+def text(lines):
+    return "\n".join(lines)
+
+
+def test_preflight_refuses_routeros_6():
+    t = text(sections.preflight(P))
+    assert "/system resource get version" in t
+    assert ":error" in t
+
+
+def test_preflight_is_the_greenfield_guard():
+    t = text(sections.preflight(P))
+    # Must abort if a hotspot or our tunnel already exists.
+    assert "/ip hotspot find" in t
+    assert "wireguard-netguard" in t
+
+
+def test_preflight_reports_license_and_device_mode():
+    t = text(sections.preflight(P))
+    assert "/system license" in t
+    assert "device-mode" in t
+    # Both are wrapped so a command missing on some builds cannot abort the run.
+    assert "on-error" in t
+
+
+def test_preflight_reads_license_level_not_only_nlevel():
+    # CHR-verified: RouterOS 7.16.2 rejects `nlevel` and exposes `level`.
+    t = text(sections.preflight(P))
+    assert "/system license get level" in t
+
+
+def test_preflight_uses_no_local_variables():
+    # CHR-verified: at the top level of an imported file, `:local x [cmd]` is
+    # empty on the next line, so a version check built on it aborted every
+    # router, including valid ones. Guards must be single-statement.
+    for line in sections.preflight(P):
+        if not line.startswith("#"):
+            assert ":local" not in line, line
+
+
+def test_clock_comes_before_anything_time_dependent():
+    t = text(sections.identity_and_clock(P))
+    assert "/system ntp client" in t
+    assert "time-zone-name=Africa/Banjul" in t
+    assert "time.cloudflare.com" in t and "time.google.com" in t
+    assert "name=serrekunda-counter" in t
+
+
+def test_bridge_guards_every_port_on_the_interface_existing():
+    lines = sections.bridge(P)
+    ports = [l for l in lines if "/interface bridge port add" in l]
+    for n in range(2, 9):
+        matching = [l for l in ports if f"interface=ether{n} " in l]
+        assert len(matching) == 1, n
+        assert f'[/interface find where name="ether{n}"]' in matching[0]
+        assert matching[0].startswith(":if ")
+    assert not any("interface=ether1 " in l for l in ports)
+    assert any("interface=wifi1 " in l for l in ports)
+
+
+def test_addressing_matches_the_agreed_plan():
+    t = text(sections.addressing(P))
+    assert "address=10.15.0.1/16" in t
+    assert "ranges=10.15.1.2-10.15.254.254" in t
+    assert "lease-time=4h" in t
+    assert "authoritative=yes" in t
+
+
+def test_dns_is_open_to_clients_but_nat_exists():
+    t = text(sections.dns_and_nat(P))
+    assert "allow-remote-requests=yes" in t
+    assert "servers=1.1.1.1,8.8.8.8" in t
+    assert "cache-size=4096KiB" in t
+    assert "action=masquerade" in t
+    assert "out-interface=ether1" in t
+
+
+def test_every_created_object_is_attributable():
+    # Sections emit the single-line form `/ip pool add name=...`, so matching
+    # lines that START with "add" would match nothing and pass vacuously.
+    # Match " add " and require at least one hit, so an empty match fails.
+    seen = 0
+    for fn in (sections.bridge, sections.addressing, sections.dns_and_nat):
+        for line in fn(P):
+            if " add " in line:
+                seen += 1
+                assert 'comment="NetGuard"' in line, line
+    assert seen >= 3, f"expected several created objects, matched {seen}"
