@@ -16,9 +16,17 @@ def text(lines):
 
 
 def test_preflight_refuses_routeros_6():
-    t = text(sections.preflight(P))
-    assert "/system resource get version" in t
-    assert ":error" in t
+    lines = sections.preflight(P)
+    guard = [l for l in lines if "get version" in l and ":error" in l]
+    assert guard, "no single line both reads the version and errors on it"
+    assert any("7" in l for l in guard), "version guard does not name the floor"
+
+
+def test_preflight_greenfield_guards_actually_error():
+    lines = sections.preflight(P)
+    for probe in ("/ip hotspot find", "wireguard-netguard"):
+        guard = [l for l in lines if probe in l and ":error" in l]
+        assert guard, f"{probe} is checked but does not abort"
 
 
 def test_preflight_is_the_greenfield_guard():
@@ -59,6 +67,12 @@ def test_clock_comes_before_anything_time_dependent():
     assert "name=serrekunda-counter" in t
 
 
+def test_clock_enables_the_ntp_client():
+    t = text(sections.identity_and_clock(P))
+    assert "/system ntp client set" in t
+    assert "enabled=yes" in t
+
+
 def test_bridge_guards_every_port_on_the_interface_existing():
     lines = sections.bridge(P)
     ports = [l for l in lines if "/interface bridge port add" in l]
@@ -69,6 +83,9 @@ def test_bridge_guards_every_port_on_the_interface_existing():
         assert matching[0].startswith(":if ")
     assert not any("interface=ether1 " in l for l in ports)
     assert any("interface=wifi1 " in l for l in ports)
+    wlan = [l for l in ports if "interface=wlan1 " in l]
+    assert len(wlan) == 1
+    assert '[/interface find where name="wlan1"]' in wlan[0] and wlan[0].startswith(":if ")
 
 
 def test_addressing_matches_the_agreed_plan():

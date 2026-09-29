@@ -60,7 +60,8 @@ def bridge(p: ProvisionParams) -> list[str]:
     for n in range(2, 9):
         lines.append(_port_if_present(f"ether{n}", p.bridge_name))
     # Built-in radio: wifi-qcom boards name it wifi1/wifi2.
-    for name in ("wifi1", "wifi2"):
+    # Older boards using the legacy wireless package name it wlan1.
+    for name in ("wifi1", "wifi2", "wlan1"):
         lines.append(_port_if_present(name, p.bridge_name))
     return lines
 
