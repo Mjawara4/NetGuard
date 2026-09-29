@@ -1177,19 +1177,45 @@ git commit -m "feat(backend): endpoint returning a one-shot router provisioning 
 Customers now onboard themselves, so the endpoint is unusable without a button.
 
 **Files:**
-- Modify: `frontend/src/pages/Settings.jsx`
+- Modify: `frontend/src/pages/Devices.jsx` (NOT Settings.jsx — see the note below)
 - Test: `frontend/src/test/provision-script.test.jsx`
 
 **Interfaces:**
 - Consumes: `GET /api/v1/inventory/devices/{id}/provision-script` from Task 9.
 
+**Controller correction to this plan:** an earlier draft named `Settings.jsx`.
+That is wrong. `Settings.jsx` only lists the endpoint in an API reference
+*table*; the working script flow already lives in `Devices.jsx`:
+
+- `Devices.jsx:147` `handleProvision()` — POSTs `provision-wireguard`, puts
+  `res.data.mikrotik_script` in state, opens a modal
+- `Devices.jsx:453` renders the script
+- `Devices.jsx:456` an explicit copy button using
+  `navigator.clipboard.writeText` plus an `alert()` confirmation
+
+Extend that pattern rather than building a second one. The new control sits
+beside the existing WireGuard action on the selected device, and reuses the same
+modal shape so an operator sees one consistent flow.
+
 - [ ] **Step 1: Write the failing test**
 
-Render the Settings page with a mocked device list and assert: a "Get setup script" control exists per router; clicking it calls the endpoint once; the returned script is shown in a copyable block; the generated API password is displayed with a warning that it is shown only once; and a 409 renders the remedy text ("provision WireGuard first") rather than a raw error.
+Render `Devices.jsx` with a mocked device list and assert: a "Get setup script"
+control exists for the selected router; clicking it calls
+`/inventory/devices/{id}/provision-script` exactly once; the returned script is
+rendered; the generated API password is shown with a warning that it appears
+only once; and a 409 response renders the remedy text ("provision WireGuard
+first") rather than a raw error string.
 
 - [ ] **Step 2: Run it to confirm it fails.**
 
-- [ ] **Step 3: Implement**, reusing the existing kit components and the ink/signal tokens. The script block must NOT be auto-selected or auto-copied — it is a credential, and silently putting a router's private key on the clipboard is a surprise. Provide an explicit copy button.
+- [ ] **Step 3: Implement**, reusing the existing modal and the ink/signal
+tokens. The script block must NOT be auto-selected or auto-copied — it is a
+credential, and silently putting a router's private key on someone's clipboard
+is a surprise. Keep the existing explicit copy button pattern.
+
+Note the existing flow reports errors with `alert()`. Match the surrounding
+code rather than introducing a second error convention in one file; improving
+`alert()` usage across the page is out of scope here.
 
 - [ ] **Step 4: Run the frontend suite** — baseline 148 passing, none may regress:
   `cd frontend && npx vitest run`
