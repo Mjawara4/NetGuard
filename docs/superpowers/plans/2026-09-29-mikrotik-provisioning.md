@@ -20,7 +20,7 @@
 - Voucher tiers: `default` (no timeout, `shared-users=4`), `1-Hour` (`1h`/1), `24-Hours` (`24h`/2), `7-Days` (`7d`/4). All with `add-mac-cookie=yes`, `mac-cookie-timeout=3d`, `idle-timeout=5m`, `keepalive-timeout=2m`.
 - Hotspot profile: `login-by=http-chap,mac-cookie`, `http-cookie-lifetime=3d`, `dns-name=login.netguard.local`. **No TLS certificate** — there is no domain, and captive-portal detection works over plain HTTP plus DHCP option 114.
 - `/ip service set api address=10.13.13.0/24` — never `0.0.0.0/0`.
-- Every object the script creates carries `comment="NetGuard"`.
+- Every object the script creates carries `comment="NetGuard"` — **except on the three menus RouterOS refuses it**. Confirmed on a real 7.16.2 router in Task 5: `/ip hotspot profile add`, `/ip hotspot add` and `/ip hotspot user profile add` all reject `comment=` with `expected end of command`. Those objects are identified by NAME instead (`netguard`, `netguard-hotspot`, and the four tier names). Walled-garden entries DO accept `comment=`.
 - NTP and timezone are configured **before** the hotspot sections. Voucher durations are enforced by the router's clock.
 - CAPsMAN uses the `/interface wifi` (wifi-qcom) stack, which supports local forwarding only. Do not port to legacy `/caps-man`.
 - NetGuard authenticates to RouterOS with `device.ssh_username` / `device.ssh_password` (see `backend/app/routers/hotspot.py:270`). Misleadingly named, but that is where the generated API credential must be written. Do not rename those columns in this work.
@@ -657,8 +657,8 @@ from app.services.provisioning.params import build_params
 from app.services.provisioning import sections
 
 P = build_params(
-    site_slug="serrekunda-counter", wg_private_key="k", wg_client_ip="10.13.13.7",
-    wg_server_public_key="k", wg_server_endpoint="74.208.167.166",
+    site_slug="serrekunda-counter", wg_private_key="k" * 44, wg_client_ip="10.13.13.7",
+    wg_server_public_key="k" * 44, wg_server_endpoint="74.208.167.166",
     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v",
 )
 def text(ls): return "\n".join(ls)
@@ -725,7 +725,11 @@ Global Constraints table. Emit **no** `rate-limit` key. Include a comment that
 `shared-users=4` means 500 licensed sessions is as few as 125 vouchers.
 
 `walled_garden(p)` adds `/ip hotspot walled-garden` entries for the three OS
-probe hosts plus the portal name, and `/ip hotspot walled-garden ip` for NTP.
+probe hosts plus the portal name. **No NTP entry** — the walled garden governs
+unauthenticated CLIENTS, and a client does not need NTP to reach the portal.
+The ROUTER's clock is set by `identity_and_clock` and the router is not subject
+to its own walled garden, so an NTP entry here buys nothing and would need an
+arbitrary hardcoded IP.
 End with a literal comment line:
 `# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.`
 A comment in generated output is correct here — the gap belongs in front of the
@@ -767,8 +771,8 @@ from app.services.provisioning import sections
 from app.services.provisioning.secrets import generate_api_password, API_PASSWORD_ALPHABET
 
 P = build_params(
-    site_slug="serrekunda-counter", wg_private_key="k", wg_client_ip="10.13.13.7",
-    wg_server_public_key="k", wg_server_endpoint="74.208.167.166",
+    site_slug="serrekunda-counter", wg_private_key="k" * 44, wg_client_ip="10.13.13.7",
+    wg_server_public_key="k" * 44, wg_server_endpoint="74.208.167.166",
     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v",
 )
 def text(ls): return "\n".join(ls)
@@ -1041,14 +1045,37 @@ def test_api_is_never_world_open_anywhere_in_the_script():
     assert "0.0.0.0/0" not in script
 
 
+# RouterOS rejects `comment=` on these three menus (confirmed on 7.16.2 in
+# Task 5: `expected end of command`, error column on the comment). They are
+# identified by name instead. Listed explicitly rather than skipped by a
+# substring, so adding a fourth exception is a deliberate edit.
+MENUS_WITHOUT_COMMENT = (
+    "/ip hotspot profile add",
+    "/ip hotspot user profile add",
+    "/ip hotspot add",
+)
+
+
 def test_every_add_is_attributable_to_netguard():
     script = build_provision_script(build_params(**FIXED))
     seen = 0
     for line in script.splitlines():
-        if " add " in line:
-            seen += 1
-            assert 'comment="NetGuard"' in line, line
+        if " add " not in line:
+            continue
+        if any(m in line for m in MENUS_WITHOUT_COMMENT):
+            continue
+        seen += 1
+        assert 'comment="NetGuard"' in line, line
     assert seen >= 10, f"expected many created objects, matched {seen}"
+
+
+def test_the_comment_exempt_objects_are_identifiable_by_name():
+    # They cannot carry a comment, so the only handle on them is their name.
+    # Without this, the exemption above would let them become anonymous.
+    script = build_provision_script(build_params(**FIXED))
+    for line in script.splitlines():
+        if any(m in line for m in MENUS_WITHOUT_COMMENT):
+            assert "name=" in line, line
 
 
 def test_summary_tells_the_installer_what_they_need():
@@ -1163,8 +1190,8 @@ def test_refuses_a_device_with_no_wireguard_key():
 
 def test_script_never_contains_a_placeholder_or_none():
     p = build_params(
-        site_slug="a-site", wg_private_key="realkey", wg_client_ip="10.13.13.7",
-        wg_server_public_key="realserverkey", wg_server_endpoint="203.0.113.1",
+        site_slug="a-site", wg_private_key="r" * 44, wg_client_ip="10.13.13.7",
+        wg_server_public_key="s" * 44, wg_server_endpoint="203.0.113.1",
         wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v",
     )
     s = build_provision_script(p)
