@@ -134,3 +134,65 @@ def walled_garden(p: ProvisionParams) -> list[str]:
         lines.append(f"/ip hotspot walled-garden add dst-host={host} {TAG}")
     lines.append("# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.")
     return lines
+
+
+def _fw_comment(name: str) -> str:
+    return f'comment="NetGuard fw: {name}"'
+
+
+def firewall(p: ProvisionParams) -> list[str]:
+    """Input-chain firewall, service pinning and discovery hardening.
+
+    Apply this section LAST: it ends by dropping everything arriving on the
+    WAN interface, so anything that reaches the router over that path (an SSH
+    session driving the import) can no longer open new connections afterwards.
+    Established connections survive because rule 1 accepts them.
+    """
+    drop_all = "drop wan input"
+    wan = p.wan_interface
+    # The terminal rule is added first, then every other rule is inserted
+    # before it, in reading order. Order is therefore explicit, not
+    # positional-by-accident, and does not depend on what the router already had.
+    def before(_rule: str = drop_all) -> str:
+        return f'place-before=[find where comment="NetGuard fw: {drop_all}"]'
+
+    lines = [
+        "# --- firewall ---",
+        "# Terminal rule first; every other rule is placed before it, in order.",
+        f"/ip firewall filter add chain=input action=drop in-interface={wan} {_fw_comment(drop_all)}",
+        f"/ip firewall filter add chain=input action=accept connection-state=established,related,untracked {before(drop_all)} {_fw_comment('accept established')}",
+        f"/ip firewall filter add chain=input action=drop connection-state=invalid {before(drop_all)} {_fw_comment('drop invalid')}",
+        f"/ip firewall filter add chain=input action=accept src-address={p.wg_subnet_cidr} {before(drop_all)} {_fw_comment('accept netguard tunnel')}",
+        f"/ip firewall filter add chain=input action=accept protocol=icmp {before(drop_all)} {_fw_comment('accept icmp')}",
+        "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
+        f"/ip firewall filter add chain=input action=drop protocol=udp dst-port=53 in-interface={wan} {before(drop_all)} {_fw_comment('drop wan dns udp')}",
+        f"/ip firewall filter add chain=input action=drop protocol=tcp dst-port=53 in-interface={wan} {before(drop_all)} {_fw_comment('drop wan dns tcp')}",
+        "# --- service hardening ---",
+        "/ip service set telnet disabled=yes",
+        "/ip service set ftp disabled=yes",
+        "/ip service set www-ssl disabled=yes",
+        "/ip service set api-ssl disabled=yes",
+        f"/ip service set ssh address={p.wg_subnet_cidr}",
+        f"/ip service set winbox address={p.wg_subnet_cidr}",
+        f"/ip service set api disabled=no port=8728 address={p.wg_subnet_cidr}",
+        "# www is left enabled on purpose: the hotspot login page is served by it.",
+        "# --- discovery and cloud ---",
+        "/ip neighbor discovery-settings set discover-interface-list=none",
+        "/tool mac-server set allowed-interface-list=none",
+        "/tool mac-server mac-winbox set allowed-interface-list=none",
+        "/ip cloud set ddns-enabled=no",
+    ]
+    return lines
+
+
+def api_user(p: ProvisionParams) -> list[str]:
+    """The least-privilege account NetGuard uses, reachable only from the tunnel."""
+    policy = ("api,read,write,test,winbox,!local,!telnet,!ssh,!ftp,!reboot,"
+              "!policy,!password,!sniff,!sensitive,!romon")
+    return [
+        "# --- NetGuard API user ---",
+        "# !sensitive stops this account reading other stored credentials.",
+        f"/user group add name={p.api_username} policy={policy} comment=\"NetGuard API\"",
+        f"/user add name={p.api_username} group={p.api_username} "
+        f'address={p.wg_subnet_cidr} password="{p.api_password}" comment="NetGuard API"',
+    ]
