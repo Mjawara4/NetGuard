@@ -29,6 +29,9 @@
   `docker run --rm -v "$PWD/backend:/app" -w /app netguard-backend:latest python -m pytest tests/ -q`
   Do **not** use `docker compose run` — the compose file hardcodes subnet `172.25.0.0/16`, which collides with the live production network.
 - Never write under `/opt/netguard` (bind-mounted into live containers). Never `git push`. Never `git add -A`.
+- **Reference board is `L009UiGS-2HaxD`** (confirmed as the "Hagie kumbija" site's model): 8 ethernet ports plus SFP. `ether1` is WAN, `ether2`-`ether8` bridge, SFP left out.
+- **`site_slug` is untrusted.** Customers now onboard themselves, so it arrives from a web form and is interpolated into a script running as router admin. Reject, never escape.
+- **The returned script is a credential**, carrying that router's WireGuard private key and API password. Do not log it, do not cache it, return it once.
 
 ## Review Focus
 
@@ -1153,6 +1156,41 @@ git commit -m "feat(backend): endpoint returning a one-shot router provisioning 
 
 ---
 
+### Task 10: The self-service surface
+
+Customers now onboard themselves, so the endpoint is unusable without a button.
+
+**Files:**
+- Modify: `frontend/src/pages/Settings.jsx`
+- Test: `frontend/src/test/provision-script.test.jsx`
+
+**Interfaces:**
+- Consumes: `GET /api/v1/inventory/devices/{id}/provision-script` from Task 9.
+
+- [ ] **Step 1: Write the failing test**
+
+Render the Settings page with a mocked device list and assert: a "Get setup script" control exists per router; clicking it calls the endpoint once; the returned script is shown in a copyable block; the generated API password is displayed with a warning that it is shown only once; and a 409 renders the remedy text ("provision WireGuard first") rather than a raw error.
+
+- [ ] **Step 2: Run it to confirm it fails.**
+
+- [ ] **Step 3: Implement**, reusing the existing kit components and the ink/signal tokens. The script block must NOT be auto-selected or auto-copied — it is a credential, and silently putting a router's private key on the clipboard is a surprise. Provide an explicit copy button.
+
+- [ ] **Step 4: Run the frontend suite** — baseline 148 passing, none may regress:
+  `cd frontend && npx vitest run`
+
+- [ ] **Step 5: Measure contrast**, per the Global Constraints of the visual-identity plan, since this adds UI to a migrated page:
+  `cd /tmp/pwshot && node measure.mjs http://127.0.0.1:5199 /settings prov --min-nodes=60`
+  Expected: 0 failures in both themes.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add frontend/src/pages/Settings.jsx frontend/src/test/provision-script.test.jsx
+git commit -m "feat(frontend): self-service router setup script in Settings"
+```
+
+---
+
 ## Done when
 
 - `GET /api/v1/inventory/devices/{id}/provision-script` returns a script that a CHR accepts end to end.
@@ -1163,7 +1201,7 @@ git commit -m "feat(backend): endpoint returning a one-shot router provisioning 
 
 ## Not in this plan
 
-- Any frontend surface for the new endpoint. The existing Settings page has a "Get MikroTik VPN script" button; wiring a second one is a separate, small piece of work.
+- Board layouts other than `L009UiGS-2HaxD`. The script reports the board it found; adapting the bridge section for a smaller router is follow-on work.
 - Re-configuring the two live routers.
 - Moving the hotspot gateway to a cloud CHR, which is the answer beyond ~500 concurrent users per site.
 - Porting the `on-login` voucher accounting script.

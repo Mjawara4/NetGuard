@@ -11,9 +11,37 @@ tiers, a captive portal, a CAPsMAN controller for the site's access points, the
 WireGuard tunnel back to the NetGuard cloud, and the firewall and hardening
 around all of it.
 
-**Audience:** whoever is physically installing a router at a new site. They may
-have no RouterOS knowledge. Success is: paste, wait, read the summary the script
-prints, and the site sells vouchers.
+**Audience:** whoever is physically installing a router at a new site — and
+from now on that is **not only NetGuard's own staff**. Customers onboarding
+themselves get this script to configure their own router before using the
+platform. They may have no RouterOS knowledge. Success is: paste, wait, read the
+summary the script prints, and the site sells vouchers.
+
+**Reference model: `L009UiGS-2HaxD`.** This is the board the fleet standardises
+on (confirmed as the model of the "Hagie kumbija" site, which is configured and
+working). The port plan below — `ether1` as WAN, `ether2`-`ether8` bridged,
+SFP left out — is that board's layout. A different model with fewer ports will
+need the bridge section adjusted; the script should report the board name it
+found rather than assume.
+
+### What self-service onboarding changes
+
+Three consequences of handing this to people NetGuard does not employ:
+
+1. **`site_slug` becomes untrusted input.** It arrives from a web form filled in
+   by a customer, and it is interpolated into a script that runs with full admin
+   rights on a router. Rejecting metacharacters rather than escaping them stops
+   being defensive tidiness and becomes the actual boundary.
+2. **Every site can safely use the same `10.15.0.0/16`.** This looks wrong at
+   first glance and is worth stating plainly: NetGuard only ever reaches the
+   *router*, at its unique `10.13.13.x` tunnel address. It never routes into a
+   customer's LAN, so identical client subnets across hundreds of tenants never
+   meet and cannot collide. Only the tunnel address must be unique, and the
+   backend already allocates that.
+3. **Each script carries that one router's secrets** — its WireGuard private key
+   and a freshly generated API password. It is therefore a credential, not a
+   document: it must not be logged, cached, or emailed around, and the endpoint
+   returns it once.
 
 **Greenfield only.** The script assumes a factory-reset or new router and does
 not attempt to be idempotent or safe against a router carrying live customers.
