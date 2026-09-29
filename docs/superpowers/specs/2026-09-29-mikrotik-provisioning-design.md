@@ -58,8 +58,10 @@ Three ceilings, stated so they are visible rather than discovered in the field:
    NAT. Beyond roughly 500 concurrent users a site needs either a Level 6
    license, or the hotspot gateway moved to a CHR in the cloud with the L009
    demoted to a CAPsMAN controller and L2 bridge. The script does not solve
-   this; it reports the ceiling and the current session count so the wall is
-   visible before it is hit.
+   this; it reports the license ceiling so the wall is visible before it is
+   hit. It does *not* report a current session count: on a greenfield router
+   that is always zero, and concurrent-session headroom belongs on NetGuard's
+   dashboard where it can be watched over time.
 
 ## Where this lives
 
