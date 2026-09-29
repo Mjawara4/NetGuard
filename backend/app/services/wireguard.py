@@ -151,7 +151,7 @@ add listen-port=13231 mtu=1420 name=wireguard-netguard private-key="{private_key
 add address={client_ip}/24 interface=wireguard-netguard network={WG_SUBNET}0
 
 /interface wireguard peers
-add allowed-address=0.0.0.0/0 endpoint-address={server_endpoint} endpoint-port={server_port} \\
+add allowed-address={WG_SUBNET}0/24 endpoint-address={server_endpoint} endpoint-port={server_port} \\
     interface=wireguard-netguard persistent-keepalive=25s public-key="{server_public_key}" comment="NetGuard Server"
 
 /ip route
@@ -162,8 +162,11 @@ add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguar
 # ---------------------------------------------------
 
 # 1. Enable API Service (Port 8728) and Allow VPN Access
+# The API accepts a stored credential, so it is pinned at the service as well
+# as in the firewall. Relying on one filter rule's position means a single
+# reorder exposes it to the internet.
 /ip service
-set api disabled=no port=8728 address=0.0.0.0/0
+set api disabled=no port=8728 address={WG_SUBNET}0/24
 
 # 2. Allow Input Traffic from NetGuard VPN (Firewall)
 /ip firewall filter
