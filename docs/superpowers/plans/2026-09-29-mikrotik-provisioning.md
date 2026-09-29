@@ -230,7 +230,7 @@ git commit -m "test: add CHR smoke-test harness for generated RouterOS scripts"
 - Produces:
   ```python
   KNOWN_TIMEZONES: frozenset[str]   # includes "Africa/Banjul", "UTC", "Africa/Dakar"
-  SLUG_RE  # re.compile(r"^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$")
+  SLUG_RE  # re.compile(r"[a-z0-9][a-z0-9-]{0,30}[a-z0-9]") used with .fullmatch()
 
   @dataclass(frozen=True)
   class ProvisionParams:
@@ -295,6 +295,8 @@ def test_gateway_is_outside_the_dhcp_pool():
     "counter;/system reboot",
     "counter$(reboot)",
     "counter\nmore",
+    "counter\n",        # trailing newline alone: `^...$` accepts this
+    "counter\r",
     "Counter With Spaces",
     "",
     "-leading-hyphen",
@@ -349,7 +351,11 @@ from dataclasses import dataclass
 # Rejected, not escaped: the generated script runs with full admin rights, and
 # an escaping bug in a config language with several quoting contexts is a
 # hole. A site name is ours to constrain.
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$")
+# fullmatch, NOT `^...$` with .match(): Python's `$` also matches immediately
+# before a trailing newline, so `^...$` ACCEPTS "counter\n". A newline is a
+# RouterOS statement terminator, which is exactly the injection this rejection
+# exists to prevent. Confirmed accepted by the Task 3 reviewer before this fix.
+SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,30}[a-z0-9]")
 
 # Zones plausible for this deployment. Kept explicit rather than pulling in a
 # tz database: RouterOS rejects an unknown zone mid-script, after earlier
@@ -389,7 +395,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  wg_server_port: int, api_password: str,
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
-    if not SLUG_RE.match(site_slug or ""):
+    if not SLUG_RE.fullmatch(site_slug or ""):
         raise ValueError(
             "site_slug must be 2-32 lowercase letters, digits or hyphens, "
             "starting and ending alphanumeric"
