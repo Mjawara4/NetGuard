@@ -12,6 +12,11 @@ from .params import ProvisionParams
 
 TAG = 'comment="NetGuard"'
 
+# Must match backend/app/services/wireguard.py: NetGuard reaches each device at
+# its tunnel address, so drift here breaks monitoring.
+WG_INTERFACE = "wireguard-netguard"
+WG_LISTEN_PORT = 13231
+
 
 def preflight(p: ProvisionParams) -> list[str]:
     """Refuse RouterOS 6 and any router that already has a hotspot or our tunnel."""
@@ -162,7 +167,14 @@ def firewall(p: ProvisionParams) -> list[str]:
         f"/ip firewall filter add chain=input action=drop in-interface={wan} {_fw_comment(drop_all)}",
         f"/ip firewall filter add chain=input action=accept connection-state=established,related,untracked {before(drop_all)} {_fw_comment('accept established')}",
         f"/ip firewall filter add chain=input action=drop connection-state=invalid {before(drop_all)} {_fw_comment('drop invalid')}",
-        f"/ip firewall filter add chain=input action=accept src-address={p.wg_subnet_cidr} {before(drop_all)} {_fw_comment('accept netguard tunnel')}",
+        "# Scoped to the tunnel interface: matching on source address alone would accept a",
+        "# 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.",
+        f"/ip firewall filter add chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE} {before(drop_all)} {_fw_comment('accept netguard tunnel')}",
+        "# Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop",
+        "# while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s",
+        "# margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.",
+        "# WireGuard silently ignores unauthenticated packets, so the exposure is negligible.",
+        f"/ip firewall filter add chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan} {before(drop_all)} {_fw_comment('accept wireguard')}",
         f"/ip firewall filter add chain=input action=accept protocol=icmp {before(drop_all)} {_fw_comment('accept icmp')}",
         "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
         f"/ip firewall filter add chain=input action=drop protocol=udp dst-port=53 in-interface={wan} {before(drop_all)} {_fw_comment('drop wan dns udp')}",
@@ -195,4 +207,55 @@ def api_user(p: ProvisionParams) -> list[str]:
         f"/user group add name={p.api_username} policy={policy} comment=\"NetGuard API\"",
         f"/user add name={p.api_username} group={p.api_username} "
         f'address={p.wg_subnet_cidr} password="{p.api_password}" comment="NetGuard API"',
+    ]
+
+
+def wireguard(p: ProvisionParams) -> list[str]:
+    """The tunnel home.
+
+    Mirrors WireGuardService.generate_mikrotik_script in
+    backend/app/services/wireguard.py: interface name, listen port, MTU,
+    keepalive and the /32 route to the server must stay in step with it,
+    because NetGuard reaches the device at its tunnel address.
+
+    One deliberate difference: allowed-address is the tunnel subnet, not
+    0.0.0.0/0, so this peer can never become a default route.
+    """
+    prefix = p.wg_subnet_cidr.split("/")[1]
+    network = p.wg_subnet_cidr.split("/")[0]
+    server_ip = network.rsplit(".", 1)[0] + ".1"
+    return [
+        "# --- wireguard ---",
+        f'/interface wireguard add name={WG_INTERFACE} listen-port={WG_LISTEN_PORT} mtu=1420 '
+        f'private-key="{p.wg_private_key}" {TAG}',
+        f"/ip address add address={p.wg_client_ip}/{prefix} interface={WG_INTERFACE} network={network} {TAG}",
+        "# persistent-keepalive=25s is load-bearing. It must stay below the 30s conntrack UDP",
+        "# timeout: the router initiates the tunnel and the firewall's `established` rule lets",
+        "# replies in, so a keepalive slower than 30s lets the flow expire. Do not tune it up.",
+        f'/interface wireguard peers add interface={WG_INTERFACE} public-key="{p.wg_server_public_key}" '
+        f"endpoint-address={p.wg_server_endpoint} endpoint-port={p.wg_server_port} "
+        f"allowed-address={p.wg_subnet_cidr} persistent-keepalive=25s {TAG}",
+        f"/ip route add dst-address={server_ip}/32 gateway={WG_INTERFACE} distance=1 "
+        f"routing-table=main scope=30 target-scope=10 {TAG}",
+    ]
+
+
+def capsman(p: ProvisionParams) -> list[str]:
+    """CAPsMAN controller on the /interface wifi (wifi-qcom) stack.
+
+    Deliberately NOT legacy /caps-man. The new stack is local-forwarding-only:
+    client traffic stays on each AP and is bridged there, instead of being
+    tunnelled through the controller. That is what makes 100+ APs viable on a
+    2-core router. Do not "modernise" this back to /caps-man, which allows
+    manager-forwarding and would put every client's traffic through this box.
+    """
+    return [
+        "# --- capsman ---",
+        "# The /interface wifi stack is local-forwarding-only: each AP bridges its own clients, so traffic never tunnels through this router.",
+        "# Do not port this to legacy /caps-man, which would put every client through the controller.",
+        f"/interface wifi capsman set enabled=yes interfaces={p.bridge_name} upgrade-policy=none require-peer-certificate=no",
+        f"/interface wifi datapath add name=netguard-datapath bridge={p.bridge_name}",
+        f"/interface wifi configuration add name=netguard-config ssid={p.site_slug} datapath=netguard-datapath",
+        "# One provisioning rule matching any radio: an AP adopts with no per-AP work.",
+        "/interface wifi provisioning add action=create-dynamic-enabled master-configuration=netguard-config",
     ]

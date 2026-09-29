@@ -95,7 +95,7 @@ def test_rule_order_is_explicit_and_terminal_rule_is_last_in_effect():
         assert 'place-before=[find where comment="NetGuard fw: drop wan input"]' in r
     order = [re.search(r'comment="NetGuard fw: ([^"]+)"$', r).group(1) for r in rs[1:]]
     assert order == ["accept established", "drop invalid", "accept netguard tunnel",
-                     "accept icmp", "drop wan dns udp", "drop wan dns tcp"]
+                     "accept wireguard", "accept icmp", "drop wan dns udp", "drop wan dns tcp"]
 
 
 def test_established_invalid_tunnel_and_icmp_rules():
@@ -104,7 +104,7 @@ def test_established_invalid_tunnel_and_icmp_rules():
     assert "connection-state=invalid" in rule("drop invalid").split()
     assert "action=drop" in rule("drop invalid").split()
     t = rule("accept netguard tunnel").split()
-    assert "src-address=10.13.13.0/24" in t and "action=accept" in t and "chain=input" in t
+    assert "src-address=10.13.13.0/24" in t and "in-interface=wireguard-netguard" in t and "action=accept" in t and "chain=input" in t
     i = rule("accept icmp").split()
     assert "protocol=icmp" in i and "action=accept" in i
 
