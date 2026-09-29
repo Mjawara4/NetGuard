@@ -6,7 +6,8 @@ set -uo pipefail
 
 CHR_VERSION="${CHR_VERSION:-7.16.2}"
 CACHE_DIR="${CHR_CACHE_DIR:-/tmp/chr}"
-SSH_PORT="${CHR_SSH_PORT:-2222}"
+# Free port picked at run time so concurrent runs cannot collide (CHR_SSH_PORT overrides).
+SSH_PORT="${CHR_SSH_PORT:-$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1])')}"
 BOOT_TIMEOUT="${CHR_BOOT_TIMEOUT:-180}"
 APPLY_TIMEOUT="${CHR_APPLY_TIMEOUT:-120}"
 URL="https://download.mikrotik.com/routeros/${CHR_VERSION}/chr-${CHR_VERSION}.img.zip"
@@ -25,13 +26,22 @@ for t in qemu-system-x86_64 qemu-img unzip curl ssh sshpass; do
 done
 [ -w /dev/kvm ] || { echo "harness: /dev/kvm not usable" >&2; exit 2; }
 
+# A script with no executable statement (only comments/blank lines) proves nothing: refuse it.
+if ! grep -qvE '^[[:space:]]*(#.*)?$' "$SCRIPT"; then
+  echo "harness: script has no non-comment statements; nothing to verify" >&2; exit 2
+fi
+if grep -q 'on-error' "$SCRIPT"; then
+  echo "harness: WARNING: script contains on-error; RouterOS failures inside :do{} on-error={} are suppressed, so PASS does not mean every command applied" >&2
+fi
+
 WORK="$(mktemp -d /tmp/chr-run.XXXXXX)"
 QPID=""
 cleanup() {
   [ -n "$QPID" ] && kill "$QPID" 2>/dev/null && wait "$QPID" 2>/dev/null
   rm -rf "$WORK"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap "exit 130" INT TERM
 
 mkdir -p "$CACHE_DIR"
 ZIP="$CACHE_DIR/chr-${CHR_VERSION}.img.zip"
@@ -43,10 +53,18 @@ unzip -q -o "$ZIP" -d "$WORK" || { echo "harness: unzip failed" >&2; exit 2; }
 IMG="$(ls "$WORK"/*.img | head -1)"
 qemu-img resize -f raw "$IMG" 128M >/dev/null || { echo "harness: resize failed" >&2; exit 2; }
 
+# ether1 is the SSH-forwarded NIC; ether2..ether8 mirror the reference L009 port count so
+# generated bridge config is not rejected for missing hardware.
+EXTRA_NICS=()
+for i in 1 2 3 4 5 6 7; do
+  EXTRA_NICS+=(-netdev "user,id=x$i,restrict=on" -device "virtio-net-pci,netdev=x$i")
+done
+
 qemu-system-x86_64 -enable-kvm -m 256 -nographic -display none -monitor none \
   -serial file:"$WORK/serial.log" \
   -drive file="$IMG",format=raw,if=virtio \
   -netdev user,id=n0,hostfwd=tcp:127.0.0.1:${SSH_PORT}-:22 -device virtio-net-pci,netdev=n0 \
+  "${EXTRA_NICS[@]}" \
   >"$WORK/qemu.log" 2>&1 &
 QPID=$!
 
@@ -82,18 +100,25 @@ echo "----- router output -----"
 cat "$OUT"
 echo "----- end router output -----"
 
+# verbose=yes echoes "#line N" and each SOURCE line (comments included). Strip those before
+# matching so a comment that says "cannot" is not mistaken for a RouterOS diagnostic.
+DIAG="$WORK/diag.txt"
+awk 'NR==FNR { t=$0; gsub(/^[ \t]+|[ \t\r]+$/,"",t); if (t!="") src[t]=1; next }
+     { t=$0; gsub(/^[ \t]+|[ \t\r]+$/,"",t); if (t=="" || t ~ /^#line / || (t in src)) next; print }' \
+  "$SCRIPT" "$OUT" >"$DIAG"
+
 hits=0
 for m in "${ERROR_MARKERS[@]}"; do
-  if grep -qi -- "$m" "$OUT"; then
+  if grep -qi -- "$m" "$DIAG"; then
     echo "harness: FAIL: RouterOS error marker '$m':" >&2
-    grep -i -- "$m" "$OUT" | sed 's/^/    /' >&2
+    grep -i -- "$m" "$DIAG" | sed 's/^/    /' >&2
     hits=1
   fi
 done
 [ $rc -eq 124 ] && { echo "harness: apply timed out" >&2; exit 2; }
 [ $hits -eq 1 ] && exit 1
-# RouterOS prints no success line, so prove the import actually ran: verbose=yes echoes
-# "#line N" for each statement. No echo, or a non-zero ssh status, is not a pass.
+# RouterOS prints no success line. Prove the import ran: the script has a non-comment statement
+# (checked above) and verbose=yes must have traced it. No trace or non-zero ssh status is no pass.
 grep -q '^#line' "$OUT" && [ $rc -eq 0 ] \
   || { echo "harness: import produced no statement trace (ssh rc=$rc); refusing to pass" >&2; exit 1; }
 echo "harness: PASS" >&2
