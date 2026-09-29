@@ -260,8 +260,31 @@ def capsman(p: ProvisionParams) -> list[str]:
         "# would end 'plug an AP into any port and it adopts'. Bounded by interfaces= below: the controller",
         "# listens on the LAN bridge only, never the WAN.",
         f"/interface wifi capsman set enabled=yes interfaces={p.bridge_name} upgrade-policy=none require-peer-certificate=no",
-        f"/interface wifi datapath add name=netguard-datapath bridge={p.bridge_name}",
-        f"/interface wifi configuration add name=netguard-config ssid={p.site_slug} datapath=netguard-datapath",
+        f"/interface wifi datapath add name=netguard-datapath bridge={p.bridge_name} {TAG}",
+        f"/interface wifi configuration add name=netguard-config ssid={p.site_slug} datapath=netguard-datapath {TAG}",
         "# One provisioning rule matching any radio: an AP adopts with no per-AP work.",
-        "/interface wifi provisioning add action=create-dynamic-enabled master-configuration=netguard-config",
+        f"/interface wifi provisioning add action=create-dynamic-enabled master-configuration=netguard-config {TAG}",
+    ]
+
+
+def summary(p: ProvisionParams) -> list[str]:
+    """What the installer reads last, and what stays on screen.
+
+    Deliberately does NOT print the API password. It is already on the NetGuard
+    dashboard, and a script pasted into a terminal can be scrolled back or
+    logged by whoever is at the counter. Each secret appears once, in the
+    command that applies it.
+    """
+    return [
+        "# --- summary ---",
+        ':put ""',
+        ':put "===== NetGuard provisioning complete ====="',
+        ':put ("Board:            " . [/system resource get board-name] . "  RouterOS " . [/system resource get version])',
+        ':do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" }',
+        f':put "LAN:              {p.lan_cidr}  gateway {p.gateway}"',
+        f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
+        ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',
+        f':put "API user:         {p.api_username}  (password: see the NetGuard dashboard)"',
+        f':put "Tunnel address:   {p.wg_client_ip}  ({WG_INTERFACE} to {p.wg_server_endpoint}:{p.wg_server_port})"',
+        ':put "The firewall now drops new connections arriving on the WAN port."',
     ]
