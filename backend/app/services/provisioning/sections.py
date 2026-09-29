@@ -87,3 +87,54 @@ def dns_and_nat(p: ProvisionParams) -> list[str]:
         f"/ip firewall nat add chain=srcnat action=masquerade "
         f"out-interface={p.wan_interface} {TAG}",
     ]
+
+
+def hotspot_server(p: ProvisionParams) -> list[str]:
+    # No ssl-certificate and no https login: there is no domain, so no trusted
+    # cert. Captive-portal detection works over plain HTTP.
+    return [
+        "# --- hotspot server ---",
+        "# /ip hotspot and /ip hotspot profile have no comment property on RouterOS 7.16 (CHR rejected it), so both are untagged.",
+        f"/ip hotspot profile add name=netguard hotspot-address={p.gateway} "
+        f"dns-name={p.hotspot_dns_name} login-by=http-chap,mac-cookie "
+        "http-cookie-lifetime=3d",
+        f"/ip hotspot add name=netguard interface={p.bridge_name} "
+        f"address-pool=hotspot-pool profile=netguard "
+        f"idle-timeout=5m keepalive-timeout=2m login-timeout=5m disabled=no",
+    ]
+
+
+_TIER_COMMON = (
+    "add-mac-cookie=yes mac-cookie-timeout=3d idle-timeout=5m keepalive-timeout=2m"
+)
+
+
+def voucher_profiles(p: ProvisionParams) -> list[str]:
+    lines = [
+        "# --- voucher tiers ---",
+        "# /ip hotspot user profile has no comment property on RouterOS 7.16 (CHR rejected it), so tiers are untagged.",
+        "# No rate-limit on any tier, by decision: tiers differ by duration and sharing only.",
+        "# shared-users=4 means a 500-session licence ceiling is as few as 125 vouchers.",
+        "# RouterOS ships a `default` user profile, so it is updated, not added.",
+        f"/ip hotspot user profile set [find where name=default] shared-users=4 {_TIER_COMMON}",
+    ]
+    for name, timeout, shared in (("1-Hour", "1h", 1), ("24-Hours", "24h", 2), ("7-Days", "7d", 4)):
+        lines.append(
+            f"/ip hotspot user profile add name={name} session-timeout={timeout} "
+            f"shared-users={shared} {_TIER_COMMON}"
+        )
+    return lines
+
+
+def walled_garden(p: ProvisionParams) -> list[str]:
+    lines = ["# --- walled garden ---",
+             "# Hosts the phone probes to detect a captive portal; blocked, the portal never pops."]
+    for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
+                 "www.msftconnecttest.com", p.hotspot_dns_name):
+        lines.append(f"/ip hotspot walled-garden add dst-host={host} {TAG}")
+    lines.append(
+        "/ip hotspot walled-garden ip add dst-address=162.159.200.1 "
+        f"action=accept {TAG}"
+    )
+    lines.append("# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.")
+    return lines
