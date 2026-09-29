@@ -690,10 +690,17 @@ def test_all_four_tiers_exist_with_agreed_sharing():
     assert "session-timeout=7d" in t
 
 
-def test_no_tier_is_rate_limited():
+def test_nothing_in_the_hotspot_is_rate_limited():
     # Explicitly specified: bandwidth is unshaped, tiers differ by duration.
-    t = text(sections.voucher_profiles(P))
-    assert "rate-limit" not in t
+    # Scans hotspot_server TOO, not just the tiers. Scoped to voucher_profiles
+    # alone, this gate survived `rate-limit` being added to
+    # `/ip hotspot profile add` and to `/ip hotspot add` -- confirmed by
+    # mutation in the Task 5 review. The constraint says "any hotspot profile".
+    for fn in (sections.voucher_profiles, sections.hotspot_server):
+        for line in fn(P):
+            if line.strip().startswith("#"):
+                continue          # the explanatory comment names the rule
+            assert "rate-limit" not in line, f"{fn.__name__}: {line}"
 
 
 def test_walled_garden_allows_captive_portal_detection():
