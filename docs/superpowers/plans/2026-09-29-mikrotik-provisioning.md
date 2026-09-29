@@ -519,10 +519,16 @@ def test_dns_is_open_to_clients_but_nat_exists():
 
 
 def test_every_created_object_is_attributable():
+    # Sections emit the single-line form `/ip pool add name=...`, so matching
+    # lines that START with "add" would match nothing and pass vacuously.
+    # Match " add " and require at least one hit, so an empty match fails.
+    seen = 0
     for fn in (sections.bridge, sections.addressing, sections.dns_and_nat):
         for line in fn(P):
-            if line.strip().startswith("add "):
+            if " add " in line:
+                seen += 1
                 assert 'comment="NetGuard"' in line, line
+    assert seen >= 3, f"expected several created objects, matched {seen}"
 ```
 
 - [ ] **Step 2: Run to confirm failure** — expected: `ImportError` / `AttributeError` for `sections`.
@@ -1001,9 +1007,12 @@ def test_api_is_never_world_open_anywhere_in_the_script():
 
 def test_every_add_is_attributable_to_netguard():
     script = build_provision_script(build_params(**FIXED))
+    seen = 0
     for line in script.splitlines():
-        if re.match(r"^add ", line.strip()):
+        if " add " in line:
+            seen += 1
             assert 'comment="NetGuard"' in line, line
+    assert seen >= 10, f"expected many created objects, matched {seen}"
 
 
 def test_summary_tells_the_installer_what_they_need():
@@ -1054,8 +1063,15 @@ def build_provision_script(p: ProvisionParams) -> str:
 ```
 
 Also add `sections.summary(p)`, printing board, RouterOS version, license level
-and ceiling, LAN and gateway, DHCP range, profile names, the API username and
-password, and the tunnel address.
+and ceiling, LAN and gateway, DHCP range, profile names, the API **username**,
+and the tunnel address.
+
+**The summary must NOT print the API password.** Controller ruling: the
+"each secret appears exactly once" invariant above is the one worth keeping. The
+NetGuard UI already shows the password (Task 10), and a script pasted into a
+terminal can be scrolled back or logged by whoever is standing at the counter.
+Print the username and a line telling the installer the password is in the
+NetGuard dashboard.
 
 - [ ] **Step 4: Record the golden file**
 

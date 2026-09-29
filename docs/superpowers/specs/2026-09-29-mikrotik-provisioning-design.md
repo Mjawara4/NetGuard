@@ -346,8 +346,12 @@ per-AP action on first boot and cannot be done from the controller.
 
 The script's last act is to print a block the installer can photograph: board,
 RouterOS version, license level and its user ceiling, LAN subnet and gateway,
-DHCP range, hotspot profile names, the generated API password, the WireGuard
-tunnel IP, and any preflight warning that was non-fatal.
+DHCP range, hotspot profile names, the API username, the WireGuard tunnel IP,
+and any preflight warning that was non-fatal.
+
+It does **not** print the generated API password. The NetGuard UI shows it once,
+and a script pasted into a terminal can be scrolled back or logged by anyone
+standing at the counter — so the password stays in one place rather than two.
 
 ## Interfaces
 
