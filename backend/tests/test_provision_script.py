@@ -9,7 +9,7 @@ FIXED = dict(
     wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 EXPECTED = Path(__file__).parent / "fixtures" / "provision_expected.rsc"
 
@@ -72,8 +72,8 @@ def test_keepalive_stays_below_the_conntrack_udp_timeout():
     # every tunnel alive through the firewall's WAN drop; see sections.wireguard.
     conntrack_udp_timeout = 30
     script = build_provision_script(build_params(**FIXED))
-    # Only the real peer line: comments discuss the value too.
-    found = re.findall(r"^/interface wireguard peers add .*persistent-keepalive=(\d+)s",
+    # Only the real peer command: comments discuss the value too.
+    found = re.findall(r"^(?!#).*wireguard peers add .*persistent-keepalive=(\d+)s",
                        script, flags=re.M)
     assert len(found) == 1
     assert int(found[0]) < conntrack_udp_timeout
@@ -139,3 +139,81 @@ def test_summary_tells_the_installer_what_they_need():
     tail = script[-2000:]
     for token in ("license", "10.15.0.1", "netguard", "wireguard"):
         assert token in tail.lower()
+
+
+def _depth_walk(script):
+    """Yield (line_no, depth_before, depth_after) counting braces outside comments and quotes."""
+    depth = 0
+    for n, line in enumerate(script.splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            yield n, depth, depth
+            continue
+        before, in_q, esc = depth, False, False
+        for ch in line:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_q = not in_q
+            elif not in_q and ch == "{":
+                depth += 1
+            elif not in_q and ch == "}":
+                depth -= 1
+        yield n, before, depth
+
+
+def test_whole_script_is_one_brace_enclosed_block():
+    # `:error` aborts everything only inside a single command. Pasted line by line it prints and the
+    # script carries on (confirmed on a CHR: it ran through to "provisioning complete" on a router
+    # that already had a hotspot). One block makes a paste a single command.
+    script = build_provision_script(build_params(**FIXED))
+    lines = [l for l in script.splitlines() if l.strip()]
+    assert lines[0] == "{" and lines[-1] == "}"
+    walked = list(_depth_walk(script))
+    last_nonblank = max(n for n, _, _ in walked if script.splitlines()[n - 1].strip())
+    for n, before, after in walked:
+        if n == last_nonblank:
+            assert (before, after) == (1, 0)
+        elif n > 1:
+            # Never returns to top level before the end: an early `}` would end the block
+            # and every later line would run as its own command.
+            assert after >= 1, f"block closed early at line {n}"
+    assert walked[-1][2] == 0
+
+
+def test_no_statement_sits_outside_the_block():
+    script = build_provision_script(build_params(**FIXED))
+    lines = script.splitlines()
+    first = next(i for i, l in enumerate(lines) if l.strip())
+    last = max(i for i, l in enumerate(lines) if l.strip())
+    assert lines[first] == "{" and lines[last] == "}"
+    assert not any(l.strip() for l in lines[:first])
+    assert not any(l.strip() for l in lines[last + 1:])
+
+
+def test_preflight_is_inside_the_block_so_its_error_aborts_everything():
+    script = build_provision_script(build_params(**FIXED))
+    lines = script.splitlines()
+    for n, before, _ in _depth_walk(script):
+        if ":error" in lines[n - 1] and not lines[n - 1].lstrip().startswith("#"):
+            assert before >= 1, lines[n - 1]
+
+
+def test_summary_reports_what_the_installer_cannot_see_otherwise():
+    p = build_params(**FIXED)
+    text = "\n".join(sections.summary(p))
+    assert "Tunnel status" in text and "last-handshake" in text
+    assert "WAN port" in text and p.wan_interface in text
+    assert "LAN ports" in text and "bridge port find" in text
+    # The tunnel-only warning, including winbox's extra range.
+    assert "reachable only through the tunnel" in text and p.operator_cidr in text
+    # A dropped session mid-run is expected, and where to reconnect.
+    assert "session was cut" in text and "10.15.x" in text
+
+
+def test_summary_does_not_overstate_the_firewall():
+    text = "\n".join(sections.summary(build_params(**FIXED)))
+    # It drops NEW connections to the router and to the LAN, but not the WireGuard port or ping.
+    assert "router and LAN" in text
+    assert "except the WireGuard port and ping" in text

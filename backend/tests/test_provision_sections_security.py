@@ -1,12 +1,13 @@
+import ipaddress
 import re
 from app.services.provisioning.params import build_params
-from app.services.provisioning import sections
+from provision_helpers import sections
 from app.services.provisioning.secrets import generate_api_password, API_PASSWORD_ALPHABET
 
 P = build_params(
-    site_slug="serrekunda-counter", wg_private_key="k" * 44, wg_client_ip="10.13.13.7",
-    wg_server_public_key="k" * 44, wg_server_endpoint="74.208.167.166",
-    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v",
+    site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
+    wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
+    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -44,10 +45,10 @@ def test_generated_passwords_are_accepted_by_params_validation():
     for _ in range(200):
         pw = generate_api_password()
         assert build_params(
-            site_slug="serrekunda-counter", wg_private_key="k" * 44,
-            wg_client_ip="10.13.13.7", wg_server_public_key="k" * 44,
+            site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+            wg_client_ip="10.13.13.7", wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
             wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-            api_password=pw,
+            api_password=pw, admin_password="Qw8ZeRtY3uIoP5aSdF1g",
         ).api_password == pw
 
 
@@ -66,7 +67,11 @@ def test_api_service_is_pinned_to_the_tunnel_not_the_world():
 def test_ssh_and_winbox_are_pinned_to_the_tunnel():
     ls = sections.firewall(P)
     assert line_with(ls, "/ip service set ssh ") == "/ip service set ssh address=10.13.13.0/24"
-    assert line_with(ls, "/ip service set winbox ") == "/ip service set winbox address=10.13.13.0/24"
+    # winbox alone also admits the operator range: the way back in if the tunnel is dead. That range is
+    # outside the DHCP pool, so no hotspot client can be leased into it.
+    assert line_with(ls, "/ip service set winbox ") == "/ip service set winbox address=10.13.13.0/24,10.15.0.0/24"
+    assert P.operator_cidr == "10.15.0.0/24"
+    assert ipaddress.ip_address(P.pool_start) not in ipaddress.ip_network(P.operator_cidr)
 
 
 def test_router_is_not_an_open_dns_resolver():
@@ -87,7 +92,8 @@ def test_wan_input_is_dropped_last_and_only_from_the_wan():
 
 
 def test_rule_order_is_explicit_and_terminal_rule_is_last_in_effect():
-    rs = rules()
+    # The forward rule is a different chain and is moved to the top of the table instead; see below.
+    rs = [r for r in rules() if "chain=input" in r]
     # Terminal rule is added first, and every other rule is placed before it.
     assert 'comment="NetGuard fw: drop wan input"' in rs[0]
     assert "place-before" not in rs[0]
@@ -109,11 +115,13 @@ def test_established_invalid_tunnel_and_icmp_rules():
     assert "protocol=icmp" in i and "action=accept" in i
 
 
-def test_hotspot_login_page_is_not_broken_by_hardening():
+def test_www_is_restricted_not_open_but_the_hotspot_login_does_not_depend_on_it():
     ls = sections.firewall(P)
-    # www serves the captive portal; disabling it would silently kill logins.
-    assert not any(l.startswith("/ip service set www ") for l in ls)
-    assert not any(re.search(r"set\s+www\s", l) for l in ls if not l.startswith("#"))
+    # Verified on a CHR (Task 8): with www disabled or restricted to 10.15.0.0/24, a client at
+    # 10.15.1.50 still fetched the 4194-byte hotspot login page. The hotspot redirects clients to its
+    # own ports 64872-64875, so WebFig is only for the operator range.
+    assert line_with(ls, "/ip service set www ") == "/ip service set www address=10.15.0.0/24"
+    assert not any(re.search(r"set\s+www\s+disabled=yes", l) for l in ls)
     for svc in ("telnet", "ftp", "api-ssl", "www-ssl"):
         assert f"/ip service set {svc} disabled=yes" in ls
 
@@ -143,5 +151,5 @@ def test_api_user_is_least_privilege_and_source_restricted():
     assert "group=netguard" in u.split()
     assert "address=10.13.13.0/24" in u.split()
     assert 'password="Xk7mQp2rTz9wLb4nHc6v"' in u.split()
-    assert "name=admin" not in t
+    assert "/user add name=admin" not in t
     assert "group=full" not in t

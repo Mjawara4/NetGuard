@@ -18,14 +18,28 @@ WG_INTERFACE = "wireguard-netguard"
 WG_LISTEN_PORT = 13231
 
 
+def _once(menu: str, where: str, args: str, then: str = "") -> str:
+    """`menu add args`, but only if nothing matching `where` exists yet.
+
+    A factory-fresh router is not blank, and a run that failed part-way must be
+    re-runnable, so every object we create is guarded on its own identity.
+    `then` is extra statements run only when the object was just created.
+    """
+    body = f"{menu} add {args}" + (f"; {then}" if then else "")
+    return f":if ([:len [{menu} find where {where}]] = 0) do={{ {body} }}"
+
+
 def preflight(p: ProvisionParams) -> list[str]:
     """Refuse RouterOS 6 and any router that already has a hotspot or our tunnel."""
     return [
         "# --- preflight ---",
-        "# No :local variables here: at the top level of an imported file they are empty on the next line.",
+        "# Single-statement guards, no :local: kept simple so a failure here is unambiguous. (The whole script is one",
+        "# brace-enclosed block, inside which :local does persist across lines, as summary relies on.)",
         ':if ([:tonum [:pick [/system resource get version] 0 [:find [/system resource get version] "."]]] < 7) do={ :error "NetGuard: RouterOS 7 or newer is required" }',
-        ':if ([:len [/ip hotspot find]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }',
-        ':if ([:len [/interface wireguard find where name="wireguard-netguard"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists; refusing to overwrite it" }',
+        "# A hotspot or tunnel that is not ours means a configured router: refuse. Ours (left by an earlier",
+        "# run that failed part-way) is tolerated so the script can be run again.",
+        ':if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }',
+        ':if ([:len [/interface wireguard find where name="wireguard-netguard" and comment!="NetGuard"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists and is not ours; refusing to overwrite it" }',
         ':put ("NetGuard preflight: RouterOS " . [/system resource get version])',
         "# `level` is what RouterOS 7.16 exposes (a CHR rejected `nlevel`); `nlevel` is kept as a fallback for other builds.",
         ':do { :put ("NetGuard preflight: license level " . [/system license get level]) } on-error={ :do { :put ("NetGuard preflight: license level " . [/system license get nlevel]) } on-error={ :put "NetGuard preflight: license level unavailable on this build" } }',
@@ -42,25 +56,33 @@ def identity_and_clock(p: ProvisionParams) -> list[str]:
         f"/system identity set name={p.site_slug}",
         f"/system clock set time-zone-name={p.timezone}",
         "/system ntp client set enabled=yes",
-        "/system ntp client servers add address=time.cloudflare.com " + TAG,
-        "/system ntp client servers add address=time.google.com " + TAG,
+        _once("/system ntp client servers", 'address="time.cloudflare.com"', "address=time.cloudflare.com " + TAG),
+        _once("/system ntp client servers", 'address="time.google.com"', "address=time.google.com " + TAG),
     ]
 
 
 def _port_if_present(name: str, bridge: str) -> str:
+    # A stock router already holds ether2-ether5 (and its radios) in a bridge
+    # called `bridge`, and RouterOS refuses a port that is already a bridge
+    # port. So move it: remove it from whichever bridge has it, then add it.
+    # Skipped when it is already on ours, so a re-run does not bounce the port.
     return (
         f':if ([:len [/interface find where name="{name}"]] > 0) do={{ '
-        f"/interface bridge port add bridge={bridge} interface={name} {TAG} }}"
+        f':if ([:len [/interface bridge port find where interface="{name}" bridge="{bridge}"]] = 0) do={{ '
+        f'/interface bridge port remove [find where interface="{name}"]; '
+        f"/interface bridge port add bridge={bridge} interface={name} {TAG} }} }}"
     )
 
 
 def bridge(p: ProvisionParams) -> list[str]:
     lines = [
         "# --- bridge ---",
-        f"/interface bridge add name={p.bridge_name} {TAG}",
+        ':put "NetGuard: moving ports into bridge-hotspot. If your session drops now, that is expected: the router keeps running this script. Reconnect on a 10.15.x address."',
+        _once("/interface bridge", f'name="{p.bridge_name}"', f"name={p.bridge_name} {TAG}"),
         "# ether1 is the WAN uplink and stays out of the bridge.",
         "# The SFP port is left out too: it is the likely distribution uplink.",
         "# Each port is guarded so a board with fewer ports still gets a working bridge.",
+        "# Each port is moved out of any existing bridge first (stock routers ship one).",
     ]
     for n in range(2, 9):
         lines.append(_port_if_present(f"ether{n}", p.bridge_name))
@@ -76,12 +98,15 @@ def addressing(p: ProvisionParams) -> list[str]:
     network = p.lan_cidr
     return [
         "# --- addressing and DHCP ---",
-        f"/ip pool add name=hotspot-pool ranges={p.pool_start}-{p.pool_end} {TAG}",
-        f"/ip address add address={p.gateway}/{prefix} interface={p.bridge_name} {TAG}",
-        f"/ip dhcp-server add name=hotspot-dhcp interface={p.bridge_name} "
-        f"address-pool=hotspot-pool lease-time=4h authoritative=yes disabled=no {TAG}",
-        f"/ip dhcp-server network add address={network} gateway={p.gateway} "
-        f"dns-server={p.gateway} {TAG}",
+        _once("/ip pool", 'name="hotspot-pool"',
+              f"name=hotspot-pool ranges={p.pool_start}-{p.pool_end} {TAG}"),
+        _once("/ip address", f'address="{p.gateway}/{prefix}" interface="{p.bridge_name}"',
+              f"address={p.gateway}/{prefix} interface={p.bridge_name} {TAG}"),
+        _once("/ip dhcp-server", 'name="hotspot-dhcp"',
+              f"name=hotspot-dhcp interface={p.bridge_name} "
+              f"address-pool=hotspot-pool lease-time=4h authoritative=yes disabled=no {TAG}"),
+        _once("/ip dhcp-server network", f'address="{network}"',
+              f"address={network} gateway={p.gateway} dns-server={p.gateway} {TAG}"),
     ]
 
 
@@ -89,8 +114,8 @@ def dns_and_nat(p: ProvisionParams) -> list[str]:
     return [
         "# --- DNS and NAT ---",
         "/ip dns set allow-remote-requests=yes servers=1.1.1.1,8.8.8.8 cache-size=4096KiB",
-        f"/ip firewall nat add chain=srcnat action=masquerade "
-        f"out-interface={p.wan_interface} {TAG}",
+        _once("/ip firewall nat", 'comment="NetGuard"',
+              f"chain=srcnat action=masquerade out-interface={p.wan_interface} {TAG}"),
     ]
 
 
@@ -100,12 +125,14 @@ def hotspot_server(p: ProvisionParams) -> list[str]:
     return [
         "# --- hotspot server ---",
         "# /ip hotspot and /ip hotspot profile have no comment property on RouterOS 7.16 (CHR rejected it), so both are untagged.",
-        f"/ip hotspot profile add name=netguard hotspot-address={p.gateway} "
-        f"dns-name={p.hotspot_dns_name} login-by=http-chap,mac-cookie "
-        "http-cookie-lifetime=3d",
-        f"/ip hotspot add name=netguard interface={p.bridge_name} "
-        f"address-pool=hotspot-pool profile=netguard "
-        f"idle-timeout=5m keepalive-timeout=2m login-timeout=5m disabled=no",
+        _once("/ip hotspot profile", 'name="netguard"',
+              f"name=netguard hotspot-address={p.gateway} "
+              f"dns-name={p.hotspot_dns_name} login-by=http-chap,mac-cookie "
+              "http-cookie-lifetime=3d"),
+        _once("/ip hotspot", 'name="netguard"',
+              f"name=netguard interface={p.bridge_name} "
+              f"address-pool=hotspot-pool profile=netguard "
+              f"idle-timeout=5m keepalive-timeout=2m login-timeout=5m disabled=no"),
     ]
 
 
@@ -124,10 +151,10 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
         f"/ip hotspot user profile set [find where name=default] shared-users=4 {_TIER_COMMON}",
     ]
     for name, timeout, shared in (("1-Hour", "1h", 1), ("24-Hours", "24h", 2), ("7-Days", "7d", 4)):
-        lines.append(
-            f"/ip hotspot user profile add name={name} session-timeout={timeout} "
-            f"shared-users={shared} {_TIER_COMMON}"
-        )
+        lines.append(_once(
+            "/ip hotspot user profile", f'name="{name}"',
+            f"name={name} session-timeout={timeout} shared-users={shared} {_TIER_COMMON}",
+        ))
     return lines
 
 
@@ -136,7 +163,8 @@ def walled_garden(p: ProvisionParams) -> list[str]:
              "# Hosts the phone probes to detect a captive portal; blocked, the portal never pops."]
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
                  "www.msftconnecttest.com", p.hotspot_dns_name):
-        lines.append(f"/ip hotspot walled-garden add dst-host={host} {TAG}")
+        lines.append(_once("/ip hotspot walled-garden", f'dst-host="{host}"',
+                           f"dst-host={host} {TAG}"))
     lines.append("# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.")
     return lines
 
@@ -161,33 +189,55 @@ def firewall(p: ProvisionParams) -> list[str]:
     def before(_rule: str = drop_all) -> str:
         return f'place-before=[find where comment="NetGuard fw: {drop_all}"]'
 
+    def fw(args: str, name: str, top: bool = False) -> str:
+        # `top`: also move to the head of the table. A stock router's own
+        # "drop all not coming from LAN" sits ABOVE our terminal rule and would
+        # drop tunnel traffic (wireguard-netguard is not in its LAN list) before
+        # our accept is reached. Confirmed on a CHR loaded with the stock rules.
+        then = (f'/ip firewall filter move [find where comment="NetGuard fw: {name}"] destination=0'
+                if top else "")
+        return _once("/ip firewall filter", f'comment="NetGuard fw: {name}"',
+                     f"{args} {before()} {_fw_comment(name)}", then=then)
+
     lines = [
         "# --- firewall ---",
         "# Terminal rule first; every other rule is placed before it, in order.",
-        f"/ip firewall filter add chain=input action=drop in-interface={wan} {_fw_comment(drop_all)}",
-        f"/ip firewall filter add chain=input action=accept connection-state=established,related,untracked {before(drop_all)} {_fw_comment('accept established')}",
-        f"/ip firewall filter add chain=input action=drop connection-state=invalid {before(drop_all)} {_fw_comment('drop invalid')}",
+        _once("/ip firewall filter", f'comment="NetGuard fw: {drop_all}"',
+              f"chain=input action=drop in-interface={wan} {_fw_comment(drop_all)}"),
+        fw("chain=input action=accept connection-state=established,related,untracked", "accept established"),
+        fw("chain=input action=drop connection-state=invalid", "drop invalid"),
         "# Scoped to the tunnel interface: matching on source address alone would accept a",
         "# 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.",
-        f"/ip firewall filter add chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE} {before(drop_all)} {_fw_comment('accept netguard tunnel')}",
+        fw(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}", "accept netguard tunnel", top=True),
         "# Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop",
         "# while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s",
         "# margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.",
         "# WireGuard silently ignores unauthenticated packets, so the exposure is negligible.",
-        f"/ip firewall filter add chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan} {before(drop_all)} {_fw_comment('accept wireguard')}",
-        f"/ip firewall filter add chain=input action=accept protocol=icmp {before(drop_all)} {_fw_comment('accept icmp')}",
+        fw(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}", "accept wireguard", top=True),
+        fw("chain=input action=accept protocol=icmp", "accept icmp"),
         "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
-        f"/ip firewall filter add chain=input action=drop protocol=udp dst-port=53 in-interface={wan} {before(drop_all)} {_fw_comment('drop wan dns udp')}",
-        f"/ip firewall filter add chain=input action=drop protocol=tcp dst-port=53 in-interface={wan} {before(drop_all)} {_fw_comment('drop wan dns tcp')}",
+        fw(f"chain=input action=drop protocol=udp dst-port=53 in-interface={wan}", "drop wan dns udp"),
+        fw(f"chain=input action=drop protocol=tcp dst-port=53 in-interface={wan}", "drop wan dns tcp"),
+        "# Forward chain: the input rules above protect the router, not the LAN. Without this, an upstream",
+        "# that can route to the LAN subnet reaches customers' devices. Only NEW connections from the WAN",
+        "# are dropped (LAN-initiated flows and their replies are `established`), and the rule is moved to",
+        "# the top of the table so no earlier accept (e.g. a stock config's) can bypass it.",
+        _once("/ip firewall filter", f'comment="NetGuard fw: drop wan forward"',
+              f"chain=forward action=drop connection-state=new in-interface={wan} {_fw_comment('drop wan forward')}",
+              then='/ip firewall filter move [find where comment="NetGuard fw: drop wan forward"] destination=0'),
         "# --- service hardening ---",
         "/ip service set telnet disabled=yes",
         "/ip service set ftp disabled=yes",
         "/ip service set www-ssl disabled=yes",
         "/ip service set api-ssl disabled=yes",
         f"/ip service set ssh address={p.wg_subnet_cidr}",
-        f"/ip service set winbox address={p.wg_subnet_cidr}",
+        "# winbox is also reachable from the operator range 10.15.0.0/24, which lies outside the DHCP pool",
+        "# (hotspot clients cannot be leased into it). It is the way back in if the tunnel is dead.",
+        f"/ip service set winbox address={p.wg_subnet_cidr},{p.operator_cidr}",
         f"/ip service set api disabled=no port=8728 address={p.wg_subnet_cidr}",
-        "# www is left enabled on purpose: the hotspot login page is served by it.",
+        "# www (WebFig) is NOT what serves the hotspot login page: the hotspot redirects clients to its own",
+        "# ports (64872-64875), verified on a CHR with www disabled. So it is kept only for the operator range.",
+        f"/ip service set www address={p.operator_cidr}",
         "# --- discovery and cloud ---",
         "/ip neighbor discovery-settings set discover-interface-list=none",
         "/tool mac-server set allowed-interface-list=none",
@@ -204,9 +254,14 @@ def api_user(p: ProvisionParams) -> list[str]:
     return [
         "# --- NetGuard API user ---",
         "# !sensitive stops this account reading other stored credentials.",
-        f"/user group add name={p.api_username} policy={policy} comment=\"NetGuard API\"",
-        f"/user add name={p.api_username} group={p.api_username} "
-        f'address={p.wg_subnet_cidr} password="{p.api_password}" comment="NetGuard API"',
+        _once("/user group", f'name="{p.api_username}"',
+              f'name={p.api_username} policy={policy} comment="NetGuard API"'),
+        _once("/user", f'name="{p.api_username}"',
+              f'name={p.api_username} group={p.api_username} '
+              f'address={p.wg_subnet_cidr} password="{p.api_password}" comment="NetGuard API"'),
+        "# A stock router's admin has a blank password and is reachable from the LAN. Give it its own",
+        "# random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.",
+        f'/user set [find where name=admin] password="{p.admin_password}"',
     ]
 
 
@@ -226,17 +281,21 @@ def wireguard(p: ProvisionParams) -> list[str]:
     server_ip = network.rsplit(".", 1)[0] + ".1"
     return [
         "# --- wireguard ---",
-        f'/interface wireguard add name={WG_INTERFACE} listen-port={WG_LISTEN_PORT} mtu=1420 '
-        f'private-key="{p.wg_private_key}" {TAG}',
-        f"/ip address add address={p.wg_client_ip}/{prefix} interface={WG_INTERFACE} network={network} {TAG}",
+        _once("/interface wireguard", f'name="{WG_INTERFACE}"',
+              f'name={WG_INTERFACE} listen-port={WG_LISTEN_PORT} mtu=1420 '
+              f'private-key="{p.wg_private_key}" {TAG}'),
+        _once("/ip address", f'address="{p.wg_client_ip}/{prefix}" interface="{WG_INTERFACE}"',
+              f"address={p.wg_client_ip}/{prefix} interface={WG_INTERFACE} network={network} {TAG}"),
         "# persistent-keepalive=25s is load-bearing. It must stay below the 30s conntrack UDP",
         "# timeout: the router initiates the tunnel and the firewall's `established` rule lets",
         "# replies in, so a keepalive slower than 30s lets the flow expire. Do not tune it up.",
-        f'/interface wireguard peers add interface={WG_INTERFACE} public-key="{p.wg_server_public_key}" '
-        f"endpoint-address={p.wg_server_endpoint} endpoint-port={p.wg_server_port} "
-        f"allowed-address={p.wg_subnet_cidr} persistent-keepalive=25s {TAG}",
-        f"/ip route add dst-address={server_ip}/32 gateway={WG_INTERFACE} distance=1 "
-        f"routing-table=main scope=30 target-scope=10 {TAG}",
+        _once("/interface wireguard peers", f'interface="{WG_INTERFACE}"',
+              f'interface={WG_INTERFACE} public-key="{p.wg_server_public_key}" '
+              f"endpoint-address={p.wg_server_endpoint} endpoint-port={p.wg_server_port} "
+              f"allowed-address={p.wg_subnet_cidr} persistent-keepalive=25s {TAG}"),
+        _once("/ip route", f'dst-address="{server_ip}/32"',
+              f"dst-address={server_ip}/32 gateway={WG_INTERFACE} distance=1 "
+              f"routing-table=main scope=30 target-scope=10 {TAG}"),
     ]
 
 
@@ -260,31 +319,44 @@ def capsman(p: ProvisionParams) -> list[str]:
         "# would end 'plug an AP into any port and it adopts'. Bounded by interfaces= below: the controller",
         "# listens on the LAN bridge only, never the WAN.",
         f"/interface wifi capsman set enabled=yes interfaces={p.bridge_name} upgrade-policy=none require-peer-certificate=no",
-        f"/interface wifi datapath add name=netguard-datapath bridge={p.bridge_name} {TAG}",
-        f"/interface wifi configuration add name=netguard-config ssid={p.site_slug} datapath=netguard-datapath {TAG}",
+        _once("/interface wifi datapath", 'name="netguard-datapath"',
+              f"name=netguard-datapath bridge={p.bridge_name} {TAG}"),
+        _once("/interface wifi configuration", 'name="netguard-config"',
+              f"name=netguard-config ssid={p.site_slug} datapath=netguard-datapath {TAG}"),
         "# One provisioning rule matching any radio: an AP adopts with no per-AP work.",
-        f"/interface wifi provisioning add action=create-dynamic-enabled master-configuration=netguard-config {TAG}",
+        _once("/interface wifi provisioning", 'master-configuration="netguard-config"',
+              f"action=create-dynamic-enabled master-configuration=netguard-config {TAG}"),
     ]
 
 
 def summary(p: ProvisionParams) -> list[str]:
     """What the installer reads last, and what stays on screen.
 
-    Deliberately does NOT print the API password. It is already on the NetGuard
-    dashboard, and a script pasted into a terminal can be scrolled back or
-    logged by whoever is at the counter. Each secret appears once, in the
-    command that applies it.
+    Deliberately prints neither the API password nor the admin password. Both
+    are on the NetGuard dashboard, and a script pasted into a terminal can be
+    scrolled back or logged by whoever is at the counter. Each secret appears
+    once, in the command that applies it.
     """
     return [
         "# --- summary ---",
+        "# Allow the tunnel a few seconds to handshake so the report below is about something.",
+        ":delay 8s",
         ':put ""',
         ':put "===== NetGuard provisioning complete ====="',
         ':put ("Board:            " . [/system resource get board-name] . "  RouterOS " . [/system resource get version])',
         ':do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" }',
+        f':put "WAN port:         {p.wan_interface} (left out of the bridge)"',
+        ':local ports ""',
+        f':foreach i in=[/interface bridge port find where bridge="{p.bridge_name}"] do={{ :set ports ($ports . [/interface bridge port get $i interface] . " ") }}',
+        f':put ("LAN ports:        " . $ports . "(bridge {p.bridge_name})")',
         f':put "LAN:              {p.lan_cidr}  gateway {p.gateway}"',
         f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
         ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',
         f':put "API user:         {p.api_username}  (password: see the NetGuard dashboard)"',
+        ':put "admin password:   set to a random value (see the NetGuard dashboard)"',
         f':put "Tunnel address:   {p.wg_client_ip}  ({WG_INTERFACE} to {p.wg_server_endpoint}:{p.wg_server_port})"',
-        ':put "The firewall now drops new connections arriving on the WAN port."',
+        f':do {{ :if ([:len [/interface wireguard peers get [find where interface="{WG_INTERFACE}"] last-handshake]] > 0) do={{ :put "Tunnel status:    UP (handshake seen)" }} else={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }} }} on-error={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }}',
+        f':put "ssh and api are now reachable only through the tunnel ({p.wg_subnet_cidr}); winbox also from {p.operator_cidr}."',
+        f':put "New connections arriving on {p.wan_interface} are dropped (router and LAN), except the WireGuard port and ping."',
+        f':put "If your session was cut while ports moved, that was expected. Reconnect on a {p.lan_cidr.split(".")[0]}.{p.lan_cidr.split(".")[1]}.x address."',
     ]

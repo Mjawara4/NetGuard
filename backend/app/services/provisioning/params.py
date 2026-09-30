@@ -4,6 +4,8 @@ Everything that could make a generated script dangerous or silently wrong is
 rejected here, before any RouterOS text exists. The section builders in
 `sections.py` then take a ProvisionParams and never re-validate.
 """
+import base64
+import binascii
 import ipaddress
 import re
 from dataclasses import dataclass
@@ -36,6 +38,7 @@ class ProvisionParams:
     gateway: str
     pool_start: str
     pool_end: str
+    operator_cidr: str
     wan_interface: str
     bridge_name: str
     wg_private_key: str
@@ -46,12 +49,14 @@ class ProvisionParams:
     wg_subnet_cidr: str
     api_username: str
     api_password: str
+    admin_password: str
     hotspot_dns_name: str
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  wg_server_public_key: str, wg_server_endpoint: str,
                  wg_server_port: int, api_password: str,
+                 admin_password: str,
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -68,6 +73,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
     for name, value in (("wg_private_key", wg_private_key),
                         ("wg_server_public_key", wg_server_public_key),
                         ("api_password", api_password),
+                        ("admin_password", admin_password),
                         ("wg_server_endpoint", wg_server_endpoint)):
         if not value:
             raise ValueError(f"{name} is required")
@@ -126,22 +132,34 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         # It's not an IP, so it should be a valid hostname (already validated by regex)
         pass
 
-    # Validate WireGuard keys (base64, at least 40 chars)
+    # Validate WireGuard keys: base64 of exactly 32 bytes. Length alone is not
+    # enough: a 33-byte value passes a "long enough" check and RouterOS then
+    # rejects it mid-script (`failure: invalid private key`).
     # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
     base64_pattern = re.compile(r"[A-Za-z0-9+/=]+")
     for name, key in (("wg_private_key", wg_private_key),
                       ("wg_server_public_key", wg_server_public_key)):
         if not base64_pattern.fullmatch(key):
             raise ValueError(f"{name} must be base64-encoded")
-        if len(key) < 40:
-            raise ValueError(f"{name} must be at least 40 characters")
+        try:
+            raw = base64.b64decode(key, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError(f"{name} must be base64-encoded")
+        if len(raw) != 32:
+            raise ValueError(
+                f"{name} must decode to exactly 32 bytes, got {len(raw)}"
+            )
 
-    # Validate API password (alphanumeric only)
+    # Validate the two passwords (alphanumeric only; see secrets.py for why).
     # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
-    if not re.compile(r"[A-Za-z0-9]+").fullmatch(api_password):
-        raise ValueError(
-            "api_password must contain only alphanumeric characters"
-        )
+    for name, pw in (("api_password", api_password),
+                     ("admin_password", admin_password)):
+        if not re.compile(r"[A-Za-z0-9]+").fullmatch(pw):
+            raise ValueError(f"{name} must contain only alphanumeric characters")
+    # Distinct, so each secret appears exactly once in the script and one
+    # leaked credential is not the other.
+    if api_password == admin_password:
+        raise ValueError("admin_password must differ from api_password")
 
     # Validate WireGuard server port (reject bool; bool is subclass of int in Python)
     if isinstance(wg_server_port, bool) or not isinstance(wg_server_port, int) or wg_server_port < 1 or wg_server_port > 65535:
@@ -155,6 +173,10 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
     # switches and counter hardware.
     pool_start = str(lan.network_address + 258)          # 10.15.1.2
     pool_end = str(lan.broadcast_address - 257)          # 10.15.254.254
+
+    # The first /24 is outside the DHCP pool: an operator can address into it
+    # statically, a hotspot client is never leased into it.
+    operator_cidr = f"{lan.network_address}/24"
 
     # Validate pool invariants
     pool_start_ip = ipaddress.ip_address(pool_start)
@@ -181,11 +203,13 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         site_slug=site_slug, timezone=timezone,
         lan_cidr=lan_cidr, gateway=gateway,
         pool_start=pool_start, pool_end=pool_end,
+        operator_cidr=operator_cidr,
         wan_interface="ether1", bridge_name="bridge-hotspot",
         wg_private_key=wg_private_key, wg_client_ip=wg_client_ip,
         wg_server_public_key=wg_server_public_key,
         wg_server_endpoint=wg_server_endpoint, wg_server_port=wg_server_port,
         wg_subnet_cidr=WG_SUBNET_CIDR,
         api_username="netguard", api_password=api_password,
+        admin_password=admin_password,
         hotspot_dns_name="login.netguard.local",
     )

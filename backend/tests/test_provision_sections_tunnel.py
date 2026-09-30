@@ -1,13 +1,13 @@
 import re
 from app.services.provisioning.params import build_params
-from app.services.provisioning import sections
+from provision_helpers import sections
 
 P = build_params(
     site_slug="serrekunda-counter",
-    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcHJpdmF0ZS1rZXk=", wg_client_ip="10.13.13.7",
-    wg_server_public_key="c2VydmVyLWtleS1ub3QtcmVhbC1zZXJ2ZXIta2V5LW4=",
+    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
+    wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -98,9 +98,9 @@ def test_wireguard_port_has_an_explicit_accept_before_the_wan_drop():
 
 
 def test_wireguard_accept_follows_the_wan_interface_param():
-    p = build_params(site_slug="x-site", wg_private_key="k" * 44, wg_client_ip="10.13.13.7",
-                     wg_server_public_key="k" * 44, wg_server_endpoint="74.208.167.166",
-                     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v")
+    p = build_params(site_slug="x-site", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
+                     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
+                     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g")
     import dataclasses
     p = dataclasses.replace(p, wan_interface="sfp1")
     r = [l for l in sections.firewall(p) if l.endswith('NetGuard fw: accept wireguard"')][0]
@@ -141,8 +141,8 @@ def _wg_generator_tokens():
     """key=value tokens per command, parsed from WireGuardService's own script."""
     from app.services.wireguard import WireGuardService
     script = WireGuardService.generate_mikrotik_script(
-        "cHJpdmF0ZS1rZXktbm90LXJlYWwtcHJpdmF0ZS1rZXk=", "10.13.13.7",
-        "c2VydmVyLWtleS1ub3QtcmVhbC1zZXJ2ZXIta2V5LW4=", "74.208.167.166", 51820)
+        "cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", "10.13.13.7",
+        "c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", "74.208.167.166", 51820)
     out, menu = {}, None
     for line in script.replace("\\\n", " ").splitlines():
         line = line.strip()

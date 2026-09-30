@@ -32,8 +32,18 @@ SECTION_ORDER = (
 
 
 def build_provision_script(p: ProvisionParams) -> str:
-    out: list[str] = []
+    """One brace-enclosed block, so RouterOS treats the script as ONE command.
+
+    A paste into a terminal is otherwise a run of independent commands, and
+    `:error` (the preflight refusal) would print and let the rest execute;
+    `:error` only aborts everything when it is inside a single command. The
+    block also lets `:local` persist across lines, and keeps the router
+    executing server-side if the installer's session drops when the ports move.
+    """
+    out: list[str] = ["{"]
     for fn in SECTION_ORDER:
         out.extend(fn(p))
         out.append("")
+    out.append("}")
+    out.append("")
     return "\n".join(out)

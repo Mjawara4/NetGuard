@@ -1,13 +1,13 @@
 from app.services.provisioning.params import build_params
-from app.services.provisioning import sections
+from provision_helpers import sections
 
 P = build_params(
     site_slug="serrekunda-counter",
-    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZw==",
+    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_client_ip="10.13.13.7",
-    wg_server_public_key="c2VydmVyLWtleS1ub3QtcmVhbC1wYWRkaW5nLXBhZGRpbmc=",
+    wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 

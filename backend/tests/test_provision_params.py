@@ -3,12 +3,12 @@ from app.services.provisioning.params import build_params
 
 OK = dict(
     site_slug="serrekunda-counter",
-    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtYnV0LWxvbmctZW5vdWdo",
+    wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_client_ip="10.13.13.7",
-    wg_server_public_key="c2VydmVyLXB1YmxpYy1rZXktbm90LXJlYWwtYnV0LWxvbmc=",
+    wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166",
     wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -213,14 +213,14 @@ def test_rejects_wg_server_endpoint_with_trailing_newline():
 def test_rejects_wg_private_key_with_trailing_newline():
     """wg_private_key must reject trailing newlines via fullmatch()"""
     with pytest.raises(ValueError, match="wg_private_key"):
-        valid_key = "cHJpdmF0ZS1rZXktbm90LXJlYWwtYnV0LWxvbmctZW5vdWdo"
+        valid_key = "cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE="
         build_params(**{**OK, "wg_private_key": valid_key + "\n"})
 
 
 def test_rejects_wg_server_public_key_with_trailing_newline():
     """wg_server_public_key must reject trailing newlines via fullmatch()"""
     with pytest.raises(ValueError, match="wg_server_public_key"):
-        valid_key = "c2VydmVyLXB1YmxpYy1rZXktbm90LXJlYWwtYnV0LWxvbmc="
+        valid_key = "c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE="
         build_params(**{**OK, "wg_server_public_key": valid_key + "\n"})
 
 
