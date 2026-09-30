@@ -1171,10 +1171,22 @@ git commit -m "feat(backend): assemble the one-shot provisioning script"
 - Consumes: `build_params`, `build_provision_script`, `generate_api_password`.
 - Produces:
   ```
-  GET /api/v1/inventory/devices/{device_id}/provision-script?site_slug=&timezone=
+  POST /api/v1/inventory/devices/{device_id}/provision-script?site_slug=&timezone=
   -> ProvisionScriptResponse(device_id, site_slug, script, api_username,
                              api_password, warnings: list[str])
   ```
+
+  **POST, not GET — controller correction.** An earlier draft of this plan said
+  GET. That is wrong: this endpoint generates a fresh API password and PERSISTS
+  it to the device row, so it is neither safe nor idempotent. Two calls leave
+  two different stored credentials, and the script from the first call stops
+  matching the router. A GET is also fair game for browser prefetch, link
+  preview and proxy caching — any of which would silently rotate a live
+  router's stored password. It also matches its sibling
+  `POST .../provision-wireguard`.
+
+  Because each call rotates the credential, the handler's docstring must say so
+  plainly: calling it again invalidates any script handed out earlier.
   Side effect: sets `device.ssh_username="netguard"` and `device.ssh_password=<generated>`, because that is the credential pair `backend/app/routers/hotspot.py:270` uses for the RouterOS API.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1251,7 +1263,7 @@ Customers now onboard themselves, so the endpoint is unusable without a button.
 - Test: `frontend/src/test/provision-script.test.jsx`
 
 **Interfaces:**
-- Consumes: `GET /api/v1/inventory/devices/{id}/provision-script` from Task 9.
+- Consumes: `POST /api/v1/inventory/devices/{id}/provision-script` from Task 9.
 
 **Controller correction to this plan:** an earlier draft named `Settings.jsx`.
 That is wrong. `Settings.jsx` only lists the endpoint in an API reference
@@ -1270,7 +1282,7 @@ modal shape so an operator sees one consistent flow.
 - [ ] **Step 1: Write the failing test**
 
 Render `Devices.jsx` with a mocked device list and assert: a "Get setup script"
-control exists for the selected router; clicking it calls
+control exists for the selected router; clicking it POSTs to
 `/inventory/devices/{id}/provision-script` exactly once; the returned script is
 rendered; the generated API password is shown with a warning that it appears
 only once; and a 409 response renders the remedy text ("provision WireGuard
@@ -1305,7 +1317,7 @@ git commit -m "feat(frontend): self-service router setup script in Settings"
 
 ## Done when
 
-- `GET /api/v1/inventory/devices/{id}/provision-script` returns a script that a CHR accepts end to end.
+- `POST /api/v1/inventory/devices/{id}/provision-script` returns a script that a CHR accepts end to end.
 - Backend tests: 82 baseline plus the new suites, all passing.
 - `scripts/chr-smoke-test.sh` demonstrably fails on invalid input and passes on the real script.
 - No `0.0.0.0/0` anywhere in either generated script.
