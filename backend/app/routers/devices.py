@@ -275,6 +275,9 @@ async def generate_provision_script(
     being valid for the next install. The cost is that an installer must use
     the most recently generated script. That is why this is a POST.
 
+    Restricted to SUPER_ADMIN and ORG_ADMIN users (403 otherwise), and to
+    devices in the actor's own organisation (404 otherwise).
+
     The device must already have WireGuard provisioned (409 otherwise); no
     placeholder key or address is ever substituted.
     """
@@ -286,6 +289,15 @@ async def generate_provision_script(
         device_uuid = UUID(device_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Device not found")
+
+    # This mints and stores credentials and returns a tunnel private key, so it
+    # is not open to read-only users. API keys are machine-scoped and unchanged.
+    if isinstance(actor, User) and actor.role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
+        raise HTTPException(
+            status_code=403,
+            detail="Generating a provisioning script rotates router credentials; "
+                   "it requires an organisation admin or super admin.",
+        )
 
     # Verify ownership
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:

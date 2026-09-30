@@ -189,3 +189,136 @@ async def test_malformed_device_id_is_404():
             "not-a-uuid", site_slug="a-site", timezone="UTC",
             db=_db(None), actor=APIKey(organization_id=None))
     assert ei.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Authorisation: role gate, org scoping, and the real route
+# ---------------------------------------------------------------------------
+import httpx
+
+from app.core.database import get_db
+from app.auth.deps import get_authorized_actor
+from app.main import app
+from app.models import User, UserRole
+
+ORG_X, ORG_Y = uuid.uuid4(), uuid.uuid4()
+
+
+class _OrgAwareDB:
+    """Stands in for Postgres: applies the org predicate the handler put in its query.
+
+    Holds one device belonging to ORG_Y. A query carrying a
+    `sites.organization_id = <org>` predicate only sees it when that org is ORG_Y;
+    a query with no such predicate sees it regardless. So removing the scoping
+    from the handler makes another org's device visible here, as it would in SQL.
+    """
+    def __init__(self, device, owner_org):
+        self.device, self.owner_org = device, owner_org
+        self.commit = AsyncMock()
+        self.add = MagicMock()
+
+    async def execute(self, stmt):
+        compiled = stmt.compile()
+        scoped = "sites.organization_id" in str(compiled)
+        visible = (not scoped) or self.owner_org in compiled.params.values()
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = self.device if visible else None
+        return result
+
+
+def _user(role, org):
+    return User(id=uuid.uuid4(), email="u@x", hashed_password="x", role=role, organization_id=org)
+
+
+async def _as(actor, device, owner_org=ORG_Y):
+    db = _OrgAwareDB(device, owner_org)
+    resp = await devices.generate_provision_script(
+        str(device.id), site_slug="a-site", timezone="UTC", db=db, actor=actor)
+    return resp, db
+
+
+async def test_org_admin_of_another_org_gets_404_not_a_script():
+    device = _device()
+    with pytest.raises(HTTPException) as ei:
+        await _as(_user(UserRole.ORG_ADMIN, ORG_X), device)
+    assert ei.value.status_code == 404
+    assert device.ssh_password == "admin"
+
+
+async def test_org_admin_succeeds_for_their_own_org_device():
+    device = _device()
+    resp, db = await _as(_user(UserRole.ORG_ADMIN, ORG_Y), device)
+    assert device.ssh_password == resp.api_password
+    db.commit.assert_awaited_once()
+
+
+async def test_super_admin_sees_any_org():
+    resp, _ = await _as(_user(UserRole.SUPER_ADMIN, None), _device())
+    assert resp.api_username == "netguard"
+
+
+@pytest.mark.parametrize("role", [UserRole.VIEWER, UserRole.NETWORK_AGENT])
+async def test_non_admin_user_gets_403_and_nothing_changes(role):
+    device = _device()
+    with pytest.raises(HTTPException) as ei:
+        await _as(_user(role, ORG_Y), device)   # same org: only the role is wrong
+    assert ei.value.status_code == 403
+    assert device.ssh_password == "admin"
+
+
+async def test_scoped_api_key_is_not_role_gated():
+    resp, _ = await _as(APIKey(organization_id=ORG_Y), _device())
+    assert resp.api_password
+
+
+async def test_second_warning_tells_operator_ssh_is_refused():
+    resp, _ = await _call(_device())
+    assert any("API-only" in w and "ssh" in w.lower() for w in resp.warnings)
+    assert len(resp.warnings) == 2
+
+
+def _route(actor, device):
+    db = _OrgAwareDB(device, ORG_Y)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_authorized_actor] = lambda: actor
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+
+
+@pytest.fixture
+def clean_overrides():
+    yield
+    app.dependency_overrides.clear()
+
+
+async def test_route_other_org_is_404_over_http(clean_overrides):
+    device = _device()
+    async with _route(_user(UserRole.ORG_ADMIN, ORG_X), device) as c:
+        r = await c.post(f"/api/v1/inventory/devices/{device.id}/provision-script?site_slug=a-site")
+    assert r.status_code == 404
+    assert "script" not in r.json()
+
+
+async def test_route_own_org_is_200_with_full_key_set(clean_overrides):
+    device = _device()
+    async with _route(_user(UserRole.ORG_ADMIN, ORG_Y), device) as c:
+        r = await c.post(f"/api/v1/inventory/devices/{device.id}/provision-script?site_slug=a-site")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body) == {"device_id", "site_slug", "script", "api_username",
+                         "api_password", "admin_password", "warnings"}
+    assert device.ssh_password == body["api_password"]
+
+
+async def test_route_viewer_is_403_over_http(clean_overrides):
+    device = _device()
+    async with _route(_user(UserRole.VIEWER, ORG_Y), device) as c:
+        r = await c.post(f"/api/v1/inventory/devices/{device.id}/provision-script?site_slug=a-site")
+    assert r.status_code == 403
+    print("VIEWER 403 body:", r.json())
+
+
+async def test_route_get_is_not_allowed(clean_overrides):
+    device = _device()
+    async with _route(_user(UserRole.ORG_ADMIN, ORG_Y), device) as c:
+        r = await c.get(f"/api/v1/inventory/devices/{device.id}/provision-script?site_slug=a-site")
+    assert r.status_code == 405
