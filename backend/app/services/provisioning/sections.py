@@ -12,6 +12,13 @@ from .params import ProvisionParams
 
 TAG = 'comment="NetGuard"'
 
+# Every action that ends a packet's journey through the input chain. A stock router's LAN guard is
+# `drop`, but `reject` and `tarpit` do the same job: if we only looked for `drop`, a guard written
+# as `reject` would be invisible, our tunnel accept would land BELOW it, and the router would report
+# success while NetGuard could never reach it.
+TERMINAL_ACTIONS = ("drop", "reject", "tarpit")
+_INPUT_TERMINAL = "chain=input and (" + " or ".join(f"action={a}" for a in TERMINAL_ACTIONS) + ")"
+
 # Must match backend/app/services/wireguard.py: NetGuard reaches each device at
 # its tunnel address, so drift here breaks monitoring.
 WG_INTERFACE = "wireguard-netguard"
@@ -225,13 +232,13 @@ def firewall(p: ProvisionParams) -> list[str]:
         "# Scoped to the tunnel interface: matching on source address alone would accept a",
         "# 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.",
         fw_above_stock(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}",
-                       "accept netguard tunnel", "chain=input and action=drop", f" {before()}"),
+                       "accept netguard tunnel", _INPUT_TERMINAL, f" {before()}"),
         "# Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop",
         "# while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s",
         "# margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.",
         "# WireGuard silently ignores unauthenticated packets, so the exposure is negligible.",
         fw_above_stock(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}",
-                       "accept wireguard", "chain=input and action=drop", f" {before()}"),
+                       "accept wireguard", _INPUT_TERMINAL, f" {before()}"),
         fw("chain=input action=accept protocol=icmp", "accept icmp"),
         "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
         fw(f"chain=input action=drop protocol=udp dst-port=53 in-interface={wan}", "drop wan dns udp"),

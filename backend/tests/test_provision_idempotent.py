@@ -79,7 +79,11 @@ def raw_rule(name):
                 if f'comment="NetGuard fw: {name}"' in l and " add " in l and not l.startswith("#"))
 
 
-SELECT_STOCK_INPUT_DROP = 'find where chain=input and action=drop and !dynamic and !(comment~"^NetGuard fw")]'
+# Terminal actions, not just `drop`: a stock LAN guard written as `reject` (or `tarpit`) would otherwise be
+# invisible and our tunnel accept would land BELOW it, with the script reporting success and the router
+# unreachable. Pinned as a set so narrowing it back to drop-only goes red.
+SELECT_STOCK_INPUT_DROP = ('find where chain=input and (action=drop or action=reject or action=tarpit) '
+                           'and !dynamic and !(comment~"^NetGuard fw")]')
 
 
 def test_forward_drop_rule_sits_above_the_routers_own_first_forward_rule():
@@ -165,3 +169,12 @@ def test_tunnel_accepts_go_above_a_stock_routers_own_input_drop_not_by_index():
         assert ':if ([:len $t] > 0)' in l, l
         assert 'else={ /ip firewall filter add' in l and \
             'place-before=[find where comment="NetGuard fw: drop wan input"]' in l.split("else=")[1], l
+
+
+def test_input_selector_covers_every_terminal_action():
+    from app.services.provisioning.sections import TERMINAL_ACTIONS
+    assert set(TERMINAL_ACTIONS) == {"drop", "reject", "tarpit"}
+    for name in ("accept netguard tunnel", "accept wireguard"):
+        l = raw_rule(name)
+        for action in ("drop", "reject", "tarpit"):
+            assert f"action={action}" in l.split("place-before")[0], (name, action)
