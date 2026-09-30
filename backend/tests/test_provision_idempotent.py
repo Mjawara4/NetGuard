@@ -141,3 +141,19 @@ def test_tunnel_accepts_are_moved_above_a_stock_routers_own_drop_rules():
     for name in ("accept netguard tunnel", "accept wireguard"):
         l = next(l for l in fw if f'comment="NetGuard fw: {name}"' in l and " add " in l)
         assert f'move [find where comment="NetGuard fw: {name}"] destination=0' in l, l
+
+
+def test_both_passwords_are_set_on_every_run_not_only_when_the_user_is_created():
+    # Guarding `/user add` alone meant a re-run with a NEW api_password never reached the router while
+    # admin's did: NetGuard would hold a credential the router lacked. So: add-if-missing, then an
+    # unconditional `set`. Read from the RAW lines, where the guard is visible.
+    raw = sections.api_user(P)
+    for user, pw in (("netguard", P.api_password), ("admin", P.admin_password)):
+        sets = [l for l in raw if l == f'/user set [find where name={user}] password="{pw}"']
+        assert len(sets) == 1, (user, sets)   # unguarded: a bare top-level command
+        assert not sets[0].startswith(":if")
+    add = next(l for l in raw if l.startswith(":if") and "/user add name=netguard" in l)
+    # An explicit empty password: omitting it makes /import fail and an interactive paste prompt.
+    assert 'password=""' in add
+    assert P.api_password not in add   # the secret appears once, in the set
+    assert "\n".join(raw).count(P.api_password) == 1

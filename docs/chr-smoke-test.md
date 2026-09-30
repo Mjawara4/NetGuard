@@ -12,8 +12,54 @@ own output, and exits non-zero on any RouterOS error. The VM and temp dir are re
 Needs `qemu-system-x86`, `qemu-utils`, `sshpass`, `unzip`, `curl`, and `/dev/kvm`.
 First run downloads the image (~40 MB) to `/tmp/chr/`; a run takes about 1 minute.
 The SSH forward port is chosen free at run time (localhost only), so concurrent runs are safe.
-Env overrides: `CHR_VERSION`, `CHR_SSH_PORT` (pin a port), `CHR_BOOT_TIMEOUT`,
+`--paste` also needs `python3-pexpect`. Env overrides: `CHR_VERSION`, `CHR_SSH_PORT` (pin a port), `CHR_BOOT_TIMEOUT`,
 `CHR_APPLY_TIMEOUT`, `CHR_CACHE_DIR`.
+
+## Two delivery modes: `/import` (default) and `--paste`
+
+    scripts/chr-smoke-test.sh script.rsc                # /import file-name=... verbose=yes
+    scripts/chr-smoke-test.sh --paste script.rsc        # typed into a real terminal session
+
+They are different execution models and a script can pass one and misbehave in the other.
+
+| | `/import` (default) | `--paste` |
+|---|---|---|
+| What it does | uploads the file, RouterOS runs it as a file | drives a real pty ssh session and pastes the whole file in one write, like a person at a terminal |
+| `:error` | aborts the whole FILE | aborts only the command it is in: pasted line by line, the refusal prints and the rest still runs, UNLESS the script is one brace-enclosed block |
+| Syntax error | import stops at that line | in a braced block the block is rejected at that line and every later line then runs as its own command (the guard is silently disarmed) |
+| A missing required argument | `Script Error: missing value(s) of argument(s) ...` | RouterOS PROMPTS (`password:`) and reads the next pasted line as the answer |
+| Proves | the file parses and applies, in order, to a fresh router | the same, plus what a person pasting actually gets |
+
+**A refusal (preflight `:error`) must be verified under `--paste`.** Every preflight check in this
+project was first verified under `/import`, which is exactly the mode in which `:error` works, so the
+guard looked correct while doing nothing in the mode the product ships. Also verify under `/import`:
+it is the recommended mode for remote and production installs (no paste-buffer or parse-error risk).
+
+`--paste` mode needs `python3-pexpect` (`scripts/chr-paste.py` is the driver; a non-tty
+`ssh < file` is not a paste, RouterOS treats each line separately there). A paste prints no `#line`
+trace, so the pass condition is: no error marker, no interactive prompt (a line that is just
+`password:` or `[y/N]:`), and the driver's end sentinel seen. The terminal redraws long echoed lines
+with `{...` continuation prompts; the harness strips those and the prompt prefix before comparing
+echoes with the source.
+
+### Verifying that a script REFUSES a configured router
+
+    scripts/chr-smoke-test.sh --paste --setup existing-hotspot.rsc \
+        --expect-abort "refusing to overwrite" --not-reached "provisioning complete" script.rsc
+
+`--setup FILE` runs each non-blank, non-`#` line as a RouterOS command first, to build the router
+the script should refuse. `--expect-abort TEXT` inverts the verdict: PASS only if TEXT appears in the
+router's own output (echoes of the source are filtered out) and no parse failure occurred;
+`--not-reached TEXT` additionally fails if that text (a line only a completed run prints) appears.
+Demonstrated against a router with a hotspot:
+
+| script | mode | result |
+|---|---|---|
+| braced provisioning script | `--paste` | PASS: refused, nothing after it ran |
+| the same script before it was braced | `--paste` | FAIL, exit 1: refusal printed, then "provisioning complete" |
+| the same unbraced script | `/import` | PASS: `:error` aborts an import, which is why `/import` never showed the defect |
+| braced script with one line broken (`move` missing its menu path) | `--paste` | FAIL, exit 1: `expected end of command`, and later lines ran loose |
+| script with `/user add ... ` missing its password | `--paste` | FAIL, exit 1: interactive `password:` prompt |
 
 ## Exit codes
 

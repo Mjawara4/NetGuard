@@ -150,6 +150,7 @@ def test_api_user_is_least_privilege_and_source_restricted():
     assert "name=netguard" in u.split()
     assert "group=netguard" in u.split()
     assert "address=10.13.13.0/24" in u.split()
-    assert 'password="Xk7mQp2rTz9wLb4nHc6v"' in u.split()
+    assert 'password=""' in u  # explicit blank; the real one is set separately and unconditionally, see test_both_passwords_are_set_on_every_run
+    assert '/user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"' in ls
     assert "/user add name=admin" not in t
     assert "group=full" not in t

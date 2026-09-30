@@ -76,7 +76,8 @@
 # --- NetGuard API user ---
 # !sensitive stops this account reading other stored credentials.
 :if ([:len [/user group find where name="netguard"]] = 0) do={ /user group add name=netguard policy=api,read,write,test,winbox,!local,!telnet,!ssh,!ftp,!reboot,!policy,!password,!sniff,!sensitive,!romon comment="NetGuard API" }
-:if ([:len [/user find where name="netguard"]] = 0) do={ /user add name=netguard group=netguard address=10.13.13.0/24 password="Xk7mQp2rTz9wLb4nHc6v" comment="NetGuard API" }
+:if ([:len [/user find where name="netguard"]] = 0) do={ /user add name=netguard group=netguard address=10.13.13.0/24 password="" comment="NetGuard API" }
+/user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"
 # A stock router's admin has a blank password and is reachable from the LAN. Give it its own
 # random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.
 /user set [find where name=admin] password="Qw8ZeRtY3uIoP5aSdF1g"

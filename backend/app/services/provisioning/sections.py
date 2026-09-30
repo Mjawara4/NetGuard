@@ -256,9 +256,16 @@ def api_user(p: ProvisionParams) -> list[str]:
         "# !sensitive stops this account reading other stored credentials.",
         _once("/user group", f'name="{p.api_username}"',
               f'name={p.api_username} policy={policy} comment="NetGuard API"'),
+        # Created with an EMPTY password and then always `set` below, so a re-run applies whatever password
+        # was just generated. Guarding the add alone left a re-run with a new password unapplied, and
+        # NetGuard holding a credential the router did not have. (Blank only until the next line; the
+        # account is bound to the tunnel subnet.) The empty password must be explicit: omitting it makes
+        # /import fail (`missing value(s) of argument(s) password`) and makes an interactive paste PROMPT,
+        # swallowing the next pasted line as the password.
         _once("/user", f'name="{p.api_username}"',
               f'name={p.api_username} group={p.api_username} '
-              f'address={p.wg_subnet_cidr} password="{p.api_password}" comment="NetGuard API"'),
+              f'address={p.wg_subnet_cidr} password="" comment="NetGuard API"'),
+        f'/user set [find where name={p.api_username}] password="{p.api_password}"',
         "# A stock router's admin has a blank password and is reachable from the LAN. Give it its own",
         "# random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.",
         f'/user set [find where name=admin] password="{p.admin_password}"',

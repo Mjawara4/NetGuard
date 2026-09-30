@@ -11,6 +11,22 @@ from . import sections
 #   firewall second-to-last because it can cut the installer's own session;
 #   summary last so it is what remains on screen.
 #
+# !!! READ THIS BEFORE EDITING ANY SECTION !!!
+# The script is one brace-enclosed block (see build_provision_script) so that a
+# paste is a single command and preflight's `:error` aborts everything. That
+# protection has a failure mode worse than a plain error: a SYNTAX ERROR anywhere
+# inside the block does not merely fail, it DISARMS the guard. RouterOS rejects the
+# block at the bad line, and every line after it is then executed as its own
+# command, exactly like the pre-brace script. Seen on a CHR (a `move` missing its
+# menu path): "expected end of command (line 128 ...)", after which service
+# hardening and the summary ran loose, past the preflight refusal.
+# So a section change is NOT trusted until it has been run through the CHR under
+# BOTH delivery modes: `scripts/chr-smoke-test.sh <file>` (/import) and
+# `scripts/chr-smoke-test.sh --paste <file>` (real terminal paste). Unit tests and
+# the golden file cannot see RouterOS syntax; only a router can. See
+# docs/chr-smoke-test.md. Prefer /import for remote or production installs: it
+# has neither the paste-buffer risk nor this degradation.
+#
 # Keepalive constraint: persistent-keepalive=25s (sections.wireguard) must stay
 # below the measured 30s conntrack UDP timeout. That margin keeps every tunnel
 # alive through the firewall's WAN drop. Do not tune it up without re-measuring.
