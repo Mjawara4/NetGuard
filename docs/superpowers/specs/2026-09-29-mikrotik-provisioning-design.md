@@ -43,10 +43,32 @@ Three consequences of handing this to people NetGuard does not employ:
    document: it must not be logged, cached, or emailed around, and the endpoint
    returns it once.
 
-**Greenfield only.** The script assumes a factory-reset or new router and does
-not attempt to be idempotent or safe against a router carrying live customers.
-Running it against a configured router is out of scope and it refuses to try —
-see *Preflight*.
+**Greenfield only**, but two things I originally got wrong about what that
+means, both confirmed on a real RouterOS 7.16.2 router during Task 8's review:
+
+1. **A factory-fresh MikroTik is NOT a blank router.** It ships with a default
+   configuration that already has `ether2`-`ether5` in a bridge called `bridge`.
+   So `/interface bridge port add interface=ether2` fails with
+   `failure: device already added as bridge port`, part-way through, leaving the
+   identity changed and `bridge-hotspot` created but no firewall applied. The
+   script must therefore **move** ports out of whatever bridge holds them rather
+   than assume none does, and the pieces that create objects must tolerate
+   being re-run after a partial failure. "No idempotency" was a decision made
+   on a false premise.
+
+2. **`:error` does not stop a pasted script.** It aborts an `/import`, but a
+   paste is a sequence of independent commands: the refusal prints and
+   execution continues to the end. Confirmed by feeding the script to a router
+   that already had a hotspot — it printed the refusal and then printed
+   "provisioning complete". Every preflight verification in this plan had used
+   `/import`, because that is what the test harness uses, so the harness itself
+   concealed this. The whole script is therefore wrapped in a single
+   brace-enclosed block, which RouterOS treats as ONE command in both delivery
+   modes, so `:error` aborts everything and `:local` also works across lines
+   inside it.
+
+Running it against a router carrying live customers remains out of scope, and
+preflight refuses that case — but the refusal now has to actually stop.
 
 ## Grounding: the fleet as it actually is
 
