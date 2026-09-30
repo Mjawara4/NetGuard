@@ -17,8 +17,11 @@ def unwrap(line: str) -> str:
     m = _GUARD.fullmatch(line)
     if not m:
         return line
-    # A trailing `; <follow-up>` (e.g. the forward rule's move) belongs to the guard, not the add.
-    return m.group(1).split("; ")[0]
+    inner = m.group(1)
+    # "Above the router's own rule" adds: `:local t [find ...]; :if (...) do={ ADD place-before=[:pick $t 0] }
+    # else={ ADD <fallback> }`. The plain shape tests read the fallback add (a blank router's).
+    e = re.search(r" else=\{ (/.*?) \} *$", inner) if inner.startswith(":local t ") else None
+    return e.group(1) if e else inner
 
 
 class _Unwrapped:

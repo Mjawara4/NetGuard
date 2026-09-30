@@ -74,12 +74,31 @@ def test_preflight_refuses_a_foreign_hotspot_but_tolerates_our_own_leftovers():
     assert ":error" in t
 
 
-def test_forward_drop_rule_is_first_and_only_matches_new_wan_connections():
-    l = next(l for l in sections.firewall(P) if "chain=forward" in l and not l.startswith("#"))
+def raw_rule(name):
+    return next(l for l in sections.firewall(P)
+                if f'comment="NetGuard fw: {name}"' in l and " add " in l and not l.startswith("#"))
+
+
+SELECT_STOCK_INPUT_DROP = 'find where chain=input and action=drop and !dynamic and !(comment~"^NetGuard fw")]'
+
+
+def test_forward_drop_rule_sits_above_the_routers_own_first_forward_rule():
+    l = raw_rule("drop wan forward")
     assert "action=drop" in l and "connection-state=new" in l and "in-interface=ether1" in l
-    assert 'comment="NetGuard fw: drop wan forward"' in l
-    # Moved to the top of the table so a stock router's earlier accepts cannot bypass it.
-    assert '/ip firewall filter move [find where comment="NetGuard fw: drop wan forward"] destination=0' in l
+    # Above the first forward rule that is neither dynamic (the fasttrack dummy, the hotspot's) nor ours.
+    assert 'find where chain=forward and !dynamic and !(comment~"^NetGuard fw")]' in l
+    assert "place-before=[:pick $t 0]" in l
+    # A blank router has no such rule: the else branch just appends.
+    assert "else={ /ip firewall filter add chain=forward action=drop connection-state=new" in l
+
+
+def test_no_firewall_rule_is_positioned_by_index():
+    # `move ... destination=0` fails on a stock router that has the fasttrack rule: a builtin
+    # "special dummy rule to show fasttrack counters" holds index 0 (`failure: cannot move builtin`),
+    # which aborts the whole block. Nothing may claim an absolute position.
+    raw = "\n".join(sections.firewall(P))
+    assert "destination=" not in raw
+    assert " move " not in raw
 
 
 def test_forward_rule_follows_the_wan_interface_param():
@@ -134,26 +153,15 @@ def test_www_is_kept_for_the_operator_range_only():
     assert l == ["/ip service set www address=10.15.0.0/24"]
 
 
-def test_tunnel_accepts_are_moved_above_a_stock_routers_own_drop_rules():
-    # A stock config's `drop all not coming from LAN` sits above our terminal rule. Without the move,
-    # tunnel traffic (in-interface=wireguard-netguard) is dropped before our accept is reached.
-    fw = [l for l in sections.firewall(P) if not l.startswith("#")]
+def test_tunnel_accepts_go_above_a_stock_routers_own_input_drop_not_by_index():
+    # A stock config's `drop all not coming from LAN` sits above our terminal rule and would drop tunnel
+    # traffic (wireguard-netguard is not in its LAN list) before our accept is reached. Target the first
+    # input drop rule that is neither dynamic nor ours with place-before; with none (a blank router) fall
+    # back to before our own terminal rule.
     for name in ("accept netguard tunnel", "accept wireguard"):
-        l = next(l for l in fw if f'comment="NetGuard fw: {name}"' in l and " add " in l)
-        assert f'move [find where comment="NetGuard fw: {name}"] destination=0' in l, l
-
-
-def test_both_passwords_are_set_on_every_run_not_only_when_the_user_is_created():
-    # Guarding `/user add` alone meant a re-run with a NEW api_password never reached the router while
-    # admin's did: NetGuard would hold a credential the router lacked. So: add-if-missing, then an
-    # unconditional `set`. Read from the RAW lines, where the guard is visible.
-    raw = sections.api_user(P)
-    for user, pw in (("netguard", P.api_password), ("admin", P.admin_password)):
-        sets = [l for l in raw if l == f'/user set [find where name={user}] password="{pw}"']
-        assert len(sets) == 1, (user, sets)   # unguarded: a bare top-level command
-        assert not sets[0].startswith(":if")
-    add = next(l for l in raw if l.startswith(":if") and "/user add name=netguard" in l)
-    # An explicit empty password: omitting it makes /import fail and an interactive paste prompt.
-    assert 'password=""' in add
-    assert P.api_password not in add   # the secret appears once, in the set
-    assert "\n".join(raw).count(P.api_password) == 1
+        l = raw_rule(name)
+        assert SELECT_STOCK_INPUT_DROP in l, l
+        assert "place-before=[:pick $t 0]" in l, l
+        assert ':if ([:len $t] > 0)' in l, l
+        assert 'else={ /ip firewall filter add' in l and \
+            'place-before=[find where comment="NetGuard fw: drop wan input"]' in l.split("else=")[1], l

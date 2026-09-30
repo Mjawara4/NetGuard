@@ -49,6 +49,9 @@ except (pexpect.TIMEOUT, pexpect.EOF):
     print("chr-paste: could not reach a RouterOS prompt", file=sys.stderr)
     sys.exit(2)
 
+# Only what the paste produces goes in the transcript: the login phase (licence prompt, forced password
+# change) would otherwise look like the script prompting.
+transcript = []
 data = open(path).read().replace("\n", "\r")
 child.send(data + "\r:put (\"CHR-PASTE-\" . \"DONE\")\r")
 status = 0

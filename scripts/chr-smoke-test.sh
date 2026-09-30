@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Apply a RouterOS script to a throwaway MikroTik CHR VM and fail on any RouterOS error.
-# Usage: scripts/chr-smoke-test.sh [--paste] [--setup FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>
+# Usage: scripts/chr-smoke-test.sh [--paste] [--setup FILE] [--prepend FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>
 #   (default)  upload the file and run `/import` (aborts the FILE at the first error or `:error`)
 #   --paste    type the file into a real pty terminal session, as a person pasting into a terminal
 #              would. `:error` does NOT abort a paste unless the script is one brace block, so a
 #              refusal guard must be verified in this mode. See docs/chr-smoke-test.md.
 #   --setup F  first run each non-blank, non-# line of F as a RouterOS command (build the "router
 #              that already has X" the script should refuse)
+#   --prepend F  put the contents of F in front of the script in the SAME session. Use it (not --setup)
+#              for setup that cuts the harness's own ssh, e.g. a stock firewall whose `drop all not coming
+#              from LAN` refuses new connections on the ether1 management path.
 #   --expect-abort TEXT   invert the verdict: PASS only if TEXT appears in the router's own output
 #              (not an echo of the source) and, with --not-reached, that other text does NOT.
 # Exit: 0 clean, 1 RouterOS reported an error, 2 harness/infra problem (never a silent pass).
@@ -30,17 +33,19 @@ ERROR_MARKERS=(
 # In --expect-abort mode a refusal is the pass condition, but a parse failure never is.
 SYNTAX_MARKERS=('syntax error' 'expected end of command' 'missing closing brace' 'bad command name')
 
-MODE=import; SETUP=""; EXPECT_ABORT=""; NOT_REACHED=""
+MODE=import; SETUP=""; PREPEND=""; EXPECT_ABORT=""; NOT_REACHED=""
 while [ $# -gt 1 ]; do
   case "$1" in
     --paste) MODE=paste; shift;;
     --setup) SETUP="$2"; shift 2;;
+    --prepend) PREPEND="$2"; shift 2;;
     --expect-abort) EXPECT_ABORT="$2"; shift 2;;
     --not-reached) NOT_REACHED="$2"; shift 2;;
-    *) echo "usage: $0 [--paste] [--setup FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>" >&2; exit 2;;
+    *) echo "usage: $0 [--paste] [--setup FILE] [--prepend FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>" >&2; exit 2;;
   esac
 done
-[ $# -eq 1 ] && [ -f "$1" ] || { echo "usage: $0 [--paste] [--setup FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>" >&2; exit 2; }
+[ $# -eq 1 ] && [ -f "$1" ] || { echo "usage: $0 [--paste] [--setup FILE] [--prepend FILE] [--expect-abort TEXT [--not-reached TEXT]] <script-file>" >&2; exit 2; }
+[ -z "$PREPEND" ] || [ -f "$PREPEND" ] || { echo "harness: --prepend file not found" >&2; exit 2; }
 [ -z "$SETUP" ] || [ -f "$SETUP" ] || { echo "harness: --setup file not found" >&2; exit 2; }
 [ -z "$NOT_REACHED" ] || [ -n "$EXPECT_ABORT" ] || { echo "harness: --not-reached needs --expect-abort" >&2; exit 2; }
 SCRIPT="$(readlink -f "$1")"
@@ -69,6 +74,10 @@ cleanup() {
 }
 trap cleanup EXIT
 trap "exit 130" INT TERM
+
+if [ -n "$PREPEND" ]; then
+  cat "$PREPEND" "$SCRIPT" >"$WORK/combined.rsc" && SCRIPT="$WORK/combined.rsc"
+fi
 
 mkdir -p "$CACHE_DIR"
 ZIP="$CACHE_DIR/chr-${CHR_VERSION}.img.zip"
@@ -168,11 +177,16 @@ if [ -n "$EXPECT_ABORT" ]; then
 fi
 
 hits=0
-if [ "$MODE" = paste ] && grep -Eiq '^[a-z ]*(password|\[[yY]/[nN]\]|\[[nN]/[yY]\]): *$' "$DIAG"; then
+# A prompt RouterOS printed, WHATEVER the swallowed line was: a blank line leaves `password: `, a real
+# command leaves `password: ****` (one asterisk per swallowed character). Anchored at the line start with
+# only letters before the prompt, and only asterisks after it, so `API user: x (password: see ...)` and
+# `admin password:   set to ...` in the script's own output are not mistaken for one.
+PROMPT_RE='^[A-Za-z ]*password: *[*]*$|\[[yY]/[nN]\]: *[A-Za-z]?$'
+if [ "$MODE" = paste ] && grep -Eq "$PROMPT_RE" "$DIAG"; then
   # An interactive CLI asks for a missing required argument and reads the NEXT pasted line as the
   # answer. `/import` just errors, so this only shows up in a paste.
   echo "harness: FAIL: the script made RouterOS prompt interactively; a paste feeds its next line into the prompt:" >&2
-  grep -Ei '^[a-z ]*(password|\[[yY]/[nN]\]|\[[nN]/[yY]\]): *$' "$DIAG" | sed 's/^/    /' >&2
+  grep -E "$PROMPT_RE" "$DIAG" | sed 's/^/    /' >&2
   hits=1
 fi
 for m in "${ERROR_MARKERS[@]}"; do

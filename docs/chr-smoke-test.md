@@ -37,10 +37,36 @@ it is the recommended mode for remote and production installs (no paste-buffer o
 
 `--paste` mode needs `python3-pexpect` (`scripts/chr-paste.py` is the driver; a non-tty
 `ssh < file` is not a paste, RouterOS treats each line separately there). A paste prints no `#line`
-trace, so the pass condition is: no error marker, no interactive prompt (a line that is just
-`password:` or `[y/N]:`), and the driver's end sentinel seen. The terminal redraws long echoed lines
-with `{...` continuation prompts; the harness strips those and the prompt prefix before comparing
-echoes with the source.
+trace, so the pass condition is: no error marker, no interactive prompt, and the driver's end
+sentinel seen. The terminal redraws long echoed lines with `{...` continuation prompts; the harness
+strips those and the prompt prefix before comparing echoes with the source.
+
+**What the interactive-prompt check does and does not catch.** When a command is missing a required
+argument, the terminal prints a prompt and reads the next pasted line as the answer. What is left in
+the output depends on that line: a blank line leaves `password: `, and a real command leaves
+`password: ******` (one asterisk per swallowed character) while the command itself never runs. The
+check matches a `password:` line, or one ending `[y/N]:`, whatever follows, as long as only
+asterisks (or one letter, for a yes/no answer) come after the colon and only letters before it, so
+the script's own `API user: x (password: see ...)` output is not a false hit. It catches those two
+prompt kinds only: another prompt wording would need its pattern adding to `PROMPT_RE`. Exercised:
+swallowed blank line (caught), swallowed real command (caught), clean script printing
+`password:` text mid-line (not flagged). The login phase is not scanned (the driver discards it).
+
+### Setup that cuts the harness's own ssh: `--prepend`
+
+    scripts/chr-smoke-test.sh --paste --prepend factory-defaults.rsc script.rsc
+
+`--setup` runs commands over separate ssh connections BEFORE the script. A stock firewall's
+`drop all not coming from LAN` refuses new connections on ether1, which is the harness's only way in,
+so nothing can connect afterwards (`exit 2`, "could not drive the paste session" / "upload failed").
+`--prepend FILE` puts FILE in front of the script in the SAME session instead, where the
+already-established connection keeps working. `factory-defaults.rsc` should be the ruleset a new
+router really ships with. Do not test against a convenient subset: the stock ruleset includes the
+fasttrack rule, which makes RouterOS show a builtin `special dummy rule to show fasttrack counters`
+at index 0 of the filter table; `move ... destination=0` then fails with `cannot move builtin` and
+aborts the script. A test ruleset without fasttrack passed, and the defect was only found on the real
+one. The defconf input/forward rules, fasttrack, the interface lists and the masquerade rule all
+work in a session.
 
 ### Verifying that a script REFUSES a configured router
 
@@ -59,7 +85,8 @@ Demonstrated against a router with a hotspot:
 | the same script before it was braced | `--paste` | FAIL, exit 1: refusal printed, then "provisioning complete" |
 | the same unbraced script | `/import` | PASS: `:error` aborts an import, which is why `/import` never showed the defect |
 | braced script with one line broken (`move` missing its menu path) | `--paste` | FAIL, exit 1: `expected end of command`, and later lines ran loose |
-| script with `/user add ... ` missing its password | `--paste` | FAIL, exit 1: interactive `password:` prompt |
+| script with `/user add ... ` missing its password, followed by any command | `--paste` | FAIL, exit 1: interactive `password: ****` prompt (the following command was swallowed) |
+| the script before the fasttrack fix (`move ... destination=0`) on the factory-default ruleset | `--paste --prepend` and `/import --prepend` | FAIL, exit 1: `failure: cannot move builtin` |
 
 ## Exit codes
 

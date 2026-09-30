@@ -18,15 +18,17 @@ WG_INTERFACE = "wireguard-netguard"
 WG_LISTEN_PORT = 13231
 
 
-def _once(menu: str, where: str, args: str, then: str = "") -> str:
+def _guard(menu: str, where: str, body: str) -> str:
+    return f":if ([:len [{menu} find where {where}]] = 0) do={{ {body} }}"
+
+
+def _once(menu: str, where: str, args: str) -> str:
     """`menu add args`, but only if nothing matching `where` exists yet.
 
     A factory-fresh router is not blank, and a run that failed part-way must be
     re-runnable, so every object we create is guarded on its own identity.
-    `then` is extra statements run only when the object was just created.
     """
-    body = f"{menu} add {args}" + (f"; {then}" if then else "")
-    return f":if ([:len [{menu} find where {where}]] = 0) do={{ {body} }}"
+    return _guard(menu, where, f"{menu} add {args}")
 
 
 def preflight(p: ProvisionParams) -> list[str]:
@@ -189,15 +191,29 @@ def firewall(p: ProvisionParams) -> list[str]:
     def before(_rule: str = drop_all) -> str:
         return f'place-before=[find where comment="NetGuard fw: {drop_all}"]'
 
-    def fw(args: str, name: str, top: bool = False) -> str:
-        # `top`: also move to the head of the table. A stock router's own
-        # "drop all not coming from LAN" sits ABOVE our terminal rule and would
-        # drop tunnel traffic (wireguard-netguard is not in its LAN list) before
-        # our accept is reached. Confirmed on a CHR loaded with the stock rules.
-        then = (f'/ip firewall filter move [find where comment="NetGuard fw: {name}"] destination=0'
-                if top else "")
-        return _once("/ip firewall filter", f'comment="NetGuard fw: {name}"',
-                     f"{args} {before()} {_fw_comment(name)}", then=then)
+    fwmenu = "/ip firewall filter"
+
+    def fw(args: str, name: str) -> str:
+        return _once(fwmenu, f'comment="NetGuard fw: {name}"',
+                     f"{args} {before()} {_fw_comment(name)}")
+
+    def fw_above_stock(args: str, name: str, where: str, fallback: str = "") -> str:
+        """Add the rule ABOVE the first rule of the router's own that matches `where`.
+
+        Never by index. `destination=0` is not ours to claim: a stock config with the fasttrack rule
+        carries a builtin `special dummy rule to show fasttrack counters` at index 0 and a move past it
+        fails (`failure: cannot move builtin`), which aborts the whole block. So: find the first
+        rule that is neither dynamic (that dummy, and the hotspot's own) nor ours, and use
+        place-before. If there is none (a blank router) fall back to `fallback`, which appends or
+        goes before our own terminal rule. Needed because a stock `drop all not coming from LAN`
+        would otherwise drop tunnel traffic before our accept is reached.
+        """
+        find = f'[{fwmenu} find where {where} and !dynamic and !(comment~"^NetGuard fw")]'
+        c = _fw_comment(name)
+        add = f"{fwmenu} add {args}"
+        body = (f":local t {find}; :if ([:len $t] > 0) do={{ {add} place-before=[:pick $t 0] {c} }} "
+                f"else={{ {add}{fallback} {c} }}")
+        return _guard(fwmenu, f'comment="NetGuard fw: {name}"', body)
 
     lines = [
         "# --- firewall ---",
@@ -208,23 +224,24 @@ def firewall(p: ProvisionParams) -> list[str]:
         fw("chain=input action=drop connection-state=invalid", "drop invalid"),
         "# Scoped to the tunnel interface: matching on source address alone would accept a",
         "# 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.",
-        fw(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}", "accept netguard tunnel", top=True),
+        fw_above_stock(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}",
+                       "accept netguard tunnel", "chain=input and action=drop", f" {before()}"),
         "# Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop",
         "# while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s",
         "# margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.",
         "# WireGuard silently ignores unauthenticated packets, so the exposure is negligible.",
-        fw(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}", "accept wireguard", top=True),
+        fw_above_stock(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}",
+                       "accept wireguard", "chain=input and action=drop", f" {before()}"),
         fw("chain=input action=accept protocol=icmp", "accept icmp"),
         "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
         fw(f"chain=input action=drop protocol=udp dst-port=53 in-interface={wan}", "drop wan dns udp"),
         fw(f"chain=input action=drop protocol=tcp dst-port=53 in-interface={wan}", "drop wan dns tcp"),
         "# Forward chain: the input rules above protect the router, not the LAN. Without this, an upstream",
         "# that can route to the LAN subnet reaches customers' devices. Only NEW connections from the WAN",
-        "# are dropped (LAN-initiated flows and their replies are `established`), and the rule is moved to",
-        "# the top of the table so no earlier accept (e.g. a stock config's) can bypass it.",
-        _once("/ip firewall filter", f'comment="NetGuard fw: drop wan forward"',
-              f"chain=forward action=drop connection-state=new in-interface={wan} {_fw_comment('drop wan forward')}",
-              then='/ip firewall filter move [find where comment="NetGuard fw: drop wan forward"] destination=0'),
+        "# are dropped (LAN-initiated flows and their replies are `established`). It goes above the router's",
+        "# own first forward rule so no earlier accept (e.g. a stock config's ipsec accepts) can bypass it.",
+        fw_above_stock(f"chain=forward action=drop connection-state=new in-interface={wan}",
+                       "drop wan forward", "chain=forward"),
         "# --- service hardening ---",
         "/ip service set telnet disabled=yes",
         "/ip service set ftp disabled=yes",

@@ -113,21 +113,21 @@
 :if ([:len [/ip firewall filter find where comment="NetGuard fw: drop invalid"]] = 0) do={ /ip firewall filter add chain=input action=drop connection-state=invalid place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: drop invalid" }
 # Scoped to the tunnel interface: matching on source address alone would accept a
 # 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.
-:if ([:len [/ip firewall filter find where comment="NetGuard fw: accept netguard tunnel"]] = 0) do={ /ip firewall filter add chain=input action=accept src-address=10.13.13.0/24 in-interface=wireguard-netguard place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: accept netguard tunnel"; /ip firewall filter move [find where comment="NetGuard fw: accept netguard tunnel"] destination=0 }
+:if ([:len [/ip firewall filter find where comment="NetGuard fw: accept netguard tunnel"]] = 0) do={ :local t [/ip firewall filter find where chain=input and action=drop and !dynamic and !(comment~"^NetGuard fw")]; :if ([:len $t] > 0) do={ /ip firewall filter add chain=input action=accept src-address=10.13.13.0/24 in-interface=wireguard-netguard place-before=[:pick $t 0] comment="NetGuard fw: accept netguard tunnel" } else={ /ip firewall filter add chain=input action=accept src-address=10.13.13.0/24 in-interface=wireguard-netguard place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: accept netguard tunnel" } }
 # Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop
 # while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s
 # margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.
 # WireGuard silently ignores unauthenticated packets, so the exposure is negligible.
-:if ([:len [/ip firewall filter find where comment="NetGuard fw: accept wireguard"]] = 0) do={ /ip firewall filter add chain=input action=accept protocol=udp dst-port=13231 in-interface=ether1 place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: accept wireguard"; /ip firewall filter move [find where comment="NetGuard fw: accept wireguard"] destination=0 }
+:if ([:len [/ip firewall filter find where comment="NetGuard fw: accept wireguard"]] = 0) do={ :local t [/ip firewall filter find where chain=input and action=drop and !dynamic and !(comment~"^NetGuard fw")]; :if ([:len $t] > 0) do={ /ip firewall filter add chain=input action=accept protocol=udp dst-port=13231 in-interface=ether1 place-before=[:pick $t 0] comment="NetGuard fw: accept wireguard" } else={ /ip firewall filter add chain=input action=accept protocol=udp dst-port=13231 in-interface=ether1 place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: accept wireguard" } }
 :if ([:len [/ip firewall filter find where comment="NetGuard fw: accept icmp"]] = 0) do={ /ip firewall filter add chain=input action=accept protocol=icmp place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: accept icmp" }
 # allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.
 :if ([:len [/ip firewall filter find where comment="NetGuard fw: drop wan dns udp"]] = 0) do={ /ip firewall filter add chain=input action=drop protocol=udp dst-port=53 in-interface=ether1 place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: drop wan dns udp" }
 :if ([:len [/ip firewall filter find where comment="NetGuard fw: drop wan dns tcp"]] = 0) do={ /ip firewall filter add chain=input action=drop protocol=tcp dst-port=53 in-interface=ether1 place-before=[find where comment="NetGuard fw: drop wan input"] comment="NetGuard fw: drop wan dns tcp" }
 # Forward chain: the input rules above protect the router, not the LAN. Without this, an upstream
 # that can route to the LAN subnet reaches customers' devices. Only NEW connections from the WAN
-# are dropped (LAN-initiated flows and their replies are `established`), and the rule is moved to
-# the top of the table so no earlier accept (e.g. a stock config's) can bypass it.
-:if ([:len [/ip firewall filter find where comment="NetGuard fw: drop wan forward"]] = 0) do={ /ip firewall filter add chain=forward action=drop connection-state=new in-interface=ether1 comment="NetGuard fw: drop wan forward"; /ip firewall filter move [find where comment="NetGuard fw: drop wan forward"] destination=0 }
+# are dropped (LAN-initiated flows and their replies are `established`). It goes above the router's
+# own first forward rule so no earlier accept (e.g. a stock config's ipsec accepts) can bypass it.
+:if ([:len [/ip firewall filter find where comment="NetGuard fw: drop wan forward"]] = 0) do={ :local t [/ip firewall filter find where chain=forward and !dynamic and !(comment~"^NetGuard fw")]; :if ([:len $t] > 0) do={ /ip firewall filter add chain=forward action=drop connection-state=new in-interface=ether1 place-before=[:pick $t 0] comment="NetGuard fw: drop wan forward" } else={ /ip firewall filter add chain=forward action=drop connection-state=new in-interface=ether1 comment="NetGuard fw: drop wan forward" } }
 # --- service hardening ---
 /ip service set telnet disabled=yes
 /ip service set ftp disabled=yes
