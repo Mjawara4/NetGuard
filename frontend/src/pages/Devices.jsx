@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { Link } from 'react-router-dom';
-import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive } from 'lucide-react';
+import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText } from 'lucide-react';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
+import { Button } from '../components/ui';
 
 export default function Devices() {
     const [devices, setDevices] = useState([]);
@@ -156,6 +157,100 @@ export default function Devices() {
         }
     };
 
+
+    // ---- One-shot router setup script (POST provision-script) -------------
+    // Every call ROTATES the router's credentials, so generating is always an
+    // explicit click behind a warning, never a side effect of opening the modal.
+    const [showScriptModal, setShowScriptModal] = useState(false);
+    const [scriptSlug, setScriptSlug] = useState('');
+    const [scriptTimezone, setScriptTimezone] = useState('Africa/Banjul');
+    const [scriptBusy, setScriptBusy] = useState(false);
+    const [scriptResult, setScriptResult] = useState(null);
+    const [scriptError, setScriptError] = useState(null); // { kind, message }
+    const [scriptNotice, setScriptNotice] = useState('');
+
+    const slugify = (name) => (name || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 32)
+        .replace(/-+$/g, '');
+    const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$/;
+    const slugValid = SLUG_RE.test(scriptSlug);
+
+    const openScriptModal = () => {
+        if (!selectedDevice) return;
+        setScriptSlug(slugify(selectedDevice.name));
+        setScriptResult(null);
+        setScriptError(null);
+        setScriptNotice('');
+        setShowScriptModal(true);
+    };
+
+    // Secrets must not outlive the modal in component state.
+    const closeScriptModal = () => {
+        setShowScriptModal(false);
+        setScriptResult(null);
+        setScriptError(null);
+        setScriptNotice('');
+    };
+
+    const handleGenerateScript = async () => {
+        if (!selectedDevice || scriptBusy || !slugValid) return;
+        setScriptBusy(true);
+        setScriptError(null);
+        setScriptNotice('');
+        try {
+            const res = await api.post(
+                `/inventory/devices/${selectedDevice.id}/provision-script`,
+                null,
+                { params: { site_slug: scriptSlug, timezone: scriptTimezone } }
+            );
+            setScriptResult(res.data);
+        } catch (e) {
+            const status = e.response?.status;
+            const detail = e.response?.data?.detail;
+            const text = typeof detail === 'string' ? detail : (detail ? JSON.stringify(detail) : e.message);
+            if (status === 409) {
+                setScriptError({ kind: 'no-wireguard', message: text });
+            } else if (status === 403) {
+                setScriptError({ kind: 'forbidden', message: text });
+            } else if (status === 400) {
+                setScriptError({ kind: 'bad-input', message: text });
+            } else if (status === 404) {
+                setScriptError({ kind: 'not-found', message: text });
+            } else {
+                setScriptError({ kind: 'other', message: text });
+            }
+        } finally {
+            setScriptBusy(false);
+        }
+    };
+
+    // Explicit actions only. The script holds the router's WireGuard private
+    // key, so nothing here runs on render or on selection.
+    const handleCopyScript = async () => {
+        try {
+            await navigator.clipboard.writeText(scriptResult.script);
+            setScriptNotice('Script copied to clipboard.');
+        } catch (e) {
+            setScriptNotice('Copy was blocked by the browser. Use Download .rsc instead.');
+        }
+    };
+
+    const handleDownloadScript = () => {
+        const blob = new Blob([scriptResult.script], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `netguard-${scriptResult.site_slug}.rsc`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setScriptNotice(`Saved as netguard-${scriptResult.site_slug}.rsc.`);
+    };
+
     return (
         <div className="min-h-screen bg-ink-50 dark:bg-ink-900 pt-4 sm:pt-8 px-4 sm:px-6 lg:px-10 pb-12">
             <div className="max-w-7xl mx-auto">
@@ -269,6 +364,11 @@ export default function Devices() {
                                             <p className="text-ink-500 dark:text-ink-400 font-mono text-xs sm:text-sm">{selectedDevice.ip_address}</p>
                                         </div>
                                         <div className="flex gap-2">
+                                            {selectedDevice.device_type === 'router' && (
+                                                <button onClick={openScriptModal} className="flex items-center gap-2 px-3 py-2 hover:bg-signal-600/10 text-signal-600 rounded-md transition-colors text-xs font-bold dark:text-signal-300" title="Generate the one-shot RouterOS setup script">
+                                                    <FileText size={18} /> Get setup script
+                                                </button>
+                                            )}
                                             {selectedDevice.device_type === 'router' && (
                                                 <button onClick={handleProvision} className="p-2 hover:bg-signal-600/10 text-signal-600 rounded-md transition-colors dark:text-signal-300" title="Setup WireGuard VPN">
                                                     <Server size={24} />
@@ -457,6 +557,166 @@ export default function Devices() {
                             Copy Script
                         </button>
                     </div>
+                </div>
+            </ResponsiveModal>
+
+            {/* Router setup script modal */}
+            <ResponsiveModal
+                isOpen={showScriptModal}
+                onClose={closeScriptModal}
+                title="Router Setup Script"
+                size="xl"
+            >
+                <div className="pb-4 space-y-4">
+                    <p className="text-ink-900 text-xs sm:text-sm font-bold dark:text-ink-50">Setup for {selectedDevice?.name}</p>
+
+                    {!scriptResult && (
+                        <>
+                            <div className="bg-warn/10 dark:bg-warn/20 p-4 rounded-md text-sm text-ink-900 dark:text-ink-50" role="note">
+                                <p className="font-bold mb-1">Generating a script replaces this router's passwords.</p>
+                                <p>
+                                    Every time you generate, NetGuard creates new API and admin passwords. A script you generated
+                                    earlier, or already pasted into the router, will no longer match what NetGuard holds. Only generate
+                                    again if you are about to install the new script.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label htmlFor="script-site-slug" className="block text-xs font-bold text-ink-500 mb-1 dark:text-ink-400">Site name on the router</label>
+                                    <input
+                                        id="script-site-slug"
+                                        className="w-full bg-ink-50 dark:bg-ink-800 dark:text-ink-100 border border-ink-200 dark:border-ink-700 rounded-md px-4 py-2 text-sm font-mono"
+                                        value={scriptSlug}
+                                        onChange={e => setScriptSlug(e.target.value.toLowerCase())}
+                                        maxLength={32}
+                                        autoComplete="off"
+                                    />
+                                    <p className="text-xs text-ink-500 dark:text-ink-400 mt-1">2 to 32 characters: lowercase letters, digits and hyphens, starting and ending with a letter or digit.</p>
+                                </div>
+                                <div>
+                                    <label htmlFor="script-timezone" className="block text-xs font-bold text-ink-500 mb-1 dark:text-ink-400">Timezone</label>
+                                    <input
+                                        id="script-timezone"
+                                        className="w-full bg-ink-50 dark:bg-ink-800 dark:text-ink-100 border border-ink-200 dark:border-ink-700 rounded-md px-4 py-2 text-sm font-mono"
+                                        value={scriptTimezone}
+                                        onChange={e => setScriptTimezone(e.target.value)}
+                                        autoComplete="off"
+                                    />
+                                </div>
+                            </div>
+
+                            {scriptError && (
+                                <div className="bg-down/10 dark:bg-down/20 p-4 rounded-md text-sm text-ink-900 dark:text-ink-50" role="alert">
+                                    {scriptError.kind === 'no-wireguard' && (
+                                        <>
+                                            <p className="font-bold mb-1">Provision WireGuard for this router first.</p>
+                                            <p>
+                                                The setup script needs this router's WireGuard tunnel, and none exists yet. Close this window,
+                                                use the Setup WireGuard VPN button (the server icon) on this panel, then come back and get the setup script.
+                                            </p>
+                                        </>
+                                    )}
+                                    {scriptError.kind === 'forbidden' && (
+                                        <>
+                                            <p className="font-bold mb-1">Your account cannot generate setup scripts.</p>
+                                            <p>
+                                                Generating a script changes the router's passwords, so it is limited to organisation admins and
+                                                super admins. Ask an admin on your organisation to do this for you.
+                                            </p>
+                                        </>
+                                    )}
+                                    {scriptError.kind === 'bad-input' && (
+                                        <>
+                                            <p className="font-bold mb-1">The site name or timezone was not accepted.</p>
+                                            <p>{scriptError.message}</p>
+                                        </>
+                                    )}
+                                    {scriptError.kind === 'not-found' && (
+                                        <>
+                                            <p className="font-bold mb-1">This device no longer exists.</p>
+                                            <p>Close this window and refresh the device list.</p>
+                                        </>
+                                    )}
+                                    {scriptError.kind === 'other' && (
+                                        <>
+                                            <p className="font-bold mb-1">The setup script could not be generated.</p>
+                                            <p>{scriptError.message}</p>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end">
+                                <Button onClick={handleGenerateScript} disabled={scriptBusy || !slugValid}>
+                                    {scriptBusy ? 'Generating...' : 'Generate script and new passwords'}
+                                </Button>
+                            </div>
+                        </>
+                    )}
+
+                    {scriptResult && (
+                        <>
+                            <div className="bg-warn/10 dark:bg-warn/20 p-4 rounded-md text-sm text-ink-900 dark:text-ink-50" role="alert">
+                                <p className="font-bold mb-1">Save both passwords now. They are shown only once.</p>
+                                <p>
+                                    The script does not print them, NetGuard cannot show the admin password again, and closing this
+                                    window discards both. Generating again creates new passwords and breaks any router already set up from this script.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
+                                    <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Router admin password</div>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">For the user admin: WinBox, WebFig and the console.</div>
+                                    <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
+                                </div>
+                                <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
+                                    <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">NetGuard API password</div>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">
+                                        For user <span className="font-mono">{scriptResult.api_username}</span>. NetGuard already stores this one; keep a copy for recovery.
+                                    </div>
+                                    <code data-testid="api-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.api_password}</code>
+                                </div>
+                            </div>
+
+                            {scriptResult.warnings?.length > 0 && (
+                                <ul className="list-disc pl-5 space-y-1 text-sm text-ink-900 dark:text-ink-50">
+                                    {scriptResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                                </ul>
+                            )}
+
+                            <div className="text-sm text-ink-700 dark:text-ink-200 space-y-2">
+                                <p className="font-bold text-ink-900 dark:text-ink-50">How to install</p>
+                                <p>
+                                    For a remote or production router, download the file, upload it to the router (WinBox Files, or WebFig Files),
+                                    and run <span className="font-mono">/import file-name=netguard-{scriptResult.site_slug}.rsc</span>. An import
+                                    is not limited by terminal paste size, and it stops cleanly at a bad line.
+                                </p>
+                                <p>
+                                    Pasting into a terminal is the quick path for a router beside you. The script is large, and a terminal may cut off
+                                    a long paste or mishandle a line partway through.
+                                </p>
+                                <p>
+                                    Your connection will drop partway through. The script moves ports ether2 to ether8 onto a new bridge, which ends
+                                    the session you installed from. This is expected and the router keeps running the script. Afterwards the router
+                                    answers on a new address in 10.15.x.
+                                </p>
+                            </div>
+
+                            <pre className="bg-ink-900 text-ink-100 p-4 rounded-md text-xs sm:text-sm font-mono overflow-auto whitespace-pre-wrap max-h-[300px] border border-ink-700" data-testid="script-body">
+                                {scriptResult.script}
+                            </pre>
+                            <p className="text-xs text-ink-500 dark:text-ink-400">This script contains the router's WireGuard private key. Treat it like a password.</p>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <span className="text-xs text-ink-500 dark:text-ink-400" role="status">{scriptNotice}</span>
+                                <div className="flex gap-3">
+                                    <Button variant="outline" onClick={handleDownloadScript}>Download .rsc</Button>
+                                    <Button onClick={handleCopyScript}>Copy script</Button>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </ResponsiveModal>
         </div>
