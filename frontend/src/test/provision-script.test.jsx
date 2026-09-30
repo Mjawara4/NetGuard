@@ -81,8 +81,19 @@ describe('router setup script', () => {
         expect(URL.createObjectURL).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: /copy script/i }));
         await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(RESULT.script));
-        fireEvent.click(screen.getByRole('button', { name: /download \.rsc/i }));
+        let anchor = null;
+        const realClick = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { anchor = { download: this.download, href: this.href }; };
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /download \.rsc/i }));
+        } finally {
+            HTMLAnchorElement.prototype.click = realClick;
+        }
         expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+        const blob = URL.createObjectURL.mock.calls[0][0];
+        expect(await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsText(blob); })).toBe(RESULT.script);
+        expect(anchor.download).toBe('netguard-counter-router.rsc');
+        expect(anchor.href).toBe('blob:x');
     });
 
     it('renders the remedy for 409, not the raw error', async () => {
