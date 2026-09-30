@@ -7,7 +7,7 @@ import logging
 from app.core.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
 from app.models import Device, Site, User, APIKey, Metric, Alert, UserRole
-from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse
+from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse, ProvisionScriptResponse
 from app.services.wireguard import WireGuardService
 from app.core.config import settings
 
@@ -247,3 +247,126 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
         mikrotik_script=script
     )
 
+
+# ValueError fields from build_params that a caller can fix by changing the request.
+# Everything else build_params rejects came from the device row or server config.
+_CLIENT_INPUT_FIELDS = ("site_slug", "timezone")
+
+
+@router.post("/devices/{device_id}/provision-script", response_model=ProvisionScriptResponse)
+async def generate_provision_script(
+    device_id: str,
+    site_slug: str = Query(..., description="Lowercase slug naming the site on the router"),
+    timezone: str = Query("Africa/Banjul"),
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor),
+):
+    """Generate the one-shot RouterOS provisioning script for a device.
+
+    THIS ROTATES CREDENTIALS ON EVERY CALL. Each call generates a fresh
+    `netguard` API password and a fresh `admin` password, stores the API
+    password on the device, and returns a script that sets both on the router.
+    Calling it again invalidates any script handed out earlier: the old script
+    would put passwords on the router that NetGuard no longer holds.
+
+    Why rotate rather than reuse: the script applies its passwords on every
+    run, so NetGuard must store exactly what it last sent; generating fresh
+    values each time keeps that one rule simple, and a leaked script stops
+    being valid for the next install. The cost is that an installer must use
+    the most recently generated script. That is why this is a POST.
+
+    The device must already have WireGuard provisioned (409 otherwise); no
+    placeholder key or address is ever substituted.
+    """
+    from app.services.provisioning.params import build_params
+    from app.services.provisioning.script import build_provision_script
+    from app.services.provisioning.secrets import generate_api_password
+
+    try:
+        device_uuid = UUID(device_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify ownership
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == device_uuid)
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == device_uuid)
+    else:
+        query = select(Device).join(Site).where(Device.id == device_uuid, Site.organization_id == actor.organization_id)
+
+    result = await db.execute(query)
+    device = result.scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    from app.models.core import decrypt_device_secrets
+    decrypt_device_secrets(device)
+
+    if not device.wg_private_key or not device.wg_ip_address:
+        raise HTTPException(
+            status_code=409,
+            detail=("This router has no WireGuard tunnel yet, so a provisioning script "
+                    "would not be able to connect. Provision WireGuard for this router "
+                    "first: POST /api/v1/inventory/devices/{id}/provision-wireguard, "
+                    "then request the script again.").replace("{id}", str(device.id)),
+        )
+
+    # Same resolution as provision-wireguard, but nothing is substituted: an
+    # unusable key is a server configuration error, not a script to emit.
+    server_pub_key = settings.WG_SERVER_PUBLIC_KEY
+    if not (server_pub_key and len(server_pub_key) >= 40 and server_pub_key not in (
+            "SERVER_PUBLIC_KEY_PLACEHOLDER", "SERVER_PUBLIC_KEY_NOT_FOUND",
+            "auto-read-from-volume-or-manual")):
+        try:
+            server_pub_key = WireGuardService.get_server_public_key()
+        except Exception as e:
+            logger.error(f"Failed to get server public key: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="WireGuard server configuration error. Please ensure WG_SERVER_PUBLIC_KEY is set in .env or key file exists",
+            )
+
+    api_password = generate_api_password()
+    admin_password = generate_api_password()
+    try:
+        params = build_params(
+            site_slug=site_slug, timezone=timezone,
+            wg_private_key=device.wg_private_key, wg_client_ip=device.wg_ip_address,
+            wg_server_public_key=server_pub_key,
+            wg_server_endpoint=settings.WG_SERVER_ENDPOINT,
+            wg_server_port=settings.WG_SERVER_PORT,
+            api_password=api_password, admin_password=admin_password,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith(_CLIENT_INPUT_FIELDS):
+            raise HTTPException(status_code=400, detail=msg)
+        # The device row or server config is bad, not the request. Field name
+        # only; the message never contains a secret value.
+        logger.error(f"Provisioning parameters rejected for device {device.id}: {msg}")
+        raise HTTPException(status_code=500, detail=f"Cannot generate a valid script: {msg}")
+
+    script = build_provision_script(params)
+
+    # Store exactly what the script sets. NetGuard reaches the RouterOS API with
+    # ssh_username/ssh_password (hotspot.py), so monitoring works the moment the
+    # script is applied. The encrypt listener rewrites ssh_password on flush, so
+    # the response is built from the local plaintext, not from the device.
+    device.ssh_username = params.api_username
+    device.ssh_password = api_password
+    db.add(device)
+    await db.commit()
+
+    return ProvisionScriptResponse(
+        device_id=device.id,
+        site_slug=site_slug,
+        script=script,
+        api_username=params.api_username,
+        api_password=api_password,
+        admin_password=admin_password,
+        warnings=[
+            "Credentials were rotated: any script generated earlier for this router no longer matches what NetGuard stores.",
+            "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",
+        ],
+    )

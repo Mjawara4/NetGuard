@@ -102,3 +102,14 @@ class WireGuardProvisionResponse(BaseModel):
     wg_private_key: str
     mikrotik_script: str
 
+
+class ProvisionScriptResponse(BaseModel):
+    device_id: UUID4
+    site_slug: str
+    script: str
+    api_username: str
+    api_password: str
+    # The router's own `admin` account. Shown once so the installer can record it.
+    admin_password: str
+    warnings: List[str] = []
+
