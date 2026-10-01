@@ -189,6 +189,10 @@ One bridge for the customer network. `ether1` is reserved as the WAN uplink;
 left out of the bridge and commented, since at this scale it is the likely
 uplink to a distribution switch.
 
+The bridge also joins the stock `LAN` interface list where one exists (see §9):
+a factory-default router's firewall keys its "accept from the LAN" decision off
+that list, and a bridge absent from it is treated as hostile.
+
 ### 4. Addressing and DHCP
 
 ```
@@ -228,12 +232,18 @@ A 4 MiB cache is sized for hundreds of clients rather than the default.
 /ip hotspot profile add name=netguard hotspot-address=10.15.0.1 \
     dns-name=login.netguard.local \
     login-by=http-chap,mac-cookie \
-    http-cookie-lifetime=3d \
-    comment="NetGuard"
-/ip hotspot add name=netguard-hotspot interface=bridge-hotspot \
+    http-cookie-lifetime=3d
+/ip hotspot add name=netguard interface=bridge-hotspot \
     address-pool=hotspot-pool profile=netguard idle-timeout=5m \
-    keepalive-timeout=2m login-timeout=5m comment="NetGuard"
+    keepalive-timeout=2m login-timeout=5m disabled=no
 ```
+
+- **No `comment=` on either, and the hotspot is named `netguard`, not
+  `netguard-hotspot`.** RouterOS 7.16 has no `comment` property on `/ip hotspot`
+  or `/ip hotspot profile` and rejects it there (measured on a CHR), so both
+  objects are deliberately untagged. The name matters beyond cosmetics:
+  preflight refuses a router carrying `/ip hotspot` with any name but
+  `netguard`, so the two must agree.
 
 - **No certificate, by decision.** There is no public domain for this
   deployment, so a trusted certificate cannot be issued. It is not needed:
@@ -278,9 +288,13 @@ profiles; NetGuard manages them.
 ### 8. Captive portal: walled garden
 
 Unauthenticated access is permitted only to what a customer needs before paying:
-the portal itself, the OS captive-portal probe endpoints (so detection fires),
-and NTP. Everything else requires a voucher. Payment-provider hosts are a
-placeholder list to be filled in once the provider is known — named explicitly
+the portal itself and the OS captive-portal probe endpoints (so detection
+fires). Everything else requires a voucher. **The NTP entry this section
+originally listed was deliberately removed:** the router is the hotspot's NTP
+source and the walled garden governs client traffic, so an entry for an
+upstream time host bought nothing and widened the pre-payment surface.
+
+Payment-provider hosts are a placeholder list to be filled in once the provider is known — named explicitly
 in the script as a thing to complete rather than left silently empty.
 
 ### 9. Firewall and hardening
@@ -290,16 +304,56 @@ positional-by-accident:
 
 1. Accept established/related/untracked.
 2. Drop invalid.
-3. Accept all input from `10.13.13.0/24` — the NetGuard tunnel.
-4. Accept ICMP.
-5. Drop DNS (udp/tcp 53) arriving on `ether1` — `allow-remote-requests=yes`
+3. Accept input from `10.13.13.0/24` **scoped to `in-interface=wireguard-netguard`**
+   — the NetGuard tunnel. Not source address alone: that would accept a
+   `10.13.13.x` source spoofed from the WAN or the LAN, and skip the DNS drops
+   below.
+4. Accept udp/13231 on `ether1` — the WireGuard port itself. Without it the
+   tunnel survives the WAN drop only while conntrack holds the flow (30s udp
+   timeout against a 25s keepalive, a 5s margin), so a lapsed keepalive would
+   leave ~25s in which a server-initiated packet is dropped.
+5. Accept ICMP.
+6. Drop DNS (udp/tcp 53) arriving on `ether1` — `allow-remote-requests=yes`
    would otherwise make the router an open resolver for reflection attacks.
-6. Drop everything else in `input` from `ether1`.
+7. Drop everything else in `input` from `ether1`.
+8. In the **forward** chain: drop `connection-state=new` arriving on `ether1`.
+   The input rules protect the router, not the LAN; without this an upstream
+   that can route to the LAN subnet reaches customers' devices.
+
+Rules 3, 4 and 8 are placed above the router's own first matching rule, not
+above ours, because a factory-default config's `drop all not coming from LAN`
+and its forward-chain accepts would otherwise take effect first. Nothing claims
+an absolute index: `move ... destination=0` fails on a stock router with
+fasttrack (`failure: cannot move builtin`).
+
+**The client bridge joins the stock `LAN` interface list.** `drop all not
+coming from LAN` matches `in-interface-list=!LAN`, and defconf's `LAN` list
+holds exactly one member: the bridge named `bridge`. Since this script creates
+`bridge-hotspot` and moves every customer port onto it, without that join the
+rule drops every client packet — no DHCP lease, no DNS, no captive portal —
+after the script reports success. The join is guarded on the list existing, so
+a blank router is left alone. Chosen over an accept rule for
+`in-interface=bridge-hotspot` above the stock drop: it is where RouterOS
+expects that fact recorded, it fixes every LAN-keyed rule rather than one, and
+it keeps both `drop invalid` rules in force for client traffic, which an accept
+placed above the stock drop would skip (the first terminal input rule on
+defconf is `drop invalid`, which is what the place-before selector targets).
 
 Plus: `/ip service` — disable `telnet`, `ftp`, `www-ssl`, `api-ssl`; restrict
-`ssh` and `winbox` to `10.13.13.0/24`; pin `api` to `10.13.13.0/24`.
-`www` stays enabled because the hotspot login page is served by it.
-`/ip neighbor discovery-settings set discover-interface-list=none`,
+`ssh` to `10.13.13.0/24`; pin `api` to `10.13.13.0/24`. **`winbox` is pinned to
+`10.13.13.0/24,10.15.0.0/24`** — the operator range as well as the tunnel. That
+range lies outside the DHCP pool, so hotspot clients cannot be leased into it,
+and it is the way back in when the tunnel is dead. It works only because
+`bridge-hotspot` is in the `LAN` list; otherwise WinBox from `10.15.0.5` is
+dropped along with everything else.
+
+**`www` does NOT serve the hotspot login page.** This spec originally said it
+did; the experiment disproved it. With `www` disabled the hotspot still
+redirects clients to its own ports (64872-64875), verified on a CHR. `www` is
+therefore kept only for the operator range (`/ip service set www
+address=10.15.0.0/24`), not because the portal needs it.
+
+Also: `/ip neighbor discovery-settings set discover-interface-list=none`,
 `/tool mac-server set allowed-interface-list=none`,
 `/tool mac-server mac-winbox set allowed-interface-list=none`,
 `/ip cloud set ddns-enabled=no`.
@@ -378,11 +432,34 @@ standing at the counter — so the password stays in one place rather than two.
 ## Interfaces
 
 ```
-GET /api/v1/inventory/devices/{device_id}/provision-script
+POST /api/v1/inventory/devices/{device_id}/provision-script
     ?site_slug=<str>&timezone=<str>
-->  { "script": "<RouterOS CLI>", "api_password": "<generated>",
-      "warnings": ["..."] }
+->  { "device_id": "<uuid>", "site_slug": "<str>", "script": "<RouterOS CLI>",
+      "api_username": "netguard", "api_password": "<generated>",
+      "admin_password": "<generated>", "warnings": ["..."] }
 ```
+
+**POST, not GET** (a GET returns 405, and a test asserts it). Every call
+ROTATES the router's credentials: it mints a fresh `netguard` API password and a
+fresh `admin` password and returns a script that sets both, so the call is not
+safe to repeat idly and any script handed out earlier stops being valid.
+Restricted to `SUPER_ADMIN` and `ORG_ADMIN` users (403 otherwise) and to devices
+in the caller's own organisation (404 otherwise), because the response carries
+secrets and the embedded tunnel key. Returns 409 if the device has no WireGuard
+tunnel yet, naming `POST .../provision-wireguard` as the remedy; that sibling
+endpoint is gated on the same roles, since it returns the same tunnel private
+key.
+
+**`admin_password` is a second secret, and this spec never mentioned it.** The
+script rotates the router's own `admin` account away from the factory blank
+password and hands the customer that new value. It is the break-glass
+credential: `admin` is reachable from the LAN, so leaving it blank would be an
+open door on a router whose management services are otherwise pinned to the
+tunnel. **NetGuard never stores it** — unlike the API password, which is
+persisted on the device record — and the script never prints it. The response
+body is the only place it exists, which makes the NetGuard UI the only place a
+customer can read it. If it is lost, the way back in is WinBox from the operator
+range, or a factory reset.
 
 `site_slug` names the router identity and the CAPsMAN SSID. `timezone` defaults
 to `Africa/Banjul`. The endpoint stores the generated API password on the device
@@ -411,9 +488,21 @@ layers instead:
    `comment=`.
 2. **Assertions on invariants** rather than only on the whole file: the API
    service is never `0.0.0.0/0`; no secret appears twice; `10.15.0.1` is outside
-   the DHCP pool; the WireGuard subnet and the LAN subnet do not overlap; every
-   created object carries `comment="NetGuard"`; NTP is configured before the
-   hotspot section.
+   the DHCP pool; the WireGuard subnet and the LAN subnet do not overlap; NTP
+   is configured before the hotspot section.
+
+   **The invariant "every created object carries `comment="NetGuard"`" is no
+   longer true, and the test enforcing it had to be narrowed.** RouterOS 7.16
+   has no `comment` property on `/ip hotspot`, `/ip hotspot profile` or
+   `/ip hotspot user profile` and rejects it there, so the hotspot, its profile
+   and all four user profiles (`default`, `1-Hour`, `24-Hours`, `7-Days`) are
+   deliberately untagged. Five of those are objects the script CREATES (the
+   test counts exactly five exemptions); `default` ships with RouterOS and is
+   only `set`. What is enforced instead: every object that CAN carry the tag
+   does, and each exemption is named and must carry a `name=` so it stays
+   identifiable. The tag is load-bearing where it survives:
+   preflight refuses a `wireguard-netguard` whose comment is not one NetGuard
+   writes, which is why `wireguard.py` and `sections.py` must agree on it.
 3. **A CHR smoke test — confirmed feasible.** `/dev/kvm` is present on this VPS
    and 4 CPUs report `vmx`/`svm`, so MikroTik's Cloud Hosted Router (free below
    1 Mbit/s) can run in a local VM and the script can be applied end to end
