@@ -135,10 +135,18 @@ def test_the_comment_exempt_objects_are_identifiable_by_name():
 
 
 def test_summary_tells_the_installer_what_they_need():
+    # Read the summary SECTION, not a fixed-size tail of the script: a tail window
+    # silently stops covering the earlier summary lines as soon as the section grows.
     script = build_provision_script(build_params(**FIXED))
-    tail = script[-2000:]
-    for token in ("license", "10.15.0.1", "netguard", "wireguard"):
-        assert token in tail.lower()
+    from app.services.provisioning import sections
+    summary = "\n".join(sections.summary(build_params(**FIXED)))
+    assert summary in script
+    for token in ("license", "10.15.0.1", "netguard", "wireguard",
+                  # The client bridge's firewall reachability. A stock router's
+                  # `drop all not coming from LAN` discards every client packet when this
+                  # is wrong, and the rest of the summary still prints "complete".
+                  "lan interface list"):
+        assert token in summary.lower(), token
 
 
 def _depth_walk(script):

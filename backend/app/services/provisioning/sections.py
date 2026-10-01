@@ -29,6 +29,17 @@ def _guard(menu: str, where: str, body: str) -> str:
     return f":if ([:len [{menu} find where {where}]] = 0) do={{ {body} }}"
 
 
+def _if_present(menu: str, where: str, body: str) -> str:
+    """`body`, but only if something matching `where` already exists in `menu`.
+
+    The mirror image of `_guard`. Used for config we only want to touch when the
+    router already has the thing it belongs to (defconf's `LAN` interface list),
+    so a blank router is left alone instead of being given an object nothing
+    on it references.
+    """
+    return f":if ([:len [{menu} find where {where}]] > 0) do={{ {body} }}"
+
+
 def _once(menu: str, where: str, args: str) -> str:
     """`menu add args`, but only if nothing matching `where` exists yet.
 
@@ -88,6 +99,33 @@ def bridge(p: ProvisionParams) -> list[str]:
         "# --- bridge ---",
         ':put "NetGuard: moving ports into bridge-hotspot. If your session drops now, that is expected: the router keeps running this script. Reconnect on a 10.15.x address."',
         _once("/interface bridge", f'name="{p.bridge_name}"', f"name={p.bridge_name} {TAG}"),
+        # WHY THIS IS NOT OPTIONAL. A factory-fresh (defconf) router's input chain ends with
+        # `drop all not coming from LAN`, which matches `in-interface-list=!LAN`, and defconf's
+        # `LAN` interface list has exactly one member: the bridge named `bridge`. We create our
+        # own bridge and move every customer port onto it, so without the line below the hotspot
+        # bridge is in no interface list and that rule drops EVERYTHING arriving on it: no DHCP
+        # lease, no DNS to the gateway, no captive portal -- after the script has printed
+        # "provisioning complete". It also kills the documented operator WinBox path from
+        # 10.15.0.0/24, which arrives on this bridge too.
+        # Chosen over emitting an accept rule above the stock drop: this is where RouterOS
+        # expects "this interface is a LAN interface" to be recorded, so an operator reading
+        # /interface list later sees the truth instead of a NetGuard rule duplicating the list's
+        # job; it fixes every LAN-keyed rule at once, not just that one drop; and it keeps the
+        # stock and NetGuard `drop invalid` rules in force for client traffic, which any accept
+        # placed above the stock drop would necessarily skip past (the first terminal input rule
+        # on defconf is `drop invalid`, which is what our place-before selector targets).
+        # Discovery is unaffected: the firewall section sets discover-interface-list=none and
+        # mac-server allowed-interface-list=none, so LAN membership cannot re-expose either.
+        # The `WAN` list is untouched.
+        "# A stock router drops input that is not `in-interface-list=LAN`, and its LAN list holds only",
+        "# the bridge named `bridge`. Put our bridge in that list or every client is dropped: no DHCP,",
+        "# no DNS, no portal, and no operator WinBox. Guarded on the list existing, because a blank",
+        "# router has no interface lists and nothing on it references LAN.",
+        _if_present(
+            "/interface list", 'name="LAN"',
+            _once("/interface list member", f'list="LAN" interface="{p.bridge_name}"',
+                  f"list=LAN interface={p.bridge_name} {TAG}"),
+        ),
         "# ether1 is the WAN uplink and stays out of the bridge.",
         "# The SFP port is left out too: it is the likely distribution uplink.",
         "# Each port is guarded so a board with fewer ports still gets a working bridge.",
@@ -256,7 +294,11 @@ def firewall(p: ProvisionParams) -> list[str]:
         "/ip service set api-ssl disabled=yes",
         f"/ip service set ssh address={p.wg_subnet_cidr}",
         "# winbox is also reachable from the operator range 10.15.0.0/24, which lies outside the DHCP pool",
-        "# (hotspot clients cannot be leased into it). It is the way back in if the tunnel is dead.",
+        "# (hotspot clients cannot be leased into it). It is the way back in if the tunnel is dead -- but",
+        "# only because the bridge section puts bridge-hotspot in the LAN interface list. On a stock router",
+        "# WinBox from 10.15.0.5 arrives on bridge-hotspot, and `drop all not coming from LAN` would drop it",
+        "# (as it would every client's DHCP and DNS) if that bridge were in no list. What limits WinBox is",
+        "# this address pinning, not the filter.",
         f"/ip service set winbox address={p.wg_subnet_cidr},{p.operator_cidr}",
         f"/ip service set api disabled=no port=8728 address={p.wg_subnet_cidr}",
         "# www (WebFig) is NOT what serves the hotspot login page: the hotspot redirects clients to its own",
@@ -380,6 +422,10 @@ def summary(p: ProvisionParams) -> list[str]:
         ':local ports ""',
         f':foreach i in=[/interface bridge port find where bridge="{p.bridge_name}"] do={{ :set ports ($ports . [/interface bridge port get $i interface] . " ") }}',
         f':put ("LAN ports:        " . $ports . "(bridge {p.bridge_name})")',
+        "# Reachability of the client bridge, reported rather than assumed. A stock router's",
+        "# `drop all not coming from LAN` silently discards every client packet when this is wrong,",
+        "# and the rest of this summary would still print. This is the line that would have caught it.",
+        f':if ([:len [/interface list find where name="LAN"]] > 0) do={{ :if ([:len [/interface list member find where list="LAN" interface="{p.bridge_name}"]] > 0) do={{ :put "Client bridge:    {p.bridge_name} is in the LAN interface list, so a stock drop-not-from-LAN rule does not block clients" }} else={{ :put "Client bridge:    WARNING {p.bridge_name} is NOT in the LAN interface list; a stock drop-not-from-LAN rule will block every client" }} }} else={{ :put "Client bridge:    this router has no LAN interface list, so no rule can key off one" }}',
         f':put "LAN:              {p.lan_cidr}  gateway {p.gateway}"',
         f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
         ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',

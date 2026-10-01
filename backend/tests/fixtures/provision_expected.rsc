@@ -25,6 +25,11 @@
 # --- bridge ---
 :put "NetGuard: moving ports into bridge-hotspot. If your session drops now, that is expected: the router keeps running this script. Reconnect on a 10.15.x address."
 :if ([:len [/interface bridge find where name="bridge-hotspot"]] = 0) do={ /interface bridge add name=bridge-hotspot comment="NetGuard" }
+# A stock router drops input that is not `in-interface-list=LAN`, and its LAN list holds only
+# the bridge named `bridge`. Put our bridge in that list or every client is dropped: no DHCP,
+# no DNS, no portal, and no operator WinBox. Guarded on the list existing, because a blank
+# router has no interface lists and nothing on it references LAN.
+:if ([:len [/interface list find where name="LAN"]] > 0) do={ :if ([:len [/interface list member find where list="LAN" interface="bridge-hotspot"]] = 0) do={ /interface list member add list=LAN interface=bridge-hotspot comment="NetGuard" } }
 # ether1 is the WAN uplink and stays out of the bridge.
 # The SFP port is left out too: it is the likely distribution uplink.
 # Each port is guarded so a board with fewer ports still gets a working bridge.
@@ -135,7 +140,11 @@
 /ip service set api-ssl disabled=yes
 /ip service set ssh address=10.13.13.0/24
 # winbox is also reachable from the operator range 10.15.0.0/24, which lies outside the DHCP pool
-# (hotspot clients cannot be leased into it). It is the way back in if the tunnel is dead.
+# (hotspot clients cannot be leased into it). It is the way back in if the tunnel is dead -- but
+# only because the bridge section puts bridge-hotspot in the LAN interface list. On a stock router
+# WinBox from 10.15.0.5 arrives on bridge-hotspot, and `drop all not coming from LAN` would drop it
+# (as it would every client's DHCP and DNS) if that bridge were in no list. What limits WinBox is
+# this address pinning, not the filter.
 /ip service set winbox address=10.13.13.0/24,10.15.0.0/24
 /ip service set api disabled=no port=8728 address=10.13.13.0/24
 # www (WebFig) is NOT what serves the hotspot login page: the hotspot redirects clients to its own
@@ -158,6 +167,10 @@
 :local ports ""
 :foreach i in=[/interface bridge port find where bridge="bridge-hotspot"] do={ :set ports ($ports . [/interface bridge port get $i interface] . " ") }
 :put ("LAN ports:        " . $ports . "(bridge bridge-hotspot)")
+# Reachability of the client bridge, reported rather than assumed. A stock router's
+# `drop all not coming from LAN` silently discards every client packet when this is wrong,
+# and the rest of this summary would still print. This is the line that would have caught it.
+:if ([:len [/interface list find where name="LAN"]] > 0) do={ :if ([:len [/interface list member find where list="LAN" interface="bridge-hotspot"]] > 0) do={ :put "Client bridge:    bridge-hotspot is in the LAN interface list, so a stock drop-not-from-LAN rule does not block clients" } else={ :put "Client bridge:    WARNING bridge-hotspot is NOT in the LAN interface list; a stock drop-not-from-LAN rule will block every client" } } else={ :put "Client bridge:    this router has no LAN interface list, so no rule can key off one" }
 :put "LAN:              10.15.0.0/16  gateway 10.15.0.1"
 :put "DHCP range:       10.15.1.2 - 10.15.254.254"
 :put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"

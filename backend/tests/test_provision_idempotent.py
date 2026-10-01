@@ -178,3 +178,85 @@ def test_input_selector_covers_every_terminal_action():
         l = raw_rule(name)
         for action in ("drop", "reject", "tarpit"):
             assert f"action={action}" in l.split("place-before")[0], (name, action)
+
+
+# ---------------------------------------------------------------------------
+# The client bridge must be reachable for input on a FACTORY-FRESH router
+# ---------------------------------------------------------------------------
+# A defconf router's input chain ends with `drop all not coming from LAN`, which matches
+# `in-interface-list=!LAN`, and defconf's `LAN` list has exactly one member: the bridge named
+# `bridge`. This script creates `bridge-hotspot` and moves all seven customer ports onto it.
+# With nothing putting that bridge in `LAN`, the drop rule discards every packet arriving on it:
+# no DHCP lease, no DNS to the gateway, no captive portal -- after the script has printed
+# "===== NetGuard provisioning complete =====" -- and the documented operator WinBox path from
+# 10.15.0.0/24 is dead for the same reason. Three verification rounds missed it because the
+# defconf reconstruction they used copied the filter RULES but not the `/interface list` wiring
+# those rules key off. Measured on a CHR: BRIDGEHOTSPOT-IN-LAN=0, PORTS-ON-DEFCONF-BRIDGE=0.
+
+
+def test_the_client_bridge_is_reachable_for_input_on_a_stock_router():
+    """Written as a disjunction on purpose.
+
+    There are two defensible fixes -- join the stock `LAN` interface list, or emit an accept
+    for `in-interface=bridge-hotspot` above the stock drop-all -- and this branch chose the
+    first. The test pins the PROPERTY, so swapping to the other fix later keeps it green while
+    removing both goes red.
+    """
+    raw = "\n".join(raw_lines())
+    joins_lan_list = (
+        '/interface list member add list=LAN interface=bridge-hotspot' in raw
+        and '/interface list find where name="LAN"' in raw
+    )
+    accepts_above_stock_drop = any(
+        "in-interface=bridge-hotspot" in l and "action=accept" in l
+        and SELECT_STOCK_INPUT_DROP in l and "place-before=[:pick $t 0]" in l
+        for l in sections.firewall(P)
+    )
+    assert joins_lan_list or accepts_above_stock_drop, (
+        "nothing makes bridge-hotspot reachable for input past a stock "
+        "`drop all not coming from LAN`; every hotspot client would be dropped"
+    )
+
+
+def lan_join_line():
+    return next(l for l in sections.bridge(P) if "/interface list member add" in l)
+
+
+def test_the_lan_list_join_names_our_bridge_and_the_stock_list():
+    l = lan_join_line()
+    assert "list=LAN" in l and f"interface={P.bridge_name}" in l
+    # Tagged like every other object we create, so an operator can tell what put it there.
+    assert 'comment="NetGuard"' in l
+
+
+def test_the_lan_list_join_is_skipped_when_the_router_has_no_lan_list():
+    # A blank router has no interface lists, and nothing on it references `LAN`, so adding a
+    # member would fail (`no such item`) or invent an object nothing reads. Outer guard is
+    # `> 0` on the list existing -- the mirror of every other guard in this file.
+    l = lan_join_line()
+    assert l.startswith(':if ([:len [/interface list find where name="LAN"]] > 0) do={ ')
+    # And we never create the list ourselves.
+    assert "/interface list add" not in "\n".join(raw_lines())
+
+
+def test_the_lan_list_join_is_idempotent():
+    # Inner guard, so a second run does not add a duplicate member.
+    l = lan_join_line()
+    assert ('/interface list member find where list="LAN" '
+            f'interface="{P.bridge_name}"]] = 0') in l
+
+
+def test_the_client_bridge_is_never_put_in_the_wan_list():
+    # `WAN` carries the defconf masquerade (`out-interface-list=WAN`) and the stock
+    # `drop all from WAN not DSTNATed` forward rule. Putting the client bridge there would
+    # NAT clients to themselves and drop their forwarded traffic.
+    raw = "\n".join(raw_lines())
+    assert "list=WAN" not in raw
+
+
+def test_the_summary_reports_whether_the_client_bridge_is_in_the_lan_list():
+    # The failure this guards against printed "provisioning complete" and served nothing.
+    # The summary now states the one fact that distinguishes the two outcomes.
+    s = "\n".join(sections.summary(P))
+    assert '/interface list member find where list="LAN" interface="bridge-hotspot"' in s
+    assert "WARNING" in s and "NOT in the LAN interface list" in s
