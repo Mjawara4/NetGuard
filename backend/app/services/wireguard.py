@@ -5,8 +5,24 @@ from sqlalchemy import select
 from app.models import Device
 from app.core.config import settings
 
-WG_CONF_PATH = "/etc/wireguard/wg0.conf"
+WG_CONF_DIR = "/etc/wireguard"
+WG_CONF_PATH = f"{WG_CONF_DIR}/wg0.conf"
 WG_SUBNET = "10.13.13."
+
+# The running server does NOT necessarily read WG_CONF_PATH.
+#
+# linuxserver/wireguard (the image docker-compose.yml runs) keeps its live
+# config in /config/wg_confs/wg0.conf, and migrates a legacy /config/wg0.conf
+# into it at container start. Our bind mount makes /config the same directory
+# as WG_CONF_DIR, so BOTH files exist and they are different files -- on the
+# production host they had distinct inodes, created four seconds apart during
+# the same container startup.
+#
+# Appending a peer only to the legacy file therefore wrote it somewhere nothing
+# read: a freshly provisioned router could never complete a handshake, with no
+# error anywhere. Peers are written to every candidate so the peer is live
+# whichever file the image prefers, and survives a restart that re-migrates.
+WG_ACTIVE_CONF_SUBDIR = "wg_confs"
 
 # We will read the key dynamically.
 
@@ -81,31 +97,44 @@ class WireGuardService:
         raise Exception("No available IPs in WireGuard subnet")
 
     @staticmethod
-    def add_peer_to_conf(public_key: str, allowed_ip: str):
+    def conf_targets(conf_dir: str = WG_CONF_DIR) -> list:
+        """Every wg0.conf the running server might read, most authoritative first.
+
+        The presence of the wg_confs/ directory is the signal that the image
+        migrated to the newer layout; it is never created here, because creating
+        it would change which file the server reads on its next start.
         """
-        Appends a peer to wg0.conf if it does not already exist.
+        targets = []
+        active_dir = os.path.join(conf_dir, WG_ACTIVE_CONF_SUBDIR)
+        if os.path.isdir(active_dir):
+            targets.append(os.path.join(active_dir, "wg0.conf"))
+        targets.append(os.path.join(conf_dir, "wg0.conf"))
+        return targets
+
+    @staticmethod
+    def add_peer_to_conf(public_key: str, allowed_ip: str, conf_dir: str = WG_CONF_DIR):
+        """Append a peer to every conf the server might read, skipping any that has it.
+
+        Writing to one file is what caused a peer to be accepted by the API and
+        silently never reach the tunnel; see the note on WG_ACTIVE_CONF_SUBDIR.
+        Each file is checked separately, so a conf that is missing the peer gets
+        it even when another already has it.
         """
-        conf_path = "/etc/wireguard/wg0.conf"
-
-        # Ensure directory exists (should be mounted, but safe to check)
-        os.makedirs(os.path.dirname(conf_path), exist_ok=True)
-
-        if not os.path.exists(conf_path):
-            # Create empty file if it doesn't exist
-            with open(conf_path, "w") as f:
-                f.write("# WireGuard Config\n")
-
-        # Check if the public key is already in the file
-        with open(conf_path, "r") as f:
-            if public_key in f.read():
-                # print(f"DEBUG: Peer {public_key} already in {conf_path}. Skipping.")
-                return
-
+        os.makedirs(conf_dir, exist_ok=True)
 
         peer_block = f"\n[Peer]\nPublicKey = {public_key}\nAllowedIPs = {allowed_ip}/32\n"
-        
-        with open(conf_path, "a") as f:
-            f.write(peer_block)
+
+        for conf_path in WireGuardService.conf_targets(conf_dir):
+            if not os.path.exists(conf_path):
+                with open(conf_path, "w") as f:
+                    f.write("# WireGuard Config\n")
+
+            with open(conf_path, "r") as f:
+                if public_key in f.read():
+                    continue
+
+            with open(conf_path, "a") as f:
+                f.write(peer_block)
 
     @staticmethod
     def generate_mikrotik_script(private_key: str, client_ip: str, server_public_key: str, server_endpoint: str, server_port: int = 51820):

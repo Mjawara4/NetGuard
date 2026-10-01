@@ -294,6 +294,34 @@ services:
       netguard-net:
         ipv4_address: 172.25.0.100
 
+  # Loads peers the backend writes into the running wg0 interface.
+  #
+  # The backend can only append to the config file: wg0 lives in the wireguard
+  # container's network namespace and no container here has the docker socket,
+  # so nothing could reload it. Peers stayed inert until that container next
+  # restarted, which meant a newly provisioned router could never handshake and
+  # nothing reported a failure. See scripts/wg-reloader.sh.
+  #
+  # network_mode puts this in wireguard's namespace, the only place `wg
+  # syncconf` can see wg0. That also means it takes no network or ports of its
+  # own, so it cannot be addressed from outside.
+  wg-reloader:
+    image: alpine:3.20
+    container_name: netguard-wg-reloader
+    network_mode: "service:wireguard"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./wireguard-config:/config
+      - ./scripts/wg-reloader.sh:/wg-reloader.sh:ro
+    command: ["sh", "/wg-reloader.sh"]
+    environment:
+      - WG_RELOAD_POLL=10
+    restart: unless-stopped
+    depends_on:
+      wireguard:
+        condition: service_started
+
 volumes:
   netguard_data:
   caddy_data:
