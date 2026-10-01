@@ -113,6 +113,17 @@ class WireGuardService:
         Generates a MikroTik RouterOS script to configure WireGuard.
         This script is designed to be copy-pasted directly into the terminal.
         All values are validated and populated before script generation.
+
+        Every object created here carries comment="NetGuard", and that string is
+        load-bearing, not decoration: the provisioning script's preflight
+        (app/services/provisioning/sections.py) refuses any router whose
+        `wireguard-netguard` interface has a different comment, on the grounds
+        that it was configured by someone else. This script is the one the UI
+        tells a customer to run FIRST ("Setup WireGuard VPN", from the 409 that
+        provision-script returns), so a mismatch here means a customer who
+        follows our own instructions reaches a router the next step refuses, with
+        a factory reset as the only exit. Keep the two generators in step --
+        test_provision_sections_tunnel.py compares them token by token.
         """
         # Validate all required inputs
         if not private_key:
@@ -145,17 +156,17 @@ class WireGuardService:
 # Paste this into the Mikrotik Terminal
 
 /interface wireguard
-add listen-port=13231 mtu=1420 name=wireguard-netguard private-key="{private_key}" comment="NetGuard VPN"
+add listen-port=13231 mtu=1420 name=wireguard-netguard private-key="{private_key}" comment="NetGuard"
 
 /ip address
-add address={client_ip}/24 interface=wireguard-netguard network={WG_SUBNET}0
+add address={client_ip}/24 interface=wireguard-netguard network={WG_SUBNET}0 comment="NetGuard"
 
 /interface wireguard peers
 add allowed-address={WG_SUBNET}0/24 endpoint-address={server_endpoint} endpoint-port={server_port} \\
-    interface=wireguard-netguard persistent-keepalive=25s public-key="{server_public_key}" comment="NetGuard Server"
+    interface=wireguard-netguard persistent-keepalive=25s public-key="{server_public_key}" comment="NetGuard"
 
 /ip route
-add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguard routing-table=main scope=30 target-scope=10 comment="Route to NetGuard Server"
+add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguard routing-table=main scope=30 target-scope=10 comment="NetGuard"
 
 # ---------------------------------------------------
 # SECURITY & ACCESS SETUP (REQUIRED)

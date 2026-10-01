@@ -6,7 +6,13 @@
 # A hotspot or tunnel that is not ours means a configured router: refuse. Ours (left by an earlier
 # run that failed part-way) is tolerated so the script can be run again.
 :if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }
-:if ([:len [/interface wireguard find where name="wireguard-netguard" and comment!="NetGuard"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists and is not ours; refusing to overwrite it" }
+# "NetGuard VPN" is TRANSITIONAL: it is what backend/app/services/wireguard.py tagged the
+# interface with before the two generators were aligned. Routers already in the field carry
+# it, and refusing them would send a customer who did exactly what the UI told them to do
+# (press "Setup WireGuard VPN", which applies that script) to a factory reset. Both strings
+# mean the same thing -- a tunnel NetGuard created -- and neither is a sign of a router
+# configured by someone else. Drop the second once no deployed router still reports it.
+:if ([:len [/interface wireguard find where name="wireguard-netguard" and comment!="NetGuard" and comment!="NetGuard VPN"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists and is not ours; refusing to overwrite it" }
 :put ("NetGuard preflight: RouterOS " . [/system resource get version])
 # `level` is what RouterOS 7.16 exposes (a CHR rejected `nlevel`); `nlevel` is kept as a fallback for other builds.
 :do { :put ("NetGuard preflight: license level " . [/system license get level]) } on-error={ :do { :put ("NetGuard preflight: license level " . [/system license get nlevel]) } on-error={ :put "NetGuard preflight: license level unavailable on this build" } }
@@ -94,7 +100,7 @@
 # timeout: the router initiates the tunnel and the firewall's `established` rule lets
 # replies in, so a keepalive slower than 30s lets the flow expire. Do not tune it up.
 :if ([:len [/interface wireguard peers find where interface="wireguard-netguard"]] = 0) do={ /interface wireguard peers add interface=wireguard-netguard public-key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=" endpoint-address=74.208.167.166 endpoint-port=51820 allowed-address=10.13.13.0/24 persistent-keepalive=25s comment="NetGuard" }
-:if ([:len [/ip route find where dst-address="10.13.13.1/32"]] = 0) do={ /ip route add dst-address=10.13.13.1/32 gateway=wireguard-netguard distance=1 routing-table=main scope=30 target-scope=10 comment="NetGuard" }
+:if ([:len [/ip route find where dst-address="10.13.13.1/32"]] = 0) do={ /ip route add dst-address=10.13.13.1/32 gateway=wireguard-netguard distance=1 routing-table=main scope=30 target-scope=10 disabled=no comment="NetGuard" }
 
 # --- capsman ---
 # The /interface wifi stack is local-forwarding-only: each AP bridges its own clients, so traffic never tunnels through this router.

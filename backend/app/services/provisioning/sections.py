@@ -59,7 +59,13 @@ def preflight(p: ProvisionParams) -> list[str]:
         "# A hotspot or tunnel that is not ours means a configured router: refuse. Ours (left by an earlier",
         "# run that failed part-way) is tolerated so the script can be run again.",
         ':if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }',
-        ':if ([:len [/interface wireguard find where name="wireguard-netguard" and comment!="NetGuard"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists and is not ours; refusing to overwrite it" }',
+        '# "NetGuard VPN" is TRANSITIONAL: it is what backend/app/services/wireguard.py tagged the',
+        "# interface with before the two generators were aligned. Routers already in the field carry",
+        "# it, and refusing them would send a customer who did exactly what the UI told them to do",
+        "# (press \"Setup WireGuard VPN\", which applies that script) to a factory reset. Both strings",
+        "# mean the same thing -- a tunnel NetGuard created -- and neither is a sign of a router",
+        "# configured by someone else. Drop the second once no deployed router still reports it.",
+        ':if ([:len [/interface wireguard find where name="wireguard-netguard" and comment!="NetGuard" and comment!="NetGuard VPN"]] > 0) do={ :error "NetGuard: wireguard-netguard already exists and is not ours; refusing to overwrite it" }',
         ':put ("NetGuard preflight: RouterOS " . [/system resource get version])',
         "# `level` is what RouterOS 7.16 exposes (a CHR rejected `nlevel`); `nlevel` is kept as a fallback for other builds.",
         ':do { :put ("NetGuard preflight: license level " . [/system license get level]) } on-error={ :do { :put ("NetGuard preflight: license level " . [/system license get nlevel]) } on-error={ :put "NetGuard preflight: license level unavailable on this build" } }',
@@ -366,9 +372,12 @@ def wireguard(p: ProvisionParams) -> list[str]:
               f'interface={WG_INTERFACE} public-key="{p.wg_server_public_key}" '
               f"endpoint-address={p.wg_server_endpoint} endpoint-port={p.wg_server_port} "
               f"allowed-address={p.wg_subnet_cidr} persistent-keepalive=25s {TAG}"),
+        # `disabled=no` is explicit so it is comparable with wireguard.py's route, which
+        # states it. A route that silently came up disabled would leave NetGuard unable to
+        # reach the device while every other check passed.
         _once("/ip route", f'dst-address="{server_ip}/32"',
               f"dst-address={server_ip}/32 gateway={WG_INTERFACE} distance=1 "
-              f"routing-table=main scope=30 target-scope=10 {TAG}"),
+              f"routing-table=main scope=30 target-scope=10 disabled=no {TAG}"),
     ]
 
 

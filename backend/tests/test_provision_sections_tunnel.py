@@ -171,11 +171,45 @@ def test_sections_wireguard_has_not_drifted_from_the_wireguard_service():
     addr = mine("/ip address add ")
     t_iface, t_peer = theirs["/interface wireguard"], theirs["/interface wireguard peers"]
     t_route, t_addr = theirs["/ip route"], theirs["/ip address"]
-    for k in ("name", "listen-port", "mtu"):
+    # `comment` is in every group deliberately. It is not cosmetic: preflight refuses a
+    # `wireguard-netguard` whose comment is not one it recognises, so a drift here is the
+    # difference between the two scripts composing and a router only a factory reset can
+    # recover. It drifted ("NetGuard VPN" vs "NetGuard") and 240 tests stayed green.
+    for k in ("name", "listen-port", "mtu", "comment"):
         assert iface[k] == t_iface[k], k
-    for k in ("allowed-address", "interface", "persistent-keepalive"):
+    # endpoint-address and endpoint-port decide where the tunnel dials; a mismatch is a
+    # tunnel that never handshakes. They survived mutation until they were listed here.
+    for k in ("allowed-address", "interface", "persistent-keepalive",
+              "endpoint-address", "endpoint-port", "comment"):
         assert peer[k] == t_peer[k], k
-    for k in ("dst-address", "gateway", "distance", "routing-table", "scope", "target-scope"):
+    # `disabled` too: a route that comes up disabled leaves NetGuard unable to reach the
+    # device while every other value matches.
+    for k in ("dst-address", "gateway", "distance", "routing-table", "scope", "target-scope",
+              "disabled", "comment"):
         assert route[k] == t_route[k], k
-    for k in ("address", "interface", "network"):
+    for k in ("address", "interface", "network", "comment"):
         assert addr[k] == t_addr[k].replace("{client_ip}", "10.13.13.7"), k
+
+
+def test_preflight_tolerates_the_comment_the_rekey_script_actually_writes():
+    """The dead end this closes.
+
+    `devices.py` returns 409 for a device with no tunnel, the UI's 409 text tells the
+    customer to press "Setup WireGuard VPN", and that button applies
+    WireGuardService.generate_mikrotik_script. If preflight refuses the comment that
+    script writes, a customer who followed our own instructions reaches a router the
+    next step will not touch, with a factory reset as the only exit. So preflight must
+    exempt whatever that generator emits -- verified against the generator, not a literal.
+    """
+    theirs = _wg_generator_tokens()["/interface wireguard"]["comment"]
+    pre = "\n".join(sections.preflight(P))
+    exempt = re.findall(r'comment!=("[^"]*")', pre)
+    assert exempt, pre
+    assert theirs in exempt, (theirs, exempt)
+
+
+def test_preflight_also_tolerates_the_old_rekey_comment():
+    # Routers provisioned by the re-key script BEFORE the two generators were aligned
+    # carry comment="NetGuard VPN". Refusing them would recreate the same dead end for
+    # the existing fleet. Remove this only when no deployed router still reports it.
+    assert 'comment!="NetGuard VPN"' in "\n".join(sections.preflight(P))
