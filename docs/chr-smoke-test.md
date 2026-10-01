@@ -60,8 +60,19 @@ swallowed blank line (caught), swallowed real command (caught), clean script pri
 `drop all not coming from LAN` refuses new connections on ether1, which is the harness's only way in,
 so nothing can connect afterwards (`exit 2`, "could not drive the paste session" / "upload failed").
 `--prepend FILE` puts FILE in front of the script in the SAME session instead, where the
-already-established connection keeps working. `factory-defaults.rsc` should be the ruleset a new
-router really ships with. Do not test against a convenient subset: the stock ruleset includes the
+already-established connection keeps working.
+
+**Use `scripts/chr-fixtures/defconf-with-lists.rsc`.** It is the reconstruction of what a new
+router really ships with, and it is committed precisely because rebuilding it from memory has
+now cost this project two defects. Rounds 1-3 used reconstructions that copied the defconf
+firewall RULES but not the `/interface list` + `in-interface-list` wiring those rules key off,
+so `in-interface-list=!LAN` matched nothing and the stock `drop all not coming from LAN` looked
+harmless. It is not: it is what made a factory-fresh router serve no hotspot client at all, and
+three verification rounds could not see it. `scripts/chr-fixtures/verify-client-bridge-reachable.rsc`
+is the matching probe -- append it to the script under test to print LAN/WAN list membership,
+bridge port counts and the input chain in true table order.
+
+Do not test against a convenient subset: the stock ruleset includes the
 fasttrack rule, which makes RouterOS show a builtin `special dummy rule to show fasttrack counters`
 at index 0 of the filter table; `move ... destination=0` then fails with `cannot move builtin` and
 aborts the script. A test ruleset without fasttrack passed, and the defect was only found on the real
