@@ -162,6 +162,23 @@ async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSe
 
 @router.post("/devices/{device_id}/provision-wireguard", response_model=WireGuardProvisionResponse)
 async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    """Create (or return) the device's WireGuard tunnel and the router script for it.
+
+    Restricted to SUPER_ADMIN and ORG_ADMIN users (403 otherwise), for the same
+    reason provision-script is: the response body carries `wg_private_key`, the
+    router's tunnel private key, and the script embeds it. Gating only
+    provision-script would be theatre -- an actor who wants the tunnel key would
+    just use this endpoint instead. API keys are machine-scoped and unchanged.
+    """
+    # Before any key generation or persistence: a refused caller must not leave a
+    # freshly minted key on the device row, or a peer appended to the server config.
+    if isinstance(actor, User) and actor.role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
+        raise HTTPException(
+            status_code=403,
+            detail="Provisioning WireGuard returns the router's tunnel private key; "
+                   "it requires an organisation admin or super admin.",
+        )
+
     # Verify ownership
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
          query = select(Device).where(Device.id == UUID(device_id))
