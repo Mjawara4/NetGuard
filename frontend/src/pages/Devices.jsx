@@ -390,6 +390,29 @@ export default function Devices() {
                                         </div>
                                     </div>
 
+                                    {/* Why the tiles below say N/A.
+                                        CPU, memory, uptime and linked clients all come through the
+                                        RouterOS API. When that login is rejected every one of them
+                                        reads N/A, which looks identical to "offline" and to "never
+                                        polled" -- on a real install that cost hours, because the
+                                        router pinged perfectly the whole time. A missing status
+                                        metric is treated as reachable on purpose: blaming the router
+                                        sends the installer after a cable instead of the password. */}
+                                    {deviceMetrics.api_reachable && deviceMetrics.api_reachable.value === 0 && (
+                                        deviceMetrics.status && deviceMetrics.status.value === 0 ? (
+                                            <div data-testid="api-offline" role="status" className="mb-6 p-4 rounded-lg bg-ink-100 dark:bg-ink-800 text-sm text-ink-900 dark:text-ink-50">
+                                                <span className="font-bold">Router not responding.</span> NetGuard cannot reach this device at all, so the readings below are unavailable. Check power and the uplink.
+                                            </div>
+                                        ) : (
+                                            <div data-testid="api-credential-mismatch" role="status" className="mb-6 p-4 rounded-lg bg-warn/10 dark:bg-warn/20 text-sm text-ink-900 dark:text-ink-50">
+                                                <span className="font-bold">The router answers, but rejects NetGuard's password.</span>{' '}
+                                                That is why the readings below are N/A — they all come through the router's API.
+                                                It usually means the setup script for this router was never applied, or a newer one replaced it.
+                                                Use <span className="font-bold">Get setup script</span>, then import the file on the router.
+                                            </div>
+                                        )
+                                    )}
+
                                     <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-8">
                                         <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-lg">
                                             <div className="flex items-center gap-2 mb-1">
