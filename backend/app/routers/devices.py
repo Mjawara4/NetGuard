@@ -389,16 +389,19 @@ async def generate_provision_script(
     reused = provisioned_before and not rotate
     api_password = stored if reused else generate_api_password()
 
-    # The admin password is set ONCE, on the first provision, and never again --
-    # not even when rotating. It is the router's only full-access account and
-    # NetGuard never stores it: it is shown once and that is the only copy in
-    # existence. Replacing it on a later run therefore destroys the credential
-    # the operator holds, and the recovery path is a factory reset, which on a
-    # customer site means a visit. That happened.
+    # An admin password is ALWAYS generated, but the SCRIPT decides whether to
+    # apply it -- it does so only when the router has no netguard user, i.e. only
+    # when the router itself says it has never been provisioned.
     #
-    # It still has to be set the first time: a factory router ships with a BLANK
-    # admin password reachable from the LAN.
-    admin_password = None if provisioned_before else generate_api_password()
+    # Deciding that here, from provisioned_before, was wrong and briefly shipped:
+    # a factory reset makes the ROUTER forget while this device row still holds
+    # credentials, so the script would have skipped the admin line on exactly the
+    # router that most needs it and left a blank full-access password on the LAN.
+    # NetGuard's records cannot answer "is this router fresh"; only the router can.
+    #
+    # The operator's existing password is still never replaced: on a router that
+    # has been set up before, the guard is false and this value is simply unused.
+    admin_password = generate_api_password()
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,

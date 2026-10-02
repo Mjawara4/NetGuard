@@ -90,9 +90,17 @@
 :if ([:len [/user group find where name="netguard"]] = 0) do={ /user group add name=netguard policy=api,read,write,test,winbox,!local,!telnet,!ssh,!ftp,!reboot,!policy,!password,!sniff,!sensitive,!romon comment="NetGuard API" }
 :if ([:len [/user find where name="netguard"]] = 0) do={ /user add name=netguard group=netguard address=10.13.13.0/24 password="" comment="NetGuard API" }
 /user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"
-# A stock router's admin has a blank password and is reachable from the LAN. Give it its own
-# random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.
-/user set [find where name=admin] password="Qw8ZeRtY3uIoP5aSdF1g"
+# A stock router's admin has a BLANK password and is reachable from the LAN, so a fresh
+# router must get one. An already-provisioned router must NOT: admin is the operator's
+# credential, NetGuard never stores it, and the copy they were given is the only one in
+# existence -- replacing it destroys their access, with a factory reset as the only way back.
+#
+# The test is made HERE, on the router, not from NetGuard's records. A factory reset makes
+# the router forget while the device row still holds credentials, so trusting those records
+# would skip this line on exactly the router that most needs it and leave a blank
+# full-access password on the LAN. The netguard user's absence is the honest signal: this
+# script is the only thing that creates it, and the section above has already run.
+:if ([:len [/user find where name="netguard"]] = 0) do={ /user set [find where name=admin] password="Qw8ZeRtY3uIoP5aSdF1g" }
 
 # --- wireguard ---
 :if ([:len [/interface wireguard find where name="wireguard-netguard"]] = 0) do={ /interface wireguard add name=wireguard-netguard listen-port=13231 mtu=1420 private-key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=" comment="NetGuard" }

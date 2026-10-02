@@ -392,23 +392,37 @@ async def test_second_call_reuses_the_stored_password_so_the_file_still_matches(
     assert f'password="{GOOD_STORED}"' in resp.script
 
 
-async def test_two_calls_in_a_row_produce_the_same_credential():
+async def test_two_calls_in_a_row_produce_the_same_api_credential():
+    """The API password is what must not drift; a stale file is what broke installs.
+
+    The scripts are not byte-identical: an admin password is minted every call
+    because the SCRIPT decides whether to apply it (only on a router with no
+    netguard user). On an already-provisioned router that value is never used.
+    """
     device = _provisioned()
     first, _ = await _call(device)
     second, _ = await _call(device)
     assert first.api_password == second.api_password
-    assert first.script == second.script
+    assert device.ssh_password == first.api_password
+    netguard_line = f'/user set [find where name=netguard] password="{first.api_password}"'
+    assert netguard_line in first.script and netguard_line in second.script
 
 
-async def test_reuse_leaves_the_admin_password_alone():
-    """We cannot reproduce it -- it is never stored -- so we must not change it."""
+async def test_the_admin_line_is_always_guarded_on_the_routers_own_state():
+    """An already-set-up router must keep its admin password.
+
+    Enforced in the script rather than by omitting the line, because NetGuard's
+    records cannot tell a reset router from a provisioned one -- and the reset
+    one is the one that must NOT be left with a blank password.
+    """
     device = _provisioned()
     resp, _ = await _call(device)
-    assert resp.admin_password is None
-    assert "/user set [find where name=admin] password=" not in resp.script
-    assert any("admin" in w.lower() for w in resp.warnings), (
-        "reusing must say that the admin password was left unchanged"
-    )
+    assert resp.admin_password, "a reset router would keep a blank admin password"
+    assert '/user set [find where name=admin] password=' in resp.script
+    guard = [l for l in resp.script.splitlines()
+             if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
+    assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), guard[:110]
+    assert any("admin" in w.lower() for w in resp.warnings)
 
 
 async def test_rotate_mints_a_new_api_password_and_stores_it():
@@ -473,11 +487,12 @@ async def test_rotate_does_not_touch_admin_on_an_already_provisioned_router():
     device = _provisioned()
     resp, _ = await _call(device, rotate=True)
     assert resp.api_password != GOOD_STORED, "rotate must still mint a new API password"
-    assert resp.admin_password is None, (
-        "rotating replaced the admin password; that is the credential the "
-        "operator holds and NetGuard cannot reproduce"
+    guard = [l for l in resp.script.splitlines()
+             if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
+    assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), (
+        f"rotation must not replace the operator's admin password on a router "
+        f"that already has a netguard user: {guard[:110]}"
     )
-    assert "/user set [find where name=admin] password=" not in resp.script
 
 
 async def test_first_provision_still_sets_admin_because_factory_is_blank():
@@ -487,11 +502,12 @@ async def test_first_provision_still_sets_admin_because_factory_is_blank():
     assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
 
 
-async def test_admin_is_untouched_on_every_later_call_however_generated():
+async def test_every_script_guards_admin_the_same_way_however_generated():
     device = _device()
-    first, _ = await _call(device)                 # first provision: sets admin
-    assert first.admin_password
     for kw in ({}, {"rotate": True}, {}, {"rotate": True}):
-        later, _ = await _call(device, **kw)
-        assert later.admin_password is None, f"admin rotated again with {kw}"
-        assert "name=admin] password=" not in later.script
+        resp, _ = await _call(device, **kw)
+        guard = [l for l in resp.script.splitlines()
+                 if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
+        assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), (
+            f"unguarded admin line with {kw}: {guard[:110]}"
+        )

@@ -185,13 +185,15 @@ describe('reuse versus rotate', () => {
         expect(typeof cfg.params.rotate).toBe('boolean');
     });
 
-    it('says the admin password is unchanged rather than showing an empty box', async () => {
-        api.post.mockResolvedValue({ data: { ...RESULT, admin_password: null } });
+    it('shows the admin password and says when it actually applies', async () => {
+        // It is always returned now; the SCRIPT decides whether to apply it,
+        // because only the router can tell a factory reset from a configured
+        // box. The UI has to say so, or the value reads as a promise it is not.
         await openModal();
         generate();
         await screen.findByTestId('script-body');
-        expect(screen.queryByTestId('admin-password')).toBeNull();
-        expect(screen.getByTestId('admin-password-unchanged').textContent).toMatch(/unchanged/i);
+        expect(screen.getByTestId('admin-password').textContent).toBe(RESULT.admin_password);
+        expect(screen.getByText(/only if this router is new or factory-reset/i)).toBeTruthy();
     });
 });
 

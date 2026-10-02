@@ -199,3 +199,46 @@ def test_hardening_is_not_wrapped_in_a_silent_guard():
                 f"on-error cannot catch the parse error this guards against, and it "
                 f"hides runtime ones: {line[:90]}"
             )
+
+
+# --- a reset router must never be left with a blank admin password --------
+#
+# "First install" cannot be decided from NetGuard's records. A factory reset
+# makes the ROUTER forget while the device row still holds credentials, so a
+# reuse script would skip the admin line and leave a freshly reset router with
+# a blank full-access password reachable from the LAN.
+#
+# The only place that knows whether a router has been provisioned is the router.
+# The script therefore decides on the router, keyed on the netguard user's
+# existence: absent means fresh, present means leave admin alone.
+
+
+def _admin_lines(p):
+    """RAW output -- the shared helper strips exactly the guard under test."""
+    from app.services.provisioning import sections as raw
+    return [l for l in raw.api_user(p)
+            if "name=admin" in l and not l.lstrip().startswith("#")]
+
+
+def test_admin_password_is_set_only_when_the_router_looks_fresh():
+    from app.services.provisioning.params import build_params
+    p = build_params(
+        site_slug="a-site", wg_client_ip="10.13.13.7",
+        wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+        wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+        wg_server_endpoint="74.208.167.166", wg_server_port=51820,
+        api_password="Abc23Abc23Abc23Abc23Abc2",
+        admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8")
+
+    lines = _admin_lines(p)
+    assert lines, "no admin password line at all; a factory router keeps a blank one"
+    line = lines[0]
+    assert line.startswith(":if (["), (
+        f"admin password set unconditionally; on a re-run that destroys the "
+        f"operator's credential: {line[:100]}"
+    )
+    assert 'user find where name="netguard"' in line, (
+        f"the freshness test must read the ROUTER, not trust NetGuard's records: {line[:100]}"
+    )
+    assert "] = 0) do=" in line, "condition must be 'netguard user absent'"
+    assert 'password="Xyz89Xyz89Xyz89Xyz89Xyz8"' in line

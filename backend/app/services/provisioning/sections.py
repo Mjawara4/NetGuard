@@ -387,14 +387,20 @@ def _admin_password_lines(p: ProvisionParams) -> list[str]:
     """
     if not p.admin_password:
         return [
-            "# admin password: left UNCHANGED. This script reuses the credentials NetGuard",
-            "# already holds, so it does not know the admin password you were shown before",
-            "# and will not overwrite it. Generate with rotation if you need a new one.",
+            "# admin password: left UNCHANGED. No new one was generated for this run.",
         ]
     return [
-        "# A stock router's admin has a blank password and is reachable from the LAN. Give it its own",
-        "# random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.",
-        f'/user set [find where name=admin] password="{p.admin_password}"',
+        "# A stock router's admin has a BLANK password and is reachable from the LAN, so a fresh",
+        "# router must get one. An already-provisioned router must NOT: admin is the operator's",
+        "# credential, NetGuard never stores it, and the copy they were given is the only one in",
+        "# existence -- replacing it destroys their access, with a factory reset as the only way back.",
+        "#",
+        "# The test is made HERE, on the router, not from NetGuard's records. A factory reset makes",
+        "# the router forget while the device row still holds credentials, so trusting those records",
+        "# would skip this line on exactly the router that most needs it and leave a blank",
+        "# full-access password on the LAN. The netguard user's absence is the honest signal: this",
+        "# script is the only thing that creates it, and the section above has already run.",
+        f':if ([:len [/user find where name="{p.api_username}"]] = 0) do={{ /user set [find where name=admin] password="{p.admin_password}" }}',
     ]
 
 

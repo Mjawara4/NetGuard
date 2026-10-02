@@ -743,17 +743,16 @@ export default function Devices() {
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Router admin password</div>
                                     <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">For the user admin: WinBox, WebFig and the console.</div>
-                                    {/* Null when this script reuses stored credentials: the admin password is
-                                        never stored, so it cannot be reproduced, and the script deliberately
-                                        leaves that account alone rather than setting a value nobody has seen.
-                                        Rendering it raw would print an empty box that reads as a bug. */}
-                                    {scriptResult.admin_password ? (
-                                        <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
-                                    ) : (
-                                        <div data-testid="admin-password-unchanged" className="text-sm text-ink-700 dark:text-ink-200">
-                                            Unchanged, and not shown again. The admin password is set once on the first install and never replaced — NetGuard does not store it, so the copy you were given is the only one. Keep it somewhere safe.
-                                        </div>
-                                    )}
+                                    {/* Always returned now. Whether it is APPLIED is decided on the
+                                        router: the script sets it only when there is no netguard user,
+                                        i.e. only on a router that has never been provisioned. NetGuard
+                                        cannot tell a factory-reset router from a configured one, and
+                                        getting that wrong leaves a blank full-access password on the LAN. */}
+                                    <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 mt-2">
+                                        Applied <span className="font-bold">only if this router is new or factory-reset</span>. If it has been set up before, it keeps the admin password you already have and this one is unused.
+                                        NetGuard never stores it, so if this router <em>is</em> new, save it now and import this exact file.
+                                    </div>
                                 </div>
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">NetGuard API password</div>
