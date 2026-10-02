@@ -426,7 +426,12 @@ def summary(p: ProvisionParams) -> list[str]:
         ':put ""',
         ':put "===== NetGuard provisioning complete ====="',
         ':put ("Board:            " . [/system resource get board-name] . "  RouterOS " . [/system resource get version])',
-        ':do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" }',
+        # Same two-property dance as preflight, and for the same reason: a real hEX on
+        # RouterOS 7.24.5 exposes `nlevel` and rejects `level`, while a 7.16 CHR does the
+        # opposite. Trying only one printed "unavailable" on hardware that knew the answer
+        # -- and this is the line that tells an installer whether they are capped at 200
+        # users or 500, which decides whether the board suits the site at all.
+        ':do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :do { :put ("License level:    " . [/system license get nlevel] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" } }',
         f':put "WAN port:         {p.wan_interface} (left out of the bridge)"',
         ':local ports ""',
         f':foreach i in=[/interface bridge port find where bridge="{p.bridge_name}"] do={{ :set ports ($ports . [/interface bridge port get $i interface] . " ") }}',

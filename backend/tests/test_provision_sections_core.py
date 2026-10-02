@@ -116,3 +116,21 @@ def test_every_created_object_is_attributable():
                 seen += 1
                 assert 'comment="NetGuard"' in line, line
     assert seen >= 3, f"expected several created objects, matched {seen}"
+
+
+def test_summary_falls_back_to_nlevel_like_preflight_does():
+    """A real hEX on RouterOS 7.24.5 exposes `nlevel`, not `level`.
+
+    Preflight already tried both. The summary tried only `level`, so the one
+    line that tells an installer their concurrent-user ceiling printed
+    "unavailable" on hardware where `/system license print` showed nlevel: 4.
+    """
+    from app.services.provisioning import sections
+    line = [l for l in sections.summary(P) if "License level" in l]
+    assert line, "no license line in the summary"
+    body = line[0]
+    assert "get level" in body, "summary no longer reads level"
+    assert "get nlevel" in body, (
+        "summary has no nlevel fallback; an hEX reports the ceiling as "
+        "unavailable even though RouterOS knows it"
+    )

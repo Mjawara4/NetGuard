@@ -168,7 +168,7 @@
 :put ""
 :put "===== NetGuard provisioning complete ====="
 :put ("Board:            " . [/system resource get board-name] . "  RouterOS " . [/system resource get version])
-:do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" }
+:do { :put ("License level:    " . [/system license get level] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :do { :put ("License level:    " . [/system license get nlevel] . "  (level 4 = 200 hotspot users, level 5 = 500, level 6 = unlimited)") } on-error={ :put "License level:    unavailable on this build" } }
 :put "WAN port:         ether1 (left out of the bridge)"
 :local ports ""
 :foreach i in=[/interface bridge port find where bridge="bridge-hotspot"] do={ :set ports ($ports . [/interface bridge port get $i interface] . " ") }
