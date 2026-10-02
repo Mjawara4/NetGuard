@@ -129,10 +129,18 @@ async def test_stored_credentials_are_exactly_what_the_script_and_response_carry
     assert device.ssh_password != resp.admin_password
 
 
-async def test_every_call_rotates_so_stored_value_follows_the_latest_script():
+async def test_a_rotating_call_makes_the_stored_value_follow_the_latest_script():
+    """Rotation is now opt-in; when asked for, the stored value must follow it.
+
+    This used to assert that EVERY call rotates. That was the behaviour that let
+    a second generation silently invalidate an already-downloaded script, so the
+    default is now reuse -- see the reuse tests below. The guarantee that matters
+    for a rotating call is unchanged: whatever the newest script sets is what
+    NetGuard stores, and the previous password appears nowhere in it.
+    """
     device = _device()
-    first, _ = await _call(device)
-    second, _ = await _call(device)
+    first, _ = await _call(device, rotate=True)
+    second, _ = await _call(device, rotate=True)
     assert first.api_password != second.api_password
     assert device.ssh_password == second.api_password
     assert first.api_password not in second.script
@@ -352,3 +360,93 @@ async def test_address_is_not_touched_when_there_is_no_tunnel_address():
     except Exception:
         pass
     assert device.ip_address == "192.0.2.1"
+
+
+# --- reuse unless explicitly rotating -------------------------------------
+#
+# Rotating on every call made generating a script twice silently invalidate the
+# first file. On a real install the script was generated four times while other
+# bugs were fixed; the file applied to the router was from an earlier generation
+# than the one the database held, so `netguard` authenticated against neither.
+# The router pinged fine and never connected, with no indication why.
+
+GOOD_STORED = "Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0"   # what generate_api_password produces
+
+
+def _provisioned(**kw):
+    """A device that has already been through provisioning once."""
+    d = _device(**kw)
+    d.ssh_username = "netguard"
+    d.ssh_password = GOOD_STORED
+    return d
+
+
+async def test_second_call_reuses_the_stored_password_so_the_file_still_matches():
+    device = _provisioned()
+    resp, _ = await _call(device)
+    assert resp.api_password == GOOD_STORED, (
+        "a second generation minted a new password, which silently invalidates "
+        "any script already downloaded"
+    )
+    assert device.ssh_password == GOOD_STORED
+    assert f'password="{GOOD_STORED}"' in resp.script
+
+
+async def test_two_calls_in_a_row_produce_the_same_credential():
+    device = _provisioned()
+    first, _ = await _call(device)
+    second, _ = await _call(device)
+    assert first.api_password == second.api_password
+    assert first.script == second.script
+
+
+async def test_reuse_leaves_the_admin_password_alone():
+    """We cannot reproduce it -- it is never stored -- so we must not change it."""
+    device = _provisioned()
+    resp, _ = await _call(device)
+    assert resp.admin_password is None
+    assert "/user set [find where name=admin] password=" not in resp.script
+    assert any("admin" in w.lower() for w in resp.warnings), (
+        "reusing must say that the admin password was left unchanged"
+    )
+
+
+async def test_rotate_mints_new_credentials_and_resets_admin():
+    device = _provisioned()
+    resp, _ = await _call(device, rotate=True)
+    assert resp.api_password != GOOD_STORED
+    assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
+    assert resp.admin_password and re.fullmatch(r"[A-Za-z0-9]{24}", resp.admin_password)
+    assert device.ssh_password == resp.api_password
+    assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
+
+
+async def test_first_ever_call_still_mints_both():
+    """No stored netguard credential yet, so there is nothing to reuse."""
+    device = _device()           # ssh_username="admin"
+    resp, _ = await _call(device)
+    assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
+    assert resp.admin_password and re.fullmatch(r"[A-Za-z0-9]{24}", resp.admin_password)
+    assert device.ssh_username == "netguard"
+
+
+async def test_a_stored_password_that_could_not_have_come_from_us_is_replaced():
+    """Defensive: never emit a stored value that validation would reject."""
+    for junk in ("short", "has spaces in it", 'quote"inside', ""):
+        device = _provisioned()
+        device.ssh_password = junk
+        resp, _ = await _call(device)
+        assert resp.api_password != junk
+        assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
+
+
+async def test_rotate_default_is_a_real_boolean_not_a_query_object():
+    """`x: bool = Query(False)` leaves the default a truthy Query object.
+
+    Over HTTP FastAPI resolves it, so the bug only shows when the function is
+    called directly -- which is how every test here calls it, and how the reuse
+    branch came to be silently skipped.
+    """
+    import inspect
+    default = inspect.signature(devices.generate_provision_script).parameters["rotate"].default
+    assert default is False, f"default is {default!r}, which is truthy"

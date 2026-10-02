@@ -1,7 +1,8 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-from typing import List
+from typing import Annotated, List
 from uuid import UUID
 import logging
 from app.core.database import get_db
@@ -269,18 +270,32 @@ async def provision_wireguard(device_id: str, db: AsyncSession = Depends(get_db)
 # Everything else build_params rejects came from the device row or server config.
 _CLIENT_INPUT_FIELDS = ("site_slug", "timezone")
 
+# The account the provisioning script creates, and the shape of a password this
+# service mints. A stored value that does not match was not minted here (a
+# hand-typed one, or a legacy row), so it is replaced rather than reused.
+_API_USERNAME = "netguard"
+_MINTED_PASSWORD_RE = re.compile(r"[A-Za-z0-9]{16,}")
+
 
 @router.post("/devices/{device_id}/provision-script", response_model=ProvisionScriptResponse)
 async def generate_provision_script(
     device_id: str,
     site_slug: str = Query(..., description="Lowercase slug naming the site on the router"),
     timezone: str = Query("Africa/Banjul"),
+    # Annotated form on purpose: `rotate: bool = Query(False)` makes the DEFAULT a
+    # Query object, which is truthy. Over HTTP FastAPI resolves it, but any direct
+    # call (every test here) would silently take the rotate branch.
+    rotate: Annotated[bool, Query(description="Mint new credentials instead of reusing the stored ones")] = False,
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor),
 ):
     """Generate the one-shot RouterOS provisioning script for a device.
 
-    THIS ROTATES CREDENTIALS ON EVERY CALL. Each call generates a fresh
+    By default this REUSES the credentials NetGuard already holds, so generating
+    a script twice yields the same file and an earlier download stays valid.
+    Pass rotate=true to mint fresh ones, which invalidates any earlier script.
+
+    THIS ROTATES CREDENTIALS WHEN ASKED TO. A rotating call generates a fresh
     `netguard` API password and a fresh `admin` password, stores the API
     password on the device, and returns a script that sets both on the router.
     Calling it again invalidates any script handed out earlier: the old script
@@ -356,8 +371,29 @@ async def generate_provision_script(
                 detail="WireGuard server configuration error. Please ensure WG_SERVER_PUBLIC_KEY is set in .env or key file exists",
             )
 
-    api_password = generate_api_password()
-    admin_password = generate_api_password()
+    # Reuse the credential NetGuard already holds, unless rotation was asked for.
+    #
+    # Minting a new one on every call means generating a script twice silently
+    # invalidates the first file: the router ends up with one password and
+    # NetGuard with another, the device pings fine, the API never authenticates,
+    # and nothing says why. That happened on a real install -- four generations,
+    # and the file applied came from an earlier one than the database held.
+    #
+    # The stored value is only reused if it looks like something we minted; a
+    # hand-typed or legacy value would be rejected by build_params and is
+    # replaced instead. device.ssh_password is plaintext here: the handler calls
+    # decrypt_device_secrets above.
+    reused = False
+    stored = device.ssh_password if device.ssh_username == _API_USERNAME else None
+    if not rotate and stored and _MINTED_PASSWORD_RE.fullmatch(stored):
+        api_password = stored
+        # Never changed on a re-run: it is not stored, so we cannot reproduce the
+        # one the installer already recorded, and overwriting it would lock them out.
+        admin_password = None
+        reused = True
+    else:
+        api_password = generate_api_password()
+        admin_password = generate_api_password()
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,
@@ -405,8 +441,17 @@ async def generate_provision_script(
         api_username=params.api_username,
         api_password=api_password,
         admin_password=admin_password,
-        warnings=[
-            "Credentials were rotated: any script generated earlier for this router no longer matches what NetGuard stores.",
+        warnings=(
+            [
+                "Reusing the credentials NetGuard already holds, so any script you "
+                "downloaded earlier for this router is still valid.",
+                "The router's admin password was left unchanged and is not shown: it is "
+                "never stored, so it cannot be reproduced. Generate with rotation if you "
+                "need a new one.",
+            ] if reused else [
+                "Credentials were rotated: any script generated earlier for this router no longer matches what NetGuard stores.",
+            ]
+        ) + [
             "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",
         ],
     )

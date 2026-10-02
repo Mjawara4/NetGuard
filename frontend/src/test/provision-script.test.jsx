@@ -33,7 +33,8 @@ async function openModal() {
     fireEvent.click((await screen.findAllByText('Counter Router'))[0]);
     fireEvent.click(await screen.findByRole('button', { name: /get setup script/i }));
 }
-const generate = () => fireEvent.click(screen.getByRole('button', { name: /generate script/i }));
+const generate = () => fireEvent.click(screen.getByRole('button', { name: /^get script$/i }));
+const generateRotating = () => fireEvent.click(screen.getByRole('button', { name: /generate new credentials/i }));
 const scriptCalls = () => api.post.mock.calls.filter(([url]) => url.endsWith('/provision-script'));
 
 beforeEach(() => {
@@ -60,7 +61,7 @@ describe('router setup script', () => {
         const [url, body, cfg] = scriptCalls()[0];
         expect(url).toBe('/inventory/devices/dev-1/provision-script');
         expect(body).toBeNull();
-        expect(cfg.params).toEqual({ site_slug: 'counter-router', timezone: 'Africa/Banjul' });
+        expect(cfg.params).toEqual({ site_slug: 'counter-router', timezone: 'Africa/Banjul', rotate: false });
         expect(screen.getByTestId('script-body').textContent).toBe(RESULT.script);
         expect(screen.getByTestId('api-password').textContent).toBe('API-SECRET-111');
         expect(screen.getByTestId('admin-password').textContent).toBe('ADMIN-SECRET-222');
@@ -119,7 +120,7 @@ describe('router setup script', () => {
         generate();
         expect(await screen.findByText(/site_slug must be 2-32 chars/)).toBeTruthy();
         fireEvent.change(screen.getByLabelText(/site name on the router/i), { target: { value: '-bad-' } });
-        expect(screen.getByRole('button', { name: /generate script/i }).disabled).toBe(true);
+        expect(screen.getByRole('button', { name: /^get script$/i }).disabled).toBe(true);
     });
 
     it('discards the secrets when the modal closes', async () => {
@@ -149,5 +150,42 @@ describe('downloaded file keeps its .rsc extension', () => {
         }
         const blob = URL.createObjectURL.mock.calls[0][0];
         expect(blob.type).toBe('application/octet-stream');
+    });
+});
+
+describe('reuse versus rotate', () => {
+    it('the default click does NOT rotate, so an earlier download stays valid', async () => {
+        await openModal();
+        generate();
+        await screen.findByTestId('script-body');
+        const [, , cfg] = scriptCalls()[0];
+        expect(cfg.params.rotate).toBe(false);
+    });
+
+    it('rotating is a separate, explicit click', async () => {
+        await openModal();
+        generateRotating();
+        await screen.findByTestId('script-body');
+        const [, , cfg] = scriptCalls()[0];
+        expect(cfg.params.rotate).toBe(true);
+    });
+
+    it('passes a real boolean, never the click event', async () => {
+        // onClick hands the event in as the first argument, so a bare
+        // onClick={handleGenerateScript} would make rotate truthy every time.
+        await openModal();
+        generate();
+        await screen.findByTestId('script-body');
+        const [, , cfg] = scriptCalls()[0];
+        expect(typeof cfg.params.rotate).toBe('boolean');
+    });
+
+    it('says the admin password is unchanged rather than showing an empty box', async () => {
+        api.post.mockResolvedValue({ data: { ...RESULT, admin_password: null } });
+        await openModal();
+        generate();
+        await screen.findByTestId('script-body');
+        expect(screen.queryByTestId('admin-password')).toBeNull();
+        expect(screen.getByTestId('admin-password-unchanged').textContent).toMatch(/unchanged/i);
     });
 });

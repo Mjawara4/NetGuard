@@ -369,6 +369,29 @@ def api_user(p: ProvisionParams) -> list[str]:
               f'name={p.api_username} group={p.api_username} '
               f'address={p.wg_subnet_cidr} password="" comment="NetGuard API"'),
         f'/user set [find where name={p.api_username}] password="{p.api_password}"',
+    ] + _admin_password_lines(p)
+
+
+def _admin_password_lines(p: ProvisionParams) -> list[str]:
+    """Reset the router's admin password, but only when we were given a new one.
+
+    A stock router's admin has a blank password and is reachable from the LAN, so
+    a first provisioning gives it a random one, shown once in the NetGuard UI and
+    never printed here: break-glass access, not an open door.
+
+    On a RE-RUN we deliberately leave it alone. The admin password is never
+    stored, so a reused script cannot reproduce the earlier one -- and setting a
+    fresh value would silently invalidate the password the installer already
+    wrote down, leaving them locked out of the router they just configured with
+    nothing to show what changed.
+    """
+    if not p.admin_password:
+        return [
+            "# admin password: left UNCHANGED. This script reuses the credentials NetGuard",
+            "# already holds, so it does not know the admin password you were shown before",
+            "# and will not overwrite it. Generate with rotation if you need a new one.",
+        ]
+    return [
         "# A stock router's admin has a blank password and is reachable from the LAN. Give it its own",
         "# random one (shown once in the NetGuard UI, never printed here): break-glass access, not an open door.",
         f'/user set [find where name=admin] password="{p.admin_password}"',

@@ -195,7 +195,11 @@ export default function Devices() {
         setScriptNotice('');
     };
 
-    const handleGenerateScript = async () => {
+    // rotate=false by default: generating twice returns the SAME credentials, so a
+    // script already downloaded stays valid. Rotating is an explicit, separate click,
+    // because it invalidates any earlier file and that failure is invisible on the
+    // router -- it pings fine and the API simply never authenticates.
+    const handleGenerateScript = async (rotate = false) => {
         if (!selectedDevice || scriptBusy || !slugValid) return;
         setScriptBusy(true);
         setScriptError(null);
@@ -204,7 +208,7 @@ export default function Devices() {
             const res = await api.post(
                 `/inventory/devices/${selectedDevice.id}/provision-script`,
                 null,
-                { params: { site_slug: scriptSlug, timezone: scriptTimezone } }
+                { params: { site_slug: scriptSlug, timezone: scriptTimezone, rotate } }
             );
             setScriptResult(res.data);
         } catch (e) {
@@ -649,11 +653,22 @@ export default function Devices() {
                                 </div>
                             )}
 
-                            <div className="flex justify-end">
-                                <Button onClick={handleGenerateScript} disabled={scriptBusy || !slugValid}>
-                                    {scriptBusy ? 'Generating...' : 'Generate script and new passwords'}
+                            {/* Arrow functions on purpose: onClick passes the click EVENT as the
+                                first argument, so `onClick={handleGenerateScript}` would hand a
+                                truthy event in as `rotate` and silently rotate every time -- the
+                                exact bug this flow exists to remove. */}
+                            <div className="flex flex-col sm:flex-row justify-end gap-3">
+                                <Button variant="secondary" onClick={() => handleGenerateScript(true)} disabled={scriptBusy || !slugValid}>
+                                    {scriptBusy ? 'Working...' : 'Generate NEW credentials'}
+                                </Button>
+                                <Button onClick={() => handleGenerateScript(false)} disabled={scriptBusy || !slugValid}>
+                                    {scriptBusy ? 'Generating...' : 'Get script'}
                                 </Button>
                             </div>
+                            <p className="text-xs text-ink-500 dark:text-ink-400 text-right">
+                                <span className="font-bold">Get script</span> reuses the passwords NetGuard already holds, so a file you downloaded earlier still works.
+                                <span className="font-bold"> Generate NEW credentials</span> replaces them, which stops any earlier script from matching this router.
+                            </p>
                         </>
                     )}
 
@@ -671,7 +686,17 @@ export default function Devices() {
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Router admin password</div>
                                     <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">For the user admin: WinBox, WebFig and the console.</div>
-                                    <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
+                                    {/* Null when this script reuses stored credentials: the admin password is
+                                        never stored, so it cannot be reproduced, and the script deliberately
+                                        leaves that account alone rather than setting a value nobody has seen.
+                                        Rendering it raw would print an empty box that reads as a bug. */}
+                                    {scriptResult.admin_password ? (
+                                        <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
+                                    ) : (
+                                        <div data-testid="admin-password-unchanged" className="text-sm text-ink-700 dark:text-ink-200">
+                                            Unchanged. This script keeps the admin password you were given before, so it is not shown again. Use <span className="font-bold">Generate new credentials</span> if you need a fresh one.
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">NetGuard API password</div>

@@ -110,6 +110,9 @@ class ProvisionScriptResponse(BaseModel):
     api_username: str
     api_password: str
     # The router's own `admin` account. Shown once so the installer can record it.
-    admin_password: str
+    # None when the script reused stored credentials: the admin password is never
+    # stored, so a reused script leaves that account alone rather than setting a
+    # value the installer would never see.
+    admin_password: Optional[str] = None
     warnings: List[str] = []
 

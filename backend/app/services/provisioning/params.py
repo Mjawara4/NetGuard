@@ -49,14 +49,17 @@ class ProvisionParams:
     wg_subnet_cidr: str
     api_username: str
     api_password: str
-    admin_password: str
+    # None means "leave the router's admin password alone". It is never stored,
+    # so a reused script cannot reproduce an earlier one -- and changing it on a
+    # re-run would invalidate the admin password the installer already wrote down.
+    admin_password: str | None
     hotspot_dns_name: str
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  wg_server_public_key: str, wg_server_endpoint: str,
                  wg_server_port: int, api_password: str,
-                 admin_password: str,
+                 admin_password: str | None = None,
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -73,7 +76,6 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
     for name, value in (("wg_private_key", wg_private_key),
                         ("wg_server_public_key", wg_server_public_key),
                         ("api_password", api_password),
-                        ("admin_password", admin_password),
                         ("wg_server_endpoint", wg_server_endpoint)):
         if not value:
             raise ValueError(f"{name} is required")
@@ -152,13 +154,18 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
 
     # Validate the two passwords (alphanumeric only; see secrets.py for why).
     # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
-    for name, pw in (("api_password", api_password),
-                     ("admin_password", admin_password)):
+    # admin_password is optional: None means the script leaves that account alone.
+    # An empty string is NOT the same thing and stays an error -- it would put
+    # `password=""` on the router's full-access account.
+    checked = [("api_password", api_password)]
+    if admin_password is not None:
+        checked.append(("admin_password", admin_password))
+    for name, pw in checked:
         if not re.compile(r"[A-Za-z0-9]+").fullmatch(pw):
             raise ValueError(f"{name} must contain only alphanumeric characters")
     # Distinct, so each secret appears exactly once in the script and one
     # leaked credential is not the other.
-    if api_password == admin_password:
+    if admin_password is not None and api_password == admin_password:
         raise ValueError("admin_password must differ from api_password")
 
     # Validate WireGuard server port (reject bool; bool is subclass of int in Python)
