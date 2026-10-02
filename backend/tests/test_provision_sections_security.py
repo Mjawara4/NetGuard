@@ -127,11 +127,17 @@ def test_www_is_restricted_not_open_but_the_hotspot_login_does_not_depend_on_it(
 
 
 def test_discovery_and_cloud_are_switched_off():
-    ls = sections.firewall(P)
-    assert "/ip neighbor discovery-settings set discover-interface-list=none" in ls
-    assert "/tool mac-server set allowed-interface-list=none" in ls
-    assert "/tool mac-server mac-winbox set allowed-interface-list=none" in ls
-    assert "/ip cloud set ddns-enabled=no" in ls
+    """The commands still run; they are now each inside an on-error guard.
+
+    Asserted as substrings rather than whole lines because a build that rejects
+    one of these properties must not take the rest of the script down with it --
+    see test_optional_hardening_cannot_abort_the_script.
+    """
+    body = text(sections.firewall(P))
+    assert "/ip neighbor discovery-settings set discover-interface-list=none" in body
+    assert "/tool mac-server set allowed-interface-list=none" in body
+    assert "/tool mac-server mac-winbox set allowed-interface-list=none" in body
+
 
 
 def test_api_user_is_least_privilege_and_source_restricted():
@@ -154,3 +160,42 @@ def test_api_user_is_least_privilege_and_source_restricted():
     assert '/user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"' in ls
     assert "/user add name=admin" not in t
     assert "group=full" not in t
+
+
+# RouterOS 7.24.5 on a real hEX cannot PARSE `/ip cloud set ddns-enabled=no`
+# (syntax error at the value, line 163 column 28). The script is one brace block,
+# so that one optional line meant nothing at all applied.
+#
+# `:do {} on-error={}` does not save it: a CHR probe printed `expected end of
+# command` and never reached the first :put inside the block. on-error catches
+# runtime errors; an unknown property is rejected at parse time.
+def test_no_ip_cloud_command_at_all():
+    """Executable lines only -- the section explains the hazard in a comment."""
+    for line in sections.firewall(P):
+        if line.lstrip().startswith("#"):
+            continue
+        assert "/ip cloud" not in line, (
+            f"a command a RouterOS build cannot parse aborts the ENTIRE brace "
+            f"block; it cannot be guarded, only left out: {line[:90]}"
+        )
+
+
+def test_the_discovery_lines_that_do_parse_are_still_there():
+    """Only the /ip cloud line was unparseable; the parser reached line 163."""
+    body = text(sections.firewall(P))
+    for cmd in ("/ip neighbor discovery-settings set discover-interface-list=none",
+                "/tool mac-server set allowed-interface-list=none",
+                "/tool mac-server mac-winbox set allowed-interface-list=none"):
+        assert cmd in body, cmd
+
+
+def test_hardening_is_not_wrapped_in_a_silent_guard():
+    """on-error here would suppress real failures without stopping syntax errors."""
+    for line in sections.firewall(P):
+        if line.lstrip().startswith("#"):
+            continue
+        if "mac-server" in line or "neighbor discovery" in line:
+            assert "on-error=" not in line, (
+                f"on-error cannot catch the parse error this guards against, and it "
+                f"hides runtime ones: {line[:90]}"
+            )
