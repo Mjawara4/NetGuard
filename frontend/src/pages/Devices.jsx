@@ -239,7 +239,10 @@ export default function Devices() {
     };
 
     const handleDownloadScript = () => {
-        const blob = new Blob([scriptResult.script], { type: 'text/plain' });
+        // Not text/plain: Chrome treats the blob's type as authoritative and appends
+        // .txt, so the file lands as netguard-<slug>.rsc.txt and RouterOS /import
+        // will not take it. Seen on a real install. octet-stream leaves the name alone.
+        const blob = new Blob([scriptResult.script], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;

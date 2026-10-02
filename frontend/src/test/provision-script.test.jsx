@@ -131,3 +131,23 @@ describe('router setup script', () => {
         expect(screen.queryByText('ADMIN-SECRET-222')).toBeNull();
     });
 });
+
+describe('downloaded file keeps its .rsc extension', () => {
+    it('uses a MIME type the browser will not rename', async () => {
+        // A text/plain blob makes Chrome append .txt, producing
+        // netguard-<slug>.rsc.txt -- which RouterOS /import will not accept.
+        // Observed on a real install.
+        await openModal();
+        generate();
+        await screen.findByTestId('script-body');
+        const realClick = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () {};
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /download \.rsc/i }));
+        } finally {
+            HTMLAnchorElement.prototype.click = realClick;
+        }
+        const blob = URL.createObjectURL.mock.calls[0][0];
+        expect(blob.type).toBe('application/octet-stream');
+    });
+});
