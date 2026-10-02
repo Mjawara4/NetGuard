@@ -168,6 +168,7 @@ export default function Devices() {
     const [scriptResult, setScriptResult] = useState(null);
     const [scriptError, setScriptError] = useState(null); // { kind, message }
     const [scriptNotice, setScriptNotice] = useState('');
+    const [showRotateConfirm, setShowRotateConfirm] = useState(false);
 
     const slugify = (name) => (name || '')
         .toLowerCase()
@@ -193,6 +194,7 @@ export default function Devices() {
         setScriptResult(null);
         setScriptError(null);
         setScriptNotice('');
+        setShowRotateConfirm(false);
     };
 
     // rotate=false by default: generating twice returns the SAME credentials, so a
@@ -680,19 +682,50 @@ export default function Devices() {
                                 first argument, so `onClick={handleGenerateScript}` would hand a
                                 truthy event in as `rotate` and silently rotate every time -- the
                                 exact bug this flow exists to remove. */}
-                            <div className="flex flex-col sm:flex-row justify-end gap-3">
-                                <Button variant="secondary" onClick={() => handleGenerateScript(true)} disabled={scriptBusy || !slugValid}>
-                                    {scriptBusy ? 'Working...' : 'Generate NEW credentials'}
-                                </Button>
+                            {/* The ordinary path is ONE primary button. Rotation is a text link
+                                behind a confirmation, because it was clicked three times in a row
+                                by someone who thought it was how you get a script -- each click
+                                invalidating the file from the one before. The confirmation used to
+                                be on the safe action and the destructive one had none. */}
+                            <div className="flex justify-end">
                                 <Button onClick={() => handleGenerateScript(false)} disabled={scriptBusy || !slugValid}>
                                     {scriptBusy ? 'Generating...' : 'Get script'}
                                 </Button>
                             </div>
                             <p className="text-xs text-ink-500 dark:text-ink-400 text-right">
-                                <span className="font-bold">Get script</span> reuses the password NetGuard already holds, so a file you downloaded earlier still works.
-                                <span className="font-bold"> Generate NEW credentials</span> replaces it, which stops any earlier script from matching this router.
-                                Neither touches the router&rsquo;s <span className="font-mono">admin</span> password: that is set once, on the first install, and never replaced.
+                                This reuses the password NetGuard already holds, so a file you downloaded earlier still works,
+                                and the router&rsquo;s <span className="font-mono">admin</span> password is never touched &mdash; that is set once, on the first install.
                             </p>
+
+                            {!showRotateConfirm ? (
+                                <p className="text-xs text-ink-500 dark:text-ink-400 text-right">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowRotateConfirm(true)}
+                                        disabled={scriptBusy}
+                                        className="underline hover:text-warn disabled:opacity-50"
+                                    >
+                                        Replace the password instead
+                                    </button>
+                                </p>
+                            ) : (
+                                <div data-testid="rotate-confirm" role="alert" className="p-4 rounded-md bg-warn/10 dark:bg-warn/20 text-sm text-ink-900 dark:text-ink-50">
+                                    <p className="font-bold mb-1">Replace this router&rsquo;s API password?</p>
+                                    <p className="mb-3">
+                                        Any script you downloaded earlier will stop working on this router, and you will have to
+                                        import the new one before NetGuard can reach it again. You only need this if you think the
+                                        current password has leaked.
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row justify-end gap-3">
+                                        <Button variant="secondary" onClick={() => setShowRotateConfirm(false)} disabled={scriptBusy}>
+                                            Cancel
+                                        </Button>
+                                        <Button onClick={() => { setShowRotateConfirm(false); handleGenerateScript(true); }} disabled={scriptBusy || !slugValid}>
+                                            {scriptBusy ? 'Working...' : 'Yes, replace it'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
 

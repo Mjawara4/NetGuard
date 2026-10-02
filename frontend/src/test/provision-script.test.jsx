@@ -34,7 +34,12 @@ async function openModal() {
     fireEvent.click(await screen.findByRole('button', { name: /get setup script/i }));
 }
 const generate = () => fireEvent.click(screen.getByRole('button', { name: /^get script$/i }));
-const generateRotating = () => fireEvent.click(screen.getByRole('button', { name: /generate new credentials/i }));
+// Rotation is deliberately two clicks: a link, then a confirmation.
+const generateRotating = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /replace the password/i }));
+    await screen.findByTestId('rotate-confirm');
+    fireEvent.click(screen.getByRole('button', { name: /yes, replace it/i }));
+};
 const scriptCalls = () => api.post.mock.calls.filter(([url]) => url.endsWith('/provision-script'));
 
 beforeEach(() => {
@@ -164,7 +169,7 @@ describe('reuse versus rotate', () => {
 
     it('rotating is a separate, explicit click', async () => {
         await openModal();
-        generateRotating();
+        await generateRotating();
         await screen.findByTestId('script-body');
         const [, , cfg] = scriptCalls()[0];
         expect(cfg.params.rotate).toBe(true);
@@ -187,5 +192,51 @@ describe('reuse versus rotate', () => {
         await screen.findByTestId('script-body');
         expect(screen.queryByTestId('admin-password')).toBeNull();
         expect(screen.getByTestId('admin-password-unchanged').textContent).toMatch(/unchanged/i);
+    });
+});
+
+describe('rotation is the exceptional action, not the easy one', () => {
+    // A real operator clicked "Generate NEW credentials" three times in a row
+    // believing it was the ordinary way to get a script. Each click invalidated
+    // the file from the click before. The two buttons sat side by side, the
+    // destructive one carried no confirmation, and the safe one did.
+    it('does not rotate on the first click of the rotate control', async () => {
+        await openModal();
+        fireEvent.click(screen.getByRole('button', { name: /replace the password/i }));
+        expect(scriptCalls()).toHaveLength(0);
+    });
+
+    it('asks what rotation will break before doing it', async () => {
+        await openModal();
+        fireEvent.click(screen.getByRole('button', { name: /replace the password/i }));
+        const warn = await screen.findByTestId('rotate-confirm');
+        expect(warn.textContent).toMatch(/earlier|previous|stop working|no longer/i);
+    });
+
+    it('rotates only on the second, explicit confirmation', async () => {
+        await openModal();
+        fireEvent.click(screen.getByRole('button', { name: /replace the password/i }));
+        await screen.findByTestId('rotate-confirm');
+        fireEvent.click(screen.getByRole('button', { name: /yes, replace it/i }));
+        await screen.findByTestId('script-body');
+        const [, , cfg] = scriptCalls()[0];
+        expect(cfg.params.rotate).toBe(true);
+    });
+
+    it('the safe path is still a single click', async () => {
+        await openModal();
+        generate();
+        await screen.findByTestId('script-body');
+        const [, , cfg] = scriptCalls()[0];
+        expect(cfg.params.rotate).toBe(false);
+    });
+
+    it('rotation can be backed out of', async () => {
+        await openModal();
+        fireEvent.click(screen.getByRole('button', { name: /replace the password/i }));
+        await screen.findByTestId('rotate-confirm');
+        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+        expect(screen.queryByTestId('rotate-confirm')).toBeNull();
+        expect(scriptCalls()).toHaveLength(0);
     });
 });
