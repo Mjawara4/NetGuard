@@ -498,7 +498,12 @@ def summary(p: ProvisionParams) -> list[str]:
         f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
         ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',
         f':put "API user:         {p.api_username}  (password: see the NetGuard dashboard)"',
-        ':put "admin password:   set to a random value (see the NetGuard dashboard)"',
+        # Must describe what this script DID, not what provisioning usually does. The
+        # reuse variant leaves admin alone, and claiming otherwise sends the installer
+        # looking for a password the dashboard never showed them.
+        (':put "admin password:   set to a random value (see the NetGuard dashboard)"'
+         if p.admin_password else
+         ':put "admin password:   unchanged by this script (it reuses stored credentials)"'),
         f':put "Tunnel address:   {p.wg_client_ip}  ({WG_INTERFACE} to {p.wg_server_endpoint}:{p.wg_server_port})"',
         f':do {{ :if ([:len [/interface wireguard peers get [find where interface="{WG_INTERFACE}"] last-handshake]] > 0) do={{ :put "Tunnel status:    UP (handshake seen)" }} else={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }} }} on-error={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }}',
         f':put "ssh and api are now reachable only through the tunnel ({p.wg_subnet_cidr}); winbox also from {p.operator_cidr}."',

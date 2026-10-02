@@ -134,3 +134,33 @@ def test_summary_falls_back_to_nlevel_like_preflight_does():
         "summary has no nlevel fallback; an hEX reports the ceiling as "
         "unavailable even though RouterOS knows it"
     )
+
+
+def test_summary_admin_line_matches_what_the_script_actually_did():
+    """A reuse script must not claim it set a password it deliberately left alone.
+
+    Caught on a CHR: the reuse variant printed "admin password: set to a random
+    value (see the NetGuard dashboard)" while omitting the line that sets it --
+    sending the installer to look for a password the dialog never showed.
+    """
+    from app.services.provisioning import sections
+    from app.services.provisioning.params import build_params
+
+    common = dict(site_slug="a-site", wg_client_ip="10.13.13.7",
+                  wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+                  wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+                  wg_server_endpoint="74.208.167.166", wg_server_port=51820,
+                  api_password="Abc123Abc123Abc123Abc123")
+
+    rotated = sections.summary(build_params(**common, admin_password="Zz9Zz9Zz9Zz9Zz9Zz9Zz9Zz9"))
+    reused = sections.summary(build_params(**common))
+
+    rot_line = [l for l in rotated if "admin password" in l.lower()][0]
+    reu_line = [l for l in reused if "admin password" in l.lower()][0]
+
+    assert "random" in rot_line, "a rotating script should say it set a new one"
+    assert "random" not in reu_line, (
+        f"reuse script claims it set a random admin password but does not set "
+        f"one: {reu_line[:110]}"
+    )
+    assert "unchanged" in reu_line.lower(), reu_line[:110]
