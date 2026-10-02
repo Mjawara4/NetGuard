@@ -340,6 +340,46 @@ def get_mikrotik_stats(device_ip, username, password, port=8728, device_id=None,
         })
         return metrics
 
+
+def index_credentials(rows):
+    """Router credentials keyed by device id.
+
+    The device list deliberately strips ssh_password, so these come from
+    /inventory/device-credentials, which is restricted to machine actors.
+    """
+    return {str(r["id"]): r for r in (rows or []) if r.get("id")}
+
+
+def credentials_for(device, credential_index):
+    """(username, password, api_port) for one device.
+
+    The stored credential wins. SSH_USER/SSH_PASSWORD remain only as a fallback
+    for devices NetGuard has never provisioned -- previously they were used for
+    every device, because ssh_password was never present in the device list and
+    `device.get('ssh_password') or SSH_PASSWORD` therefore always took the
+    default. A device absent from the index falls back rather than borrowing
+    another router's password.
+    """
+    cred = credential_index.get(str(device.get("id"))) or {}
+    user = cred.get("ssh_username") or device.get("ssh_username") or SSH_USER
+    pwd = cred.get("ssh_password") or SSH_PASSWORD
+    raw_port = cred.get("ssh_port") or device.get("ssh_port") or 8728
+    port = 8728 if int(raw_port) == 22 else int(raw_port)
+    return user, pwd, port
+
+
+def fetch_credentials():
+    """Best effort: monitoring still runs (ping, status) if this call fails."""
+    try:
+        r = requests.get(f"{API_URL}/inventory/device-credentials",
+                         headers=get_headers(), timeout=10)
+        r.raise_for_status()
+        return index_credentials(r.json())
+    except Exception as e:
+        logger.warning(f"Could not fetch router credentials: {e}")
+        return {}
+
+
 def wait_for_trigger(seconds):
     """Block for up to `seconds`, or return early if a message arrives on the
     'agent_trigger:monitor' pubsub channel.
@@ -549,7 +589,10 @@ def run_agent():
 
             if resp.status_code == 200:
                 devices = resp.json()
-                logger.info(f"Monitoring {len(devices)} devices...")
+                # Fetched per cycle so a rotated password is picked up on the
+                # next pass rather than needing an agent restart.
+                credential_index = fetch_credentials()
+                logger.info(f"Monitoring {len(devices)} devices ({len(credential_index)} with stored credentials)...")
 
                 for device in devices:
                     ip = device.get('ip_address')
@@ -579,10 +622,7 @@ def run_agent():
                         if deep_inspect_due(last_deep, now, DEEP_INSPECT_INTERVAL, force=force_deep_inspect):
                             device_last_polled[dev_id] = now
 
-                            user = device.get('ssh_username') or SSH_USER
-                            pwd = device.get('ssh_password') or SSH_PASSWORD
-                            db_port = int(device.get('ssh_port', 8728))
-                            port = 8728 if db_port == 22 else db_port
+                            user, pwd, port = credentials_for(device, credential_index)
 
                             logger.info(f"Deep inspect {ip} (user={user}, port={port})")
                             mt_metrics = get_mikrotik_stats(ip, user, pwd, port, device_id=dev_id,

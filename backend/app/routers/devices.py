@@ -8,7 +8,7 @@ import logging
 from app.core.database import get_db
 from app.auth.deps import get_current_user, get_authorized_actor
 from app.models import Device, Site, User, APIKey, Metric, Alert, UserRole
-from app.schemas.inventory import DeviceCreate, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse, ProvisionScriptResponse
+from app.schemas.inventory import DeviceCreate, DeviceCredentials, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse, ProvisionScriptResponse
 from app.services.wireguard import WireGuardService
 from app.core.config import settings
 
@@ -65,6 +65,52 @@ async def create_device(device: DeviceCreate, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(new_device)
     return new_device
+
+@router.get("/device-credentials", response_model=List[DeviceCredentials])
+async def get_device_credentials(
+    db: AsyncSession = Depends(get_db),
+    actor = Depends(get_authorized_actor),
+):
+    """Router API credentials, for the monitor agent only.
+
+    The agent cannot authenticate without these. It used to read the device
+    list and fall back to a global SSH_PASSWORD default when ssh_password was
+    absent -- which it always was, because DeviceResponse strips it. The result
+    was a login failure against every router the setup script had provisioned,
+    reported to the operator as blank CPU/memory/uptime with no explanation.
+
+    A separate path rather than a flag on /devices: this returns plaintext
+    router passwords, and that should be an endpoint someone has to choose, not
+    a parameter that could be set by accident on a response humans also read.
+    """
+    from app.models.core import decrypt_device_secrets
+
+    # Machine actors only. An operator has no use for this, and a stolen
+    # session should not hand over every router password in the organisation.
+    if not isinstance(actor, APIKey):
+        raise HTTPException(
+            status_code=403,
+            detail="Router credentials are available to machine actors only.",
+        )
+
+    query = select(Device)
+    if actor.organization_id:
+        query = select(Device).join(Site).where(Site.organization_id == actor.organization_id)
+
+    result = await db.execute(query)
+    out = []
+    for d in result.scalars().all():
+        decrypt_device_secrets(d)
+        # No credential means nothing to send. An empty string would reach the
+        # router as a real password attempt and muddy its log.
+        if not d.ssh_password or not d.ssh_username:
+            continue
+        out.append(DeviceCredentials(
+            id=d.id, ip_address=d.ip_address, ssh_username=d.ssh_username,
+            ssh_password=d.ssh_password, ssh_port=getattr(d, "ssh_port", 8728) or 8728,
+        ))
+    return out
+
 
 @router.get("/devices", response_model=List[DeviceResponse])
 async def get_devices(

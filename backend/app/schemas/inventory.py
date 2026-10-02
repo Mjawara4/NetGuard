@@ -116,3 +116,21 @@ class ProvisionScriptResponse(BaseModel):
     admin_password: Optional[str] = None
     warnings: List[str] = []
 
+
+
+class DeviceCredentials(BaseModel):
+    """What the monitor agent needs to reach a router's API, and nothing else.
+
+    Separate from DeviceResponse, which deliberately strips ssh_password. The
+    agent fell back to a global default because that field was never present,
+    so it authenticated as `netguard` with the wrong password on every
+    provisioned router. This is credential material: machine actors only.
+    """
+    id: UUID4
+    ip_address: str
+    ssh_username: str
+    ssh_password: str
+    ssh_port: int = 8728
+
+    class Config:
+        from_attributes = True
