@@ -411,14 +411,19 @@ async def test_reuse_leaves_the_admin_password_alone():
     )
 
 
-async def test_rotate_mints_new_credentials_and_resets_admin():
+async def test_rotate_mints_a_new_api_password_and_stores_it():
+    """Rotation replaces the API credential only.
+
+    It used to reset admin as well. That was removed deliberately: admin is the
+    operator's credential, never stored, and rotating it destroyed the only copy
+    -- see test_rotate_does_not_touch_admin_on_an_already_provisioned_router.
+    """
     device = _provisioned()
     resp, _ = await _call(device, rotate=True)
     assert resp.api_password != GOOD_STORED
     assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
-    assert resp.admin_password and re.fullmatch(r"[A-Za-z0-9]{24}", resp.admin_password)
     assert device.ssh_password == resp.api_password
-    assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
+    assert f'/user set [find where name=netguard] password="{resp.api_password}"' in resp.script
 
 
 async def test_first_ever_call_still_mints_both():
@@ -450,3 +455,43 @@ async def test_rotate_default_is_a_real_boolean_not_a_query_object():
     import inspect
     default = inspect.signature(devices.generate_provision_script).parameters["rotate"].default
     assert default is False, f"default is {default!r}, which is truthy"
+
+
+# --- the admin password is set ONCE, on the first provision only ----------
+#
+# Asked for after a real lockout. admin is the router's only full-access
+# account and NetGuard never stores its password -- it is shown once and that
+# is the only copy. Rotating it on a later run therefore replaces the one
+# credential the operator holds with one they may not record, and the recovery
+# path is a factory reset, which means a site visit.
+#
+# A factory router ships with a BLANK admin password reachable from the LAN, so
+# it must still be set the first time. After that it belongs to the operator.
+
+
+async def test_rotate_does_not_touch_admin_on_an_already_provisioned_router():
+    device = _provisioned()
+    resp, _ = await _call(device, rotate=True)
+    assert resp.api_password != GOOD_STORED, "rotate must still mint a new API password"
+    assert resp.admin_password is None, (
+        "rotating replaced the admin password; that is the credential the "
+        "operator holds and NetGuard cannot reproduce"
+    )
+    assert "/user set [find where name=admin] password=" not in resp.script
+
+
+async def test_first_provision_still_sets_admin_because_factory_is_blank():
+    device = _device()           # never provisioned: ssh_username="admin"
+    resp, _ = await _call(device)
+    assert resp.admin_password, "a factory router would be left with a blank admin password"
+    assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
+
+
+async def test_admin_is_untouched_on_every_later_call_however_generated():
+    device = _device()
+    first, _ = await _call(device)                 # first provision: sets admin
+    assert first.admin_password
+    for kw in ({}, {"rotate": True}, {}, {"rotate": True}):
+        later, _ = await _call(device, **kw)
+        assert later.admin_password is None, f"admin rotated again with {kw}"
+        assert "name=admin] password=" not in later.script

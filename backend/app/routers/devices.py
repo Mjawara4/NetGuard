@@ -383,17 +383,22 @@ async def generate_provision_script(
     # hand-typed or legacy value would be rejected by build_params and is
     # replaced instead. device.ssh_password is plaintext here: the handler calls
     # decrypt_device_secrets above.
-    reused = False
     stored = device.ssh_password if device.ssh_username == _API_USERNAME else None
-    if not rotate and stored and _MINTED_PASSWORD_RE.fullmatch(stored):
-        api_password = stored
-        # Never changed on a re-run: it is not stored, so we cannot reproduce the
-        # one the installer already recorded, and overwriting it would lock them out.
-        admin_password = None
-        reused = True
-    else:
-        api_password = generate_api_password()
-        admin_password = generate_api_password()
+    provisioned_before = bool(stored and _MINTED_PASSWORD_RE.fullmatch(stored))
+
+    reused = provisioned_before and not rotate
+    api_password = stored if reused else generate_api_password()
+
+    # The admin password is set ONCE, on the first provision, and never again --
+    # not even when rotating. It is the router's only full-access account and
+    # NetGuard never stores it: it is shown once and that is the only copy in
+    # existence. Replacing it on a later run therefore destroys the credential
+    # the operator holds, and the recovery path is a factory reset, which on a
+    # customer site means a visit. That happened.
+    #
+    # It still has to be set the first time: a factory router ships with a BLANK
+    # admin password reachable from the LAN.
+    admin_password = None if provisioned_before else generate_api_password()
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,
@@ -445,11 +450,13 @@ async def generate_provision_script(
             [
                 "Reusing the credentials NetGuard already holds, so any script you "
                 "downloaded earlier for this router is still valid.",
-                "The router's admin password was left unchanged and is not shown: it is "
-                "never stored, so it cannot be reproduced. Generate with rotation if you "
-                "need a new one.",
+                "The router's admin password is unchanged. It is set once, on the first "
+                "install, and never replaced -- including by rotation -- because NetGuard "
+                "does not store it and the copy you were given is the only one.",
             ] if reused else [
-                "Credentials were rotated: any script generated earlier for this router no longer matches what NetGuard stores.",
+                "The API credential was rotated: any script generated earlier for this "
+                "router no longer matches what NetGuard stores. The router's admin "
+                "password is untouched.",
             ]
         ) + [
             "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",

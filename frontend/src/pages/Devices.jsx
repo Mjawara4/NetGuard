@@ -689,8 +689,9 @@ export default function Devices() {
                                 </Button>
                             </div>
                             <p className="text-xs text-ink-500 dark:text-ink-400 text-right">
-                                <span className="font-bold">Get script</span> reuses the passwords NetGuard already holds, so a file you downloaded earlier still works.
-                                <span className="font-bold"> Generate NEW credentials</span> replaces them, which stops any earlier script from matching this router.
+                                <span className="font-bold">Get script</span> reuses the password NetGuard already holds, so a file you downloaded earlier still works.
+                                <span className="font-bold"> Generate NEW credentials</span> replaces it, which stops any earlier script from matching this router.
+                                Neither touches the router&rsquo;s <span className="font-mono">admin</span> password: that is set once, on the first install, and never replaced.
                             </p>
                         </>
                     )}
@@ -717,7 +718,7 @@ export default function Devices() {
                                         <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
                                     ) : (
                                         <div data-testid="admin-password-unchanged" className="text-sm text-ink-700 dark:text-ink-200">
-                                            Unchanged. This script keeps the admin password you were given before, so it is not shown again. Use <span className="font-bold">Generate new credentials</span> if you need a fresh one.
+                                            Unchanged, and not shown again. The admin password is set once on the first install and never replaced — NetGuard does not store it, so the copy you were given is the only one. Keep it somewhere safe.
                                         </div>
                                     )}
                                 </div>

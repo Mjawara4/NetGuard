@@ -235,3 +235,46 @@ def test_rejects_wg_server_port_as_bool():
     """wg_server_port must reject bool (bool is subclass of int in Python)"""
     with pytest.raises(ValueError, match="wg_server_port"):
         build_params(**{**OK, "wg_server_port": True})
+
+
+# --- passwords people have to read off a screen ---------------------------
+#
+# A real lockout: the admin password was `beNpMv11VRVNsWla0IerlAQY`. Read from a
+# screenshot it was transcribed as `...WIaOlerIAQY` and `...Wla0Ier1AQY`, neither
+# of which is right -- lowercase l, capital I, digit 1, capital O and digit 0 are
+# indistinguishable in most UI fonts. Six attempts failed before the correct
+# string was found by brute force over the ambiguous positions.
+
+AMBIGUOUS = "Il1O0"
+
+
+def test_generated_passwords_exclude_visually_identical_characters():
+    from app.services.provisioning.secrets import generate_api_password
+    for _ in range(200):
+        pw = generate_api_password()
+        assert not (set(pw) & set(AMBIGUOUS)), (
+            f"password contains a character people cannot read off a screen: {pw}"
+        )
+
+
+def test_the_alphabet_itself_excludes_them():
+    from app.services.provisioning.secrets import API_PASSWORD_ALPHABET
+    for ch in AMBIGUOUS:
+        assert ch not in API_PASSWORD_ALPHABET, ch
+
+
+def test_still_alphanumeric_so_params_validation_accepts_it():
+    """Narrowing must not break the [A-Za-z0-9] contract params.py enforces."""
+    import re
+    from app.services.provisioning.secrets import generate_api_password
+    for _ in range(50):
+        assert re.fullmatch(r"[A-Za-z0-9]+", generate_api_password())
+
+
+def test_still_long_enough_to_be_strong():
+    """Dropping 5 characters costs ~0.1 bits each; length carries the strength."""
+    import math
+    from app.services.provisioning.secrets import API_PASSWORD_ALPHABET, generate_api_password
+    bits = 24 * math.log2(len(API_PASSWORD_ALPHABET))
+    assert bits > 130, f"only {bits:.0f} bits of entropy"
+    assert len(generate_api_password()) == 24
