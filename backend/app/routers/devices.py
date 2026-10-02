@@ -384,6 +384,17 @@ async def generate_provision_script(
     # the response is built from the local plaintext, not from the device.
     device.ssh_username = params.api_username
     device.ssh_password = api_password
+
+    # Point monitoring at the tunnel. The script pins SSH and the API to
+    # 10.13.13.0/24, so once it is applied the tunnel address is the only way
+    # in -- but a device added by hand carries whatever was typed into the form,
+    # which for a factory router is its LAN default (a real one carried
+    # 192.168.88.1). Leaving that in place makes monitoring dial an address the
+    # server cannot route to, and the failure looks like an offline router
+    # rather than a wrong address. The 409 above guarantees wg_ip_address is set.
+    if device.wg_ip_address:
+        device.ip_address = device.wg_ip_address
+
     db.add(device)
     await db.commit()
 

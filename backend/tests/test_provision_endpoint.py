@@ -322,3 +322,33 @@ async def test_route_get_is_not_allowed(clean_overrides):
     async with _route(_user(UserRole.ORG_ADMIN, ORG_Y), device) as c:
         r = await c.get(f"/api/v1/inventory/devices/{device.id}/provision-script?site_slug=a-site")
     assert r.status_code == 405
+
+
+async def test_stored_address_becomes_the_tunnel_address():
+    """Monitoring must dial the tunnel, not whatever address was typed in.
+
+    The script pins SSH and the API to 10.13.13.0/24, so after it runs the
+    tunnel address is the ONLY way in. A device added by hand carries its LAN
+    default (a real one carried 192.168.88.1), which is unreachable from the
+    server -- so monitoring dials the wrong host and fails with no clue why.
+    """
+    device = _device()
+    assert device.ip_address == "192.0.2.1", "fixture precondition"
+
+    resp, _ = await _call(device)
+
+    assert device.ip_address == device.wg_ip_address, (
+        f"ip_address stayed {device.ip_address!r} but the router is only "
+        f"reachable at {device.wg_ip_address!r} once the script is applied"
+    )
+
+
+async def test_address_is_not_touched_when_there_is_no_tunnel_address():
+    """Defensive: never blank out a working address."""
+    device = _device()
+    device.wg_ip_address = None
+    try:
+        await _call(device)
+    except Exception:
+        pass
+    assert device.ip_address == "192.0.2.1"

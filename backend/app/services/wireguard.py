@@ -209,11 +209,21 @@ add disabled=no distance=1 dst-address={WG_SUBNET}1/32 gateway=wireguard-netguar
 set api disabled=no port=8728 address={WG_SUBNET}0/24
 
 # 2. Allow Input Traffic from NetGuard VPN (Firewall)
-/ip firewall filter
-add chain=input src-address={WG_SUBNET}0/24 action=accept place-before=0 comment="Allow NetGuard Monitoring"
+# Scoped to the tunnel interface. A bare src-address accept trusts anything that can put
+# that source address into the input chain -- observed on a real hEX sitting at input
+# position 0, above the stock accept-established and both drop-invalid rules.
+# Placed above the first BLOCKING rule rather than at a fixed index: `place-before=0`
+# fails with `no such item` on a router whose filter table is empty, and position 0
+# outranks the stock rules it should sit below. Guarded on its own comment so pressing
+# the button twice does not stack duplicates.
+# All on one line on purpose: this script is pasted into the terminal, where :local does
+# not persist from one line to the next.
+:if ([:len [/ip firewall filter find where comment="Allow NetGuard Monitoring"]] = 0) do={{ :local ngblock [/ip firewall filter find where chain=input and (action=drop or action=reject or action=tarpit) and !dynamic]; :if ([:len $ngblock] > 0) do={{ /ip firewall filter add chain=input in-interface=wireguard-netguard src-address={WG_SUBNET}0/24 action=accept comment="Allow NetGuard Monitoring" place-before=[:pick $ngblock 0] }} else={{ /ip firewall filter add chain=input in-interface=wireguard-netguard src-address={WG_SUBNET}0/24 action=accept comment="Allow NetGuard Monitoring" }} }}
 
-# 3. Create NetGuard User (Optional but Recommended)
-# Replace 'securepassword' with a strong password!
-# /user add name=netguard group=full password="securepassword" comment="NetGuard Agent"
+# 3. API user -- deliberately NOT created here, and no placeholder password.
+# A password written into a script people paste tends to stay as it was written. The
+# one-shot setup script ("Get setup script" in the dashboard) creates the netguard user
+# with a generated password and stores it against the device, so monitoring
+# authenticates without anyone having to choose a secret. Run that next.
 """.strip()
         return script
