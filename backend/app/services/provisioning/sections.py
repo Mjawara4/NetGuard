@@ -186,6 +186,20 @@ def hotspot_server(p: ProvisionParams) -> list[str]:
               f"name=netguard interface={p.bridge_name} "
               f"address-pool=hotspot-pool profile=netguard "
               f"idle-timeout=5m keepalive-timeout=2m login-timeout=5m disabled=no"),
+        # The operator range bypasses the portal.
+        #
+        # On a real install the installer's own laptop on ether2 is a hotspot client
+        # like any phone, so it was handed the login page -- while WinBox is opened
+        # only to this range, which sits deliberately BELOW the DHCP pool
+        # (pool starts at .1.2). Without this binding an operator has to fight the
+        # captive portal to administer the router they just set up.
+        #
+        # Keyed off p.operator_cidr, the same value the WinBox and www allowances
+        # use, so the bypass and the management allowance cannot drift apart: a
+        # mismatch between them is an operator locked out with no clue why.
+        # The CIDR form is accepted and stored verbatim (verified on a CHR).
+        _once("/ip hotspot ip-binding", f'address="{p.operator_cidr}"',
+              f"address={p.operator_cidr} type=bypassed comment=\"NetGuard admin\""),
     ]
 
 

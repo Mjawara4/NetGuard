@@ -97,7 +97,48 @@ def test_walled_garden_objects_are_attributable():
 def test_hotspot_objects_do_not_carry_comment():
     # RouterOS 7.16 (CHR) rejects `comment=` on /ip hotspot, /ip hotspot profile
     # and /ip hotspot user profile with "expected end of command". Router is the authority.
+    #
+    # /ip hotspot ip-binding is a DIFFERENT menu and does accept comment -- verified
+    # on a CHR, which stored it without complaint. It is exempt rather than excluded,
+    # so the binding stays attributable like every other object we create.
     for fn in (sections.hotspot_server, sections.voucher_profiles):
         for l in fn(P):
-            if not l.startswith("#"):
-                assert "comment=" not in l, l
+            if l.startswith("#") or l.startswith("/ip hotspot ip-binding"):
+                continue
+            assert "comment=" not in l, l
+
+
+def test_admin_range_bypasses_the_captive_portal():
+    """An operator on the admin range must not be captured by the portal.
+
+    Found on a real install: the installer's laptop on ether2 is a hotspot
+    client like any phone, so it got the login page -- while WinBox is allowed
+    only from the admin range, which is outside the DHCP pool. Without a bypass
+    binding the operator has to fight the portal to administer the router.
+    """
+    ls = sections.hotspot_server(P)
+    binding = [l for l in ls if "ip-binding" in l and "add " in l]
+    assert binding, "no hotspot ip-binding; the admin range is captured by the portal"
+    line = binding[0]
+    assert "type=bypassed" in line, line[:120]
+    assert P.operator_cidr in line, (
+        f"binding must cover the operator range {P.operator_cidr}, the same range "
+        f"WinBox is opened to, or the two can drift apart: {line[:120]}"
+    )
+
+
+def test_bypass_binding_cannot_drift_from_the_winbox_allowance():
+    """Both must name the same range; a mismatch silently locks the operator out."""
+    from app.services.provisioning import sections as S
+    binding = [l for l in S.hotspot_server(P) if "ip-binding" in l and "add " in l][0]
+    winbox = [l for l in S.firewall(P) if l.startswith("/ip service set winbox")][0]
+    assert P.operator_cidr in binding and P.operator_cidr in winbox
+
+
+def test_bypass_binding_is_idempotent():
+    """Asserted on the RAW output -- the shared helper strips the guard it checks."""
+    from app.services.provisioning import sections as raw
+    line = [l for l in raw.hotspot_server(P) if "ip-binding" in l][0]
+    assert line.startswith(":if ([:len [/ip hotspot ip-binding find"), (
+        f"re-running would stack duplicate bindings: {line[:100]}"
+    )

@@ -65,6 +65,7 @@
 # /ip hotspot and /ip hotspot profile have no comment property on RouterOS 7.16 (CHR rejected it), so both are untagged.
 :if ([:len [/ip hotspot profile find where name="netguard"]] = 0) do={ /ip hotspot profile add name=netguard hotspot-address=10.15.0.1 dns-name=login.netguard.local login-by=http-chap,mac-cookie http-cookie-lifetime=3d }
 :if ([:len [/ip hotspot find where name="netguard"]] = 0) do={ /ip hotspot add name=netguard interface=bridge-hotspot address-pool=hotspot-pool profile=netguard idle-timeout=5m keepalive-timeout=2m login-timeout=5m disabled=no }
+:if ([:len [/ip hotspot ip-binding find where address="10.15.0.0/24"]] = 0) do={ /ip hotspot ip-binding add address=10.15.0.0/24 type=bypassed comment="NetGuard admin" }
 
 # --- voucher tiers ---
 # /ip hotspot user profile has no comment property on RouterOS 7.16 (CHR rejected it), so tiers are untagged.
