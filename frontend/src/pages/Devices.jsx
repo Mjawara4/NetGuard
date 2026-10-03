@@ -5,10 +5,12 @@ import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText } from 'lucid
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 import { Button } from '../components/ui';
+import OnboardWizard from '../components/OnboardWizard';
 
 export default function Devices() {
     const [devices, setDevices] = useState([]);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showWizard, setShowWizard] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState(null);
     const [deviceMetrics, setDeviceMetrics] = useState({});
 
@@ -280,10 +282,16 @@ export default function Devices() {
                     </div>
                     <div className="flex gap-3">
                         <button
-                            onClick={() => setShowAddModal(true)}
+                            onClick={() => setShowWizard(true)}
                             className="flex-1 md:flex-none bg-signal-600 text-ink-50 px-6 sm:px-8 py-3 rounded-lg font-bold text-xs sm:text-sm hover:bg-signal-700 shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
-                            <Plus size={20} /> Add Device
+                            <Plus size={20} /> Set up a router
+                        </button>
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="flex-1 md:flex-none text-ink-500 dark:text-ink-400 px-4 py-3 rounded-lg font-bold text-xs sm:text-sm hover:bg-ink-50 dark:hover:bg-ink-800 transition-all"
+                        >
+                            Add manually
                         </button>
                     </div>
                 </div>
@@ -473,6 +481,8 @@ export default function Devices() {
             </div>
 
             {/* ADD DEVICE MODAL */}
+            {showWizard && <OnboardWizard onClose={() => setShowWizard(false)} onComplete={fetchDevices} />}
+
             <ResponsiveModal
                 isOpen={showAddModal}
                 onClose={() => setShowAddModal(false)}
