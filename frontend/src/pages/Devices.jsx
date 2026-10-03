@@ -773,13 +773,14 @@ export default function Devices() {
                             <div className="text-sm text-ink-700 dark:text-ink-200 space-y-2">
                                 <p className="font-bold text-ink-900 dark:text-ink-50">How to install</p>
                                 <p>
-                                    For a remote or production router, download the file, upload it to the router (WinBox Files, or WebFig Files),
-                                    and run <span className="font-mono">/import file-name=netguard-{scriptResult.site_slug}.rsc</span>. An import
-                                    is not limited by terminal paste size, and it stops cleanly at a bad line.
+                                    <span className="font-bold">Quickest:</span> click <span className="font-bold">Copy script</span>, open the router&rsquo;s
+                                    WinBox or WebFig terminal, and paste the whole thing in one go. The entire script is one block, so a single paste
+                                    applies all of it &mdash; or none of it if anything is wrong, so you never get a half-configured router.
                                 </p>
                                 <p>
-                                    Pasting into a terminal is the quick path for a router beside you. The script is large, and a terminal may cut off
-                                    a long paste or mishandle a line partway through.
+                                    <span className="font-bold">For a remote or unattended install</span>, download the file, upload it (WinBox Files or WebFig Files),
+                                    and run <span className="font-mono">/import file-name=netguard-{scriptResult.site_slug}.rsc</span>. Same result;
+                                    an import isn&rsquo;t limited by paste size and reports a bad line more cleanly, so it&rsquo;s the safer choice when you can&rsquo;t watch it run.
                                 </p>
                                 <p>
                                     Your connection will drop partway through. The script moves ports ether2 to ether8 onto a new bridge, which ends

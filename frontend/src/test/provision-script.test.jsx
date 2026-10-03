@@ -76,7 +76,8 @@ describe('router setup script', () => {
         RESULT.warnings.forEach((w) => expect(screen.getByText(w)).toBeTruthy());
         expect(screen.getByText(/connection will drop/i)).toBeTruthy();
         expect(screen.getByText(/10\.15\.x/)).toBeTruthy();
-        expect(screen.getByText(/remote or production router, download/i)).toBeTruthy();
+        expect(screen.getByText(/remote or unattended install/i)).toBeTruthy();
+        expect(screen.getByText(/paste the whole thing in one go/i)).toBeTruthy();
     });
 
     it('never copies or downloads on its own; only on explicit clicks', async () => {
