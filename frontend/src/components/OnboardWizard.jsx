@@ -197,7 +197,7 @@ export default function OnboardWizard({ onClose, onComplete }) {
                     {step === 2 && (
                         <div className="space-y-4">
                             <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50">Turn on the VPN</h2>
-                            <p className="text-sm text-ink-500 dark:text-ink-400">This reserves the router&rsquo;s place on the network so it can reach NetGuard. Nothing happens on the router yet &mdash; that&rsquo;s the next step.</p>
+                            <p className="text-sm text-ink-500 dark:text-ink-400">One click &mdash; there&rsquo;s no script here. This just reserves the router&rsquo;s place on the network. The setup file you actually run on the router comes on the <span className="font-bold">next</span> step, and it already includes this VPN.</p>
                             <div className="flex items-center gap-2 text-sm text-ink-700 dark:text-ink-200"><Wifi size={16} className="text-signal-600 dark:text-signal-300" /> {wgReady ? 'Tunnel ready.' : 'Not set up yet.'}</div>
                             <div className="flex justify-between">
                                 <Button variant="ghost" onClick={() => go(1)}>Back</Button>
