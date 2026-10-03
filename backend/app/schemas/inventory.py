@@ -109,11 +109,10 @@ class ProvisionScriptResponse(BaseModel):
     script: str
     api_username: str
     api_password: str
-    # The router's own `admin` account. Shown once so the installer can record it.
-    # None when the script reused stored credentials: the admin password is never
-    # stored, so a reused script leaves that account alone rather than setting a
-    # value the installer would never see.
-    admin_password: Optional[str] = None
+    # The netguard-recovery break-glass password. Always present; the script
+    # applies it only to a new or factory-reset router, so on a re-run it is shown
+    # but unused. The router's own `admin` password is never set by the script.
+    recovery_password: Optional[str] = None
     warnings: List[str] = []
 
 

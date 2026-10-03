@@ -7,7 +7,7 @@ P = build_params(
     wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -100,7 +100,7 @@ def test_wireguard_port_has_an_explicit_accept_before_the_wan_drop():
 def test_wireguard_accept_follows_the_wan_interface_param():
     p = build_params(site_slug="x-site", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
                      wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
-                     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g")
+                     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g")
     import dataclasses
     p = dataclasses.replace(p, wan_interface="sfp1")
     r = [l for l in sections.firewall(p) if l.endswith('NetGuard fw: accept wireguard"')][0]

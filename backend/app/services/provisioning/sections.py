@@ -73,6 +73,14 @@ def preflight(p: ProvisionParams) -> list[str]:
         ':do { :if ([/system device-mode get mode] = "home") do={ :put "NetGuard preflight: NOTE device-mode is home, so hotspot is blocked. Enabling it needs a physical button press or a cold reboot." } } on-error={}',
         ':put ("NetGuard preflight: free memory " . [/system resource get free-memory])',
         ':put ("NetGuard preflight: free disk " . [/system resource get free-hdd-space])',
+        "# Capture whether this router has EVER been provisioned by us, BEFORE we create",
+        "# the netguard user below. The honest test for 'fresh router' is the netguard",
+        "# user's absence -- but once the api-user section creates it, that test flips to",
+        "# false, so any later check would wrongly treat a fresh router as provisioned.",
+        "# This caused a real bug: the admin password line, guarded on netguard absence,",
+        "# ran AFTER netguard was created and so never fired -- leaving a blank password.",
+        "# $ngfresh is read here, once, and stays valid for the whole braced block.",
+        ':local ngfresh ([:len [/user find where name="netguard"]] = 0)',
     ]
 
 
@@ -385,38 +393,41 @@ def api_user(p: ProvisionParams) -> list[str]:
               f'name={p.api_username} group={p.api_username} '
               f'address={p.wg_subnet_cidr} password="" comment="NetGuard API"'),
         f'/user set [find where name={p.api_username}] password="{p.api_password}"',
-    ] + _admin_password_lines(p)
+    ] + _recovery_account_lines(p)
 
 
-def _admin_password_lines(p: ProvisionParams) -> list[str]:
-    """Reset the router's admin password, but only when we were given a new one.
+def _recovery_account_lines(p: ProvisionParams) -> list[str]:
+    """The netguard-recovery break-glass account.
 
-    A stock router's admin has a blank password and is reachable from the LAN, so
-    a first provisioning gives it a random one, shown once in the NetGuard UI and
-    never printed here: break-glass access, not an open door.
+    The router's `admin` password is deliberately NOT touched by this script: it
+    belongs to the operator, who sets it themselves. But that leaves exactly one
+    full-access account, and the operator's whole access to the router rides on a
+    password this script never records. When it is lost, the only way back is a
+    factory reset -- which on a customer site is a visit. That happened.
 
-    On a RE-RUN we deliberately leave it alone. The admin password is never
-    stored, so a reused script cannot reproduce the earlier one -- and setting a
-    fresh value would silently invalidate the password the installer already
-    wrote down, leaving them locked out of the router they just configured with
-    nothing to show what changed.
+    netguard-recovery is a second full-access account, independent of `admin`:
+    random, shown once in the dashboard, and set ONCE on a fresh router and never
+    changed afterwards. Losing one password still leaves the other.
+
+    Gated on $ngfresh, captured in preflight BEFORE the netguard user above
+    existed, so it fires on a genuinely fresh or factory-reset router and is
+    skipped on a re-run (where the value cannot be reproduced anyway). Access is
+    the same as admin -- governed by /ip service (winbox from the operator range
+    and the tunnel, ssh from the tunnel) -- so it is a usable break-glass, not an
+    account reachable by hotspot clients.
     """
-    if not p.admin_password:
+    if not p.recovery_password:
         return [
-            "# admin password: left UNCHANGED. No new one was generated for this run.",
+            "# netguard-recovery: left UNCHANGED. No new password was generated for this run.",
         ]
     return [
-        "# A stock router's admin has a BLANK password and is reachable from the LAN, so a fresh",
-        "# router must get one. An already-provisioned router must NOT: admin is the operator's",
-        "# credential, NetGuard never stores it, and the copy they were given is the only one in",
-        "# existence -- replacing it destroys their access, with a factory reset as the only way back.",
-        "#",
-        "# The test is made HERE, on the router, not from NetGuard's records. A factory reset makes",
-        "# the router forget while the device row still holds credentials, so trusting those records",
-        "# would skip this line on exactly the router that most needs it and leave a blank",
-        "# full-access password on the LAN. The netguard user's absence is the honest signal: this",
-        "# script is the only thing that creates it, and the section above has already run.",
-        f':if ([:len [/user find where name="{p.api_username}"]] = 0) do={{ /user set [find where name=admin] password="{p.admin_password}" }}',
+        "# --- break-glass account ---",
+        "# A second full-access login, set once on a fresh router and never changed, so losing",
+        "# the admin password you set is not a factory reset. Shown once in NetGuard, never stored.",
+        # Existence guard OUTER (so it satisfies "every add is guarded on its own menu"
+        # and never duplicates), $ngfresh guard INNER (so it is created only on a truly
+        # fresh router and a re-run leaves the operator's saved password alone).
+        f':if ([:len [/user find where name="netguard-recovery"]] = 0) do={{ :if ($ngfresh) do={{ /user add name=netguard-recovery group=full password="{p.recovery_password}" comment="NetGuard break-glass -- set once, never rotated" }} }}',
     ]
 
 
@@ -520,12 +531,12 @@ def summary(p: ProvisionParams) -> list[str]:
         f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
         ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',
         f':put "API user:         {p.api_username}  (password: see the NetGuard dashboard)"',
-        # Must describe what this script DID, not what provisioning usually does. The
-        # reuse variant leaves admin alone, and claiming otherwise sends the installer
-        # looking for a password the dashboard never showed them.
-        (':put "admin password:   set to a random value (see the NetGuard dashboard)"'
-         if p.admin_password else
-         ':put "admin password:   unchanged by this script (it reuses stored credentials)"'),
+        # The admin password is the operator's own and is NEVER touched here. On a
+        # fresh router it is still the factory BLANK, reachable over winbox from the
+        # operator range -- so warn, loudly and only when fresh, to set it now. There
+        # is no way to read a password back in RouterOS, so this keys off $ngfresh.
+        ':if ($ngfresh) do={ :put "admin password:   STILL BLANK -- set it now:  /user set [find where name=admin] password=YOURPASSWORD" } else={ :put "admin password:   unchanged (managed by you, never by this script)" }',
+        ':if ($ngfresh) do={ :put ("recovery login:   netguard-recovery  (password: see the NetGuard dashboard, shown once)") } else={ :put "recovery login:   netguard-recovery  (unchanged; set once on first install)" }',
         f':put "Tunnel address:   {p.wg_client_ip}  ({WG_INTERFACE} to {p.wg_server_endpoint}:{p.wg_server_port})"',
         f':do {{ :if ([:len [/interface wireguard peers get [find where interface="{WG_INTERFACE}"] last-handshake]] > 0) do={{ :put "Tunnel status:    UP (handshake seen)" }} else={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }} }} on-error={{ :put "Tunnel status:    NOT UP YET - check the {p.wan_interface} cable and uplink; it can take a minute" }}',
         f':put "ssh and api are now reachable only through the tunnel ({p.wg_subnet_cidr}); winbox also from {p.operator_cidr}."',

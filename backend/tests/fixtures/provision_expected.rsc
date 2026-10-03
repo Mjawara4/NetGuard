@@ -20,6 +20,14 @@
 :do { :if ([/system device-mode get mode] = "home") do={ :put "NetGuard preflight: NOTE device-mode is home, so hotspot is blocked. Enabling it needs a physical button press or a cold reboot." } } on-error={}
 :put ("NetGuard preflight: free memory " . [/system resource get free-memory])
 :put ("NetGuard preflight: free disk " . [/system resource get free-hdd-space])
+# Capture whether this router has EVER been provisioned by us, BEFORE we create
+# the netguard user below. The honest test for 'fresh router' is the netguard
+# user's absence -- but once the api-user section creates it, that test flips to
+# false, so any later check would wrongly treat a fresh router as provisioned.
+# This caused a real bug: the admin password line, guarded on netguard absence,
+# ran AFTER netguard was created and so never fired -- leaving a blank password.
+# $ngfresh is read here, once, and stays valid for the whole braced block.
+:local ngfresh ([:len [/user find where name="netguard"]] = 0)
 
 # --- identity and clock ---
 /system identity set name=serrekunda-counter
@@ -93,17 +101,10 @@
 :if ([:len [/user group find where name="netguard"]] = 0) do={ /user group add name=netguard policy=api,read,write,test,winbox,!local,!telnet,!ssh,!ftp,!reboot,!policy,!password,!sniff,!sensitive,!romon comment="NetGuard API" }
 :if ([:len [/user find where name="netguard"]] = 0) do={ /user add name=netguard group=netguard address=10.13.13.0/24 password="" comment="NetGuard API" }
 /user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"
-# A stock router's admin has a BLANK password and is reachable from the LAN, so a fresh
-# router must get one. An already-provisioned router must NOT: admin is the operator's
-# credential, NetGuard never stores it, and the copy they were given is the only one in
-# existence -- replacing it destroys their access, with a factory reset as the only way back.
-#
-# The test is made HERE, on the router, not from NetGuard's records. A factory reset makes
-# the router forget while the device row still holds credentials, so trusting those records
-# would skip this line on exactly the router that most needs it and leave a blank
-# full-access password on the LAN. The netguard user's absence is the honest signal: this
-# script is the only thing that creates it, and the section above has already run.
-:if ([:len [/user find where name="netguard"]] = 0) do={ /user set [find where name=admin] password="Qw8ZeRtY3uIoP5aSdF1g" }
+# --- break-glass account ---
+# A second full-access login, set once on a fresh router and never changed, so losing
+# the admin password you set is not a factory reset. Shown once in NetGuard, never stored.
+:if ([:len [/user find where name="netguard-recovery"]] = 0) do={ :if ($ngfresh) do={ /user add name=netguard-recovery group=full password="Qw8ZeRtY3uIoP5aSdF1g" comment="NetGuard break-glass -- set once, never rotated" } }
 
 # --- wireguard ---
 :if ([:len [/interface wireguard find where name="wireguard-netguard"]] = 0) do={ /interface wireguard add name=wireguard-netguard listen-port=13231 mtu=1420 private-key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=" comment="NetGuard" }
@@ -210,7 +211,8 @@
 :put "DHCP range:       10.15.1.2 - 10.15.254.254"
 :put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"
 :put "API user:         netguard  (password: see the NetGuard dashboard)"
-:put "admin password:   set to a random value (see the NetGuard dashboard)"
+:if ($ngfresh) do={ :put "admin password:   STILL BLANK -- set it now:  /user set [find where name=admin] password=YOURPASSWORD" } else={ :put "admin password:   unchanged (managed by you, never by this script)" }
+:if ($ngfresh) do={ :put ("recovery login:   netguard-recovery  (password: see the NetGuard dashboard, shown once)") } else={ :put "recovery login:   netguard-recovery  (unchanged; set once on first install)" }
 :put "Tunnel address:   10.13.13.7  (wireguard-netguard to 74.208.167.166:51820)"
 :do { :if ([:len [/interface wireguard peers get [find where interface="wireguard-netguard"] last-handshake]] > 0) do={ :put "Tunnel status:    UP (handshake seen)" } else={ :put "Tunnel status:    NOT UP YET - check the ether1 cable and uplink; it can take a minute" } } on-error={ :put "Tunnel status:    NOT UP YET - check the ether1 cable and uplink; it can take a minute" }
 :put "ssh and api are now reachable only through the tunnel (10.13.13.0/24); winbox also from 10.15.0.0/24."

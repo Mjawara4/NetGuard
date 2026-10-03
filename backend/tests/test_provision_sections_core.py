@@ -7,7 +7,7 @@ P = build_params(
     wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -50,13 +50,32 @@ def test_preflight_reads_license_level_not_only_nlevel():
     assert "/system license get level" in t
 
 
-def test_preflight_uses_no_local_variables():
-    # CHR-verified: at the top level of an imported file, `:local x [cmd]` is
-    # empty on the next line, so a version check built on it aborted every
-    # router, including valid ones. Guards must be single-statement.
+def test_preflight_guards_are_single_statement():
+    # CHR-verified history: an ABORTING guard (version/greenfield check) must not
+    # depend on a :local, because a guard that reads empty would fire wrongly.
+    # The one allowed :local is `ngfresh`, which is only READ later (never the
+    # basis of an :error here) and is CHR-verified to persist across the braced
+    # block -- the whole script is one `{ }` block, where :local does persist, as
+    # the summary section has always relied on.
     for line in sections.preflight(P):
-        if not line.startswith("#"):
-            assert ":local" not in line, line
+        if line.startswith("#"):
+            continue
+        if ":local" in line:
+            assert line.strip().startswith(":local ngfresh "), (
+                f"only the verified ngfresh capture may use :local here: {line}"
+            )
+            assert ":error" not in line, "ngfresh must not gate an abort"
+        if ":error" in line:
+            assert ":local" not in line and "$" not in line, (
+                f"an aborting guard must not depend on a variable: {line}"
+            )
+
+
+def test_ngfresh_capture_precedes_everything_that_reads_it():
+    # It must be in preflight (the first section) so it is captured before the
+    # api-user section creates the netguard user it keys off.
+    pf = sections.preflight(P)
+    assert any(':local ngfresh' in l for l in pf)
 
 
 def test_clock_comes_before_anything_time_dependent():
@@ -136,31 +155,20 @@ def test_summary_falls_back_to_nlevel_like_preflight_does():
     )
 
 
-def test_summary_admin_line_matches_what_the_script_actually_did():
-    """A reuse script must not claim it set a password it deliberately left alone.
+def test_summary_tells_the_truth_about_admin_and_recovery():
+    """The summary must describe what the script DID, not what it usually does.
 
-    Caught on a CHR: the reuse variant printed "admin password: set to a random
-    value (see the NetGuard dashboard)" while omitting the line that sets it --
-    sending the installer to look for a password the dialog never showed.
+    A CHR earlier caught a summary that claimed to set a password it never set.
+    Now the script never touches admin at all, so the summary must say so -- and
+    must WARN, on a fresh router only, that admin is still the factory blank.
     """
     from app.services.provisioning import sections
-    from app.services.provisioning.params import build_params
 
-    common = dict(site_slug="a-site", wg_client_ip="10.13.13.7",
-                  wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
-                  wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
-                  wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-                  api_password="Abc123Abc123Abc123Abc123")
-
-    rotated = sections.summary(build_params(**common, admin_password="Zz9Zz9Zz9Zz9Zz9Zz9Zz9Zz9"))
-    reused = sections.summary(build_params(**common))
-
-    rot_line = [l for l in rotated if "admin password" in l.lower()][0]
-    reu_line = [l for l in reused if "admin password" in l.lower()][0]
-
-    assert "random" in rot_line, "a rotating script should say it set a new one"
-    assert "random" not in reu_line, (
-        f"reuse script claims it set a random admin password but does not set "
-        f"one: {reu_line[:110]}"
-    )
-    assert "unchanged" in reu_line.lower(), reu_line[:110]
+    body = "\n".join(sections.summary(P)).lower()
+    # The admin line keys off $ngfresh at runtime: a loud warning when fresh, a
+    # "managed by you" note otherwise. Both branches present, neither claims the
+    # script set a password.
+    assert "still blank" in body, "a fresh router must be warned its admin is blank"
+    assert "/user set [find where name=admin] password=" in body, "warning must carry the command"
+    assert "managed by you" in body
+    assert "recovery login:" in body

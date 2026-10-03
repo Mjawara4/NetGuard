@@ -18,7 +18,7 @@ PUB = "c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE="
 OK = dict(
     site_slug="serrekunda-counter", wg_private_key=KEY, wg_client_ip="10.13.13.7",
     wg_server_public_key=PUB, wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-    api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+    api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 P = build_params(**OK)
 BUILDERS = ("identity_and_clock", "bridge", "addressing", "dns_and_nat", "hotspot_server",
@@ -114,21 +114,24 @@ def test_forward_rule_follows_the_wan_interface_param():
 
 def test_admin_gets_its_own_password_and_it_is_the_only_place_it_appears():
     text = "\n".join(raw_lines())
-    assert text.count(P.admin_password) == 1
-    assert f'/user set [find where name=admin] password="{P.admin_password}"' in text
-    assert P.admin_password != P.api_password
-    assert P.admin_password not in "\n".join(sections.summary(P))
+    # The recovery password appears once, on the netguard-recovery account, gated
+    # on $ngfresh. The router's own admin password is never set by the script.
+    assert text.count(P.recovery_password) == 1
+    assert f'/user add name=netguard-recovery group=full password="{P.recovery_password}"' in text
+    assert P.recovery_password != P.api_password
+    assert P.recovery_password not in "\n".join(sections.summary(P))
+    assert "/user set [find where name=admin] password=" not in text
 
 
-def test_admin_password_must_differ_from_the_api_password():
-    with pytest.raises(ValueError, match="admin_password"):
-        build_params(**{**OK, "admin_password": OK["api_password"]})
+def test_recovery_password_must_differ_from_the_api_password():
+    with pytest.raises(ValueError, match="recovery_password"):
+        build_params(**{**OK, "recovery_password": OK["api_password"]})
 
 
 @pytest.mark.parametrize("bad", ["", 'a"b', "with space", "semi;colon", "trailing\n"])
-def test_admin_password_is_validated_like_the_api_password(bad):
-    with pytest.raises(ValueError, match="admin_password"):
-        build_params(**{**OK, "admin_password": bad})
+def test_recovery_password_is_validated_like_the_api_password(bad):
+    with pytest.raises(ValueError, match="recovery_password"):
+        build_params(**{**OK, "recovery_password": bad})
 
 
 def test_wireguard_keys_must_decode_to_exactly_32_bytes():

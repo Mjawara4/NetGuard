@@ -7,7 +7,7 @@ from app.services.provisioning.secrets import generate_api_password, API_PASSWOR
 P = build_params(
     site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
-    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -48,7 +48,7 @@ def test_generated_passwords_are_accepted_by_params_validation():
             site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
             wg_client_ip="10.13.13.7", wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
             wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-            api_password=pw, admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+            api_password=pw, recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
         ).api_password == pw
 
 
@@ -156,10 +156,13 @@ def test_api_user_is_least_privilege_and_source_restricted():
     assert "name=netguard" in u.split()
     assert "group=netguard" in u.split()
     assert "address=10.13.13.0/24" in u.split()
-    assert 'password=""' in u  # explicit blank; the real one is set separately and unconditionally, see test_both_passwords_are_set_on_every_run
+    assert 'password=""' in u  # explicit blank; the real netguard password is set on the next line
     assert '/user set [find where name=netguard] password="Xk7mQp2rTz9wLb4nHc6v"' in ls
-    assert "/user add name=admin" not in t
-    assert "group=full" not in t
+    assert "/user add name=admin" not in t  # admin is the operator's, never created/set here
+    # group=full IS present now -- on netguard-recovery, the break-glass account --
+    # but it must never be on the NETGUARD api account, which is least-privilege.
+    netguard_add = line_with(ls, "/user add name=netguard ")
+    assert "group=full" not in netguard_add
 
 
 # RouterOS 7.24.5 on a real hEX cannot PARSE `/ip cloud set ddns-enabled=no`
@@ -201,44 +204,49 @@ def test_hardening_is_not_wrapped_in_a_silent_guard():
             )
 
 
-# --- a reset router must never be left with a blank admin password --------
+# --- the break-glass account, and never a blank admin on the LAN ----------
 #
-# "First install" cannot be decided from NetGuard's records. A factory reset
-# makes the ROUTER forget while the device row still holds credentials, so a
-# reuse script would skip the admin line and leave a freshly reset router with
-# a blank full-access password reachable from the LAN.
+# The script does NOT set the router's own `admin` password: the operator owns
+# it. That leaves a fresh router with the factory BLANK admin reachable over
+# winbox from the operator range, so the recovery account exists as a second,
+# independent full-access login, and the summary warns to set admin.
 #
-# The only place that knows whether a router has been provisioned is the router.
-# The script therefore decides on the router, keyed on the netguard user's
-# existence: absent means fresh, present means leave admin alone.
+# "Fresh router" cannot be decided from NetGuard's records: a factory reset makes
+# the ROUTER forget while the device row still holds credentials. It is decided
+# ON the router, via $ngfresh captured in preflight BEFORE the netguard user is
+# created -- so it stays true for a genuinely fresh router through the whole run.
 
-
-def _admin_lines(p):
-    """RAW output -- the shared helper strips exactly the guard under test."""
-    from app.services.provisioning import sections as raw
-    return [l for l in raw.api_user(p)
-            if "name=admin" in l and not l.lstrip().startswith("#")]
-
-
-def test_admin_password_is_set_only_when_the_router_looks_fresh():
+def _P_fresh():
     from app.services.provisioning.params import build_params
-    p = build_params(
+    return build_params(
         site_slug="a-site", wg_client_ip="10.13.13.7",
         wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
         wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
         wg_server_endpoint="74.208.167.166", wg_server_port=51820,
         api_password="Abc23Abc23Abc23Abc23Abc2",
-        admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8")
+        recovery_password="Xyz89Xyz89Xyz89Xyz89Xyz8")
 
-    lines = _admin_lines(p)
-    assert lines, "no admin password line at all; a factory router keeps a blank one"
-    line = lines[0]
-    assert line.startswith(":if (["), (
-        f"admin password set unconditionally; on a re-run that destroys the "
-        f"operator's credential: {line[:100]}"
+
+def test_the_script_never_sets_the_routers_admin_password():
+    from app.services.provisioning import sections as raw
+    body = "\n".join(raw.api_user(_P_fresh()))
+    assert "/user set [find where name=admin] password=" not in body, (
+        "the script set admin; the operator owns that password"
     )
-    assert 'user find where name="netguard"' in line, (
-        f"the freshness test must read the ROUTER, not trust NetGuard's records: {line[:100]}"
-    )
-    assert "] = 0) do=" in line, "condition must be 'netguard user absent'"
+
+
+def test_recovery_account_is_created_once_on_a_fresh_router():
+    from app.services.provisioning import sections as raw
+    line = [l for l in raw.api_user(_P_fresh())
+            if "netguard-recovery" in l and not l.lstrip().startswith("#")][0]
+    # Existence guard outer (no duplicates), $ngfresh inner (created only when fresh).
+    assert line.startswith(':if ([:len [/user find where name="netguard-recovery"]] = 0) do='), line[:90]
+    assert "$ngfresh" in line, "recovery must only apply to a fresh router"
+    assert "group=full" in line
     assert 'password="Xyz89Xyz89Xyz89Xyz89Xyz8"' in line
+
+
+def test_ngfresh_is_captured_before_the_netguard_user_is_created():
+    from app.services.provisioning import sections as raw
+    pf = "\n".join(raw.preflight(_P_fresh()))
+    assert ':local ngfresh ([:len [/user find where name="netguard"]] = 0)' in pf

@@ -445,9 +445,12 @@ async def generate_provision_script(
     # router that most needs it and left a blank full-access password on the LAN.
     # NetGuard's records cannot answer "is this router fresh"; only the router can.
     #
-    # The operator's existing password is still never replaced: on a router that
-    # has been set up before, the guard is false and this value is simply unused.
-    admin_password = generate_api_password()
+    # The netguard-recovery break-glass password. Always generated and always
+    # returned; the SCRIPT applies it only on a fresh router (gated on $ngfresh),
+    # so on a re-run this value is shown but harmlessly unused. The router's own
+    # `admin` password is never set or changed by the script -- it belongs to the
+    # operator.
+    recovery_password = generate_api_password()
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,
@@ -455,7 +458,7 @@ async def generate_provision_script(
             wg_server_public_key=server_pub_key,
             wg_server_endpoint=settings.WG_SERVER_ENDPOINT,
             wg_server_port=settings.WG_SERVER_PORT,
-            api_password=api_password, admin_password=admin_password,
+            api_password=api_password, recovery_password=recovery_password,
         )
     except ValueError as e:
         msg = str(e)
@@ -494,20 +497,21 @@ async def generate_provision_script(
         script=script,
         api_username=params.api_username,
         api_password=api_password,
-        admin_password=admin_password,
+        recovery_password=recovery_password,
         warnings=(
             [
                 "Reusing the credentials NetGuard already holds, so any script you "
                 "downloaded earlier for this router is still valid.",
-                "The router's admin password is unchanged. It is set once, on the first "
-                "install, and never replaced -- including by rotation -- because NetGuard "
-                "does not store it and the copy you were given is the only one.",
             ] if reused else [
                 "The API credential was rotated: any script generated earlier for this "
-                "router no longer matches what NetGuard stores. The router's admin "
-                "password is untouched.",
+                "router no longer matches what NetGuard stores.",
             ]
         ) + [
+            "The router's own admin password is never set or changed by this script -- "
+            "you manage it. On a NEW or factory-reset router it starts BLANK: set it "
+            "immediately (the summary the script prints shows the command).",
+            "netguard-recovery is a break-glass full-access login, applied only to a new "
+            "or factory-reset router and shown once. Save it; it is never stored.",
             "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",
         ],
     )

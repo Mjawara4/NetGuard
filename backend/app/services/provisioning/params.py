@@ -52,16 +52,17 @@ class ProvisionParams:
     hotspot_login_password: str
     api_password: str
     # None means "leave the router's admin password alone". It is never stored,
-    # so a reused script cannot reproduce an earlier one -- and changing it on a
-    # re-run would invalidate the admin password the installer already wrote down.
-    admin_password: str | None
+    # The password for the netguard-recovery break-glass account. None means the
+    # script leaves recovery alone (a re-run), because the value is never stored
+    # and a reused script cannot reproduce the one the installer wrote down.
+    recovery_password: str | None
     hotspot_dns_name: str
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  wg_server_public_key: str, wg_server_endpoint: str,
                  wg_server_port: int, api_password: str,
-                 admin_password: str | None = None,
+                 recovery_password: str | None = None,
                  hotspot_login_user: str = "admin",
                  hotspot_login_password: str = "root",
                  timezone: str = "Africa/Banjul",
@@ -158,19 +159,19 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
 
     # Validate the two passwords (alphanumeric only; see secrets.py for why).
     # Use fullmatch() to reject trailing newlines ($ alone would accept them before a newline)
-    # admin_password is optional: None means the script leaves that account alone.
-    # An empty string is NOT the same thing and stays an error -- it would put
-    # `password=""` on the router's full-access account.
+    # recovery_password is optional: None means the script leaves netguard-recovery
+    # alone (a re-run). An empty string is NOT the same thing and stays an error --
+    # it would put `password=""` on a full-access account.
     checked = [("api_password", api_password)]
-    if admin_password is not None:
-        checked.append(("admin_password", admin_password))
+    if recovery_password is not None:
+        checked.append(("recovery_password", recovery_password))
     for name, pw in checked:
         if not re.compile(r"[A-Za-z0-9]+").fullmatch(pw):
             raise ValueError(f"{name} must contain only alphanumeric characters")
     # Distinct, so each secret appears exactly once in the script and one
     # leaked credential is not the other.
-    if admin_password is not None and api_password == admin_password:
-        raise ValueError("admin_password must differ from api_password")
+    if recovery_password is not None and api_password == recovery_password:
+        raise ValueError("recovery_password must differ from api_password")
 
     # The hotspot login reaches the router inside a quoted RouterOS argument, so a
     # quote, space, semicolon or newline would either break the parse or create a
@@ -233,7 +234,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         wg_server_endpoint=wg_server_endpoint, wg_server_port=wg_server_port,
         wg_subnet_cidr=WG_SUBNET_CIDR,
         api_username="netguard", api_password=api_password,
-        admin_password=admin_password,
+        recovery_password=recovery_password,
         hotspot_login_user=hotspot_login_user,
         hotspot_login_password=hotspot_login_password,
         hotspot_dns_name="login.netguard.local",

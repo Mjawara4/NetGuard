@@ -741,17 +741,18 @@ export default function Devices() {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
-                                    <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Router admin password</div>
-                                    <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">For the user admin: WinBox, WebFig and the console.</div>
-                                    {/* Always returned now. Whether it is APPLIED is decided on the
-                                        router: the script sets it only when there is no netguard user,
-                                        i.e. only on a router that has never been provisioned. NetGuard
-                                        cannot tell a factory-reset router from a configured one, and
-                                        getting that wrong leaves a blank full-access password on the LAN. */}
-                                    <code data-testid="admin-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.admin_password}</code>
+                                    <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Recovery login (netguard-recovery)</div>
+                                    <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">A full-access break-glass account, for WinBox, WebFig and the console.</div>
+                                    {/* The recovery password is always returned; the script APPLIES it
+                                        only to a new or factory-reset router (gated on the router's own
+                                        state). The router's own `admin` password is never set by the
+                                        script -- the operator owns it. */}
+                                    <code data-testid="recovery-password" className="block font-mono text-sm text-ink-900 dark:text-ink-50 break-all select-all">{scriptResult.recovery_password}</code>
                                     <div className="text-xs text-ink-500 dark:text-ink-400 mt-2">
-                                        Applied <span className="font-bold">only if this router is new or factory-reset</span>. If it has been set up before, it keeps the admin password you already have and this one is unused.
-                                        NetGuard never stores it, so if this router <em>is</em> new, save it now and import this exact file.
+                                        Set <span className="font-bold">only if this router is new or factory-reset</span>, and shown once. Save it: NetGuard never stores it, and it is your way back in if the admin password is lost.
+                                    </div>
+                                    <div className="text-xs text-warn dark:text-warn mt-2 font-bold">
+                                        The router&rsquo;s own <span className="font-mono">admin</span> password is never set by NetGuard. A new router starts with a BLANK admin password &mdash; set one in WinBox right after importing.
                                     </div>
                                 </div>
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">

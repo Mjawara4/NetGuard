@@ -101,8 +101,8 @@ async def test_provisioned_device_returns_script_with_its_real_tunnel_ip():
     assert resp.site_slug == "a-site"
     assert resp.api_username == "netguard"
     assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
-    assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.admin_password)
-    assert resp.api_password != resp.admin_password
+    assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.recovery_password)
+    assert resp.api_password != resp.recovery_password
 
 
 async def test_tunnel_private_key_and_server_key_reach_the_script():
@@ -123,10 +123,13 @@ async def test_stored_credentials_are_exactly_what_the_script_and_response_carry
     assert device.ssh_username == "netguard"
     assert device.ssh_password == resp.api_password
     db.commit.assert_awaited_once()
-    # The router ends up with precisely what NetGuard stored, on the right account.
+    # The router ends up with precisely what NetGuard stored, on the netguard account.
     assert f'/user set [find where name=netguard] password="{device.ssh_password}"' in resp.script
-    assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
-    assert device.ssh_password != resp.admin_password
+    # The script never sets the router's own admin password: the operator owns it.
+    assert '/user set [find where name=admin] password="' not in resp.script
+    # The recovery break-glass account carries the returned recovery password.
+    assert f'password="{resp.recovery_password}"' in resp.script
+    assert device.ssh_password != resp.recovery_password
 
 
 async def test_a_rotating_call_makes_the_stored_value_follow_the_latest_script():
@@ -279,10 +282,11 @@ async def test_scoped_api_key_is_not_role_gated():
     assert resp.api_password
 
 
-async def test_second_warning_tells_operator_ssh_is_refused():
+async def test_warnings_cover_ssh_admin_and_recovery():
     resp, _ = await _call(_device())
     assert any("API-only" in w and "ssh" in w.lower() for w in resp.warnings)
-    assert len(resp.warnings) == 2
+    assert any("admin password" in w.lower() and "blank" in w.lower() for w in resp.warnings)
+    assert any("netguard-recovery" in w for w in resp.warnings)
 
 
 def _route(actor, device):
@@ -313,7 +317,7 @@ async def test_route_own_org_is_200_with_full_key_set(clean_overrides):
     assert r.status_code == 200
     body = r.json()
     assert set(body) == {"device_id", "site_slug", "script", "api_username",
-                         "api_password", "admin_password", "warnings"}
+                         "api_password", "recovery_password", "warnings"}
     assert device.ssh_password == body["api_password"]
 
 
@@ -408,21 +412,15 @@ async def test_two_calls_in_a_row_produce_the_same_api_credential():
     assert netguard_line in first.script and netguard_line in second.script
 
 
-async def test_the_admin_line_is_always_guarded_on_the_routers_own_state():
-    """An already-set-up router must keep its admin password.
-
-    Enforced in the script rather than by omitting the line, because NetGuard's
-    records cannot tell a reset router from a provisioned one -- and the reset
-    one is the one that must NOT be left with a blank password.
-    """
+async def test_recovery_line_is_gated_on_fresh_and_never_sets_admin():
+    """The script never touches admin; recovery is applied only to a fresh router."""
     device = _provisioned()
     resp, _ = await _call(device)
-    assert resp.admin_password, "a reset router would keep a blank admin password"
-    assert '/user set [find where name=admin] password=' in resp.script
+    assert resp.recovery_password, "recovery password is always returned"
+    assert '/user set [find where name=admin] password="' not in resp.script
     guard = [l for l in resp.script.splitlines()
-             if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
-    assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), guard[:110]
-    assert any("admin" in w.lower() for w in resp.warnings)
+             if "netguard-recovery" in l and "add " in l and not l.lstrip().startswith("#")][0]
+    assert "$ngfresh" in guard, "recovery must be gated on the freshness flag"
 
 
 async def test_rotate_mints_a_new_api_password_and_stores_it():
@@ -440,12 +438,12 @@ async def test_rotate_mints_a_new_api_password_and_stores_it():
     assert f'/user set [find where name=netguard] password="{resp.api_password}"' in resp.script
 
 
-async def test_first_ever_call_still_mints_both():
+async def test_first_ever_call_mints_api_and_recovery():
     """No stored netguard credential yet, so there is nothing to reuse."""
     device = _device()           # ssh_username="admin"
     resp, _ = await _call(device)
     assert re.fullmatch(r"[A-Za-z0-9]{24}", resp.api_password)
-    assert resp.admin_password and re.fullmatch(r"[A-Za-z0-9]{24}", resp.admin_password)
+    assert resp.recovery_password and re.fullmatch(r"[A-Za-z0-9]{24}", resp.recovery_password)
     assert device.ssh_username == "netguard"
 
 
@@ -471,43 +469,25 @@ async def test_rotate_default_is_a_real_boolean_not_a_query_object():
     assert default is False, f"default is {default!r}, which is truthy"
 
 
-# --- the admin password is set ONCE, on the first provision only ----------
+# --- the script never touches admin; recovery is the script-managed account ---
 #
-# Asked for after a real lockout. admin is the router's only full-access
-# account and NetGuard never stores its password -- it is shown once and that
-# is the only copy. Rotating it on a later run therefore replaces the one
-# credential the operator holds with one they may not record, and the recovery
-# path is a factory reset, which means a site visit.
-#
-# A factory router ships with a BLANK admin password reachable from the LAN, so
-# it must still be set the first time. After that it belongs to the operator.
+# admin is the operator's own password, set by them, never by this script. That
+# leaves a fresh router with the factory BLANK admin reachable from the operator
+# range -- hence the loud summary warning and the recovery account below.
 
 
-async def test_rotate_does_not_touch_admin_on_an_already_provisioned_router():
+async def test_rotate_still_never_sets_admin():
     device = _provisioned()
     resp, _ = await _call(device, rotate=True)
     assert resp.api_password != GOOD_STORED, "rotate must still mint a new API password"
-    guard = [l for l in resp.script.splitlines()
-             if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
-    assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), (
-        f"rotation must not replace the operator's admin password on a router "
-        f"that already has a netguard user: {guard[:110]}"
-    )
+    assert '/user set [find where name=admin] password="' not in resp.script
 
 
-async def test_first_provision_still_sets_admin_because_factory_is_blank():
-    device = _device()           # never provisioned: ssh_username="admin"
-    resp, _ = await _call(device)
-    assert resp.admin_password, "a factory router would be left with a blank admin password"
-    assert f'/user set [find where name=admin] password="{resp.admin_password}"' in resp.script
-
-
-async def test_every_script_guards_admin_the_same_way_however_generated():
+async def test_recovery_is_in_every_script_gated_on_fresh():
     device = _device()
     for kw in ({}, {"rotate": True}, {}, {"rotate": True}):
         resp, _ = await _call(device, **kw)
+        assert '/user set [find where name=admin] password="' not in resp.script
         guard = [l for l in resp.script.splitlines()
-                 if "name=admin] password=" in l and not l.lstrip().startswith("#")][0]
-        assert guard.startswith(':if ([:len [/user find where name="netguard"]] = 0)'), (
-            f"unguarded admin line with {kw}: {guard[:110]}"
-        )
+                 if "netguard-recovery" in l and "add " in l and not l.lstrip().startswith("#")][0]
+        assert "$ngfresh" in guard, f"recovery not fresh-gated with {kw}: {guard[:90]}"

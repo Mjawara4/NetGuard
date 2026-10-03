@@ -22,7 +22,7 @@ const RESULT = {
     script: ':do { /system identity set name=counter-router } on-error={}',
     api_username: 'netguard',
     api_password: 'API-SECRET-111',
-    admin_password: 'ADMIN-SECRET-222',
+    recovery_password: 'RECOVERY-SECRET-222',
     warnings: ['Credentials were rotated: earlier scripts are stale.', 'The netguard user is API-only (no ssh).'],
 };
 
@@ -69,9 +69,9 @@ describe('router setup script', () => {
         expect(cfg.params).toEqual({ site_slug: 'counter-router', timezone: 'Africa/Banjul', rotate: false });
         expect(screen.getByTestId('script-body').textContent).toBe(RESULT.script);
         expect(screen.getByTestId('api-password').textContent).toBe('API-SECRET-111');
-        expect(screen.getByTestId('admin-password').textContent).toBe('ADMIN-SECRET-222');
+        expect(screen.getByTestId('recovery-password').textContent).toBe('RECOVERY-SECRET-222');
         expect(screen.getByText(/shown only once/i)).toBeTruthy();
-        expect(screen.getByText(/Router admin password/)).toBeTruthy();
+        expect(screen.getByText(/Recovery login/)).toBeTruthy();
         expect(screen.getByText(/NetGuard API password/)).toBeTruthy();
         RESULT.warnings.forEach((w) => expect(screen.getByText(w)).toBeTruthy());
         expect(screen.getByText(/connection will drop/i)).toBeTruthy();
@@ -134,7 +134,7 @@ describe('router setup script', () => {
         await screen.findByTestId('api-password');
         fireEvent.keyDown(window, { key: 'Escape' });
         await waitFor(() => expect(screen.queryByTestId('api-password')).toBeNull());
-        expect(screen.queryByText('ADMIN-SECRET-222')).toBeNull();
+        expect(screen.queryByText('RECOVERY-SECRET-222')).toBeNull();
     });
 });
 
@@ -192,8 +192,10 @@ describe('reuse versus rotate', () => {
         await openModal();
         generate();
         await screen.findByTestId('script-body');
-        expect(screen.getByTestId('admin-password').textContent).toBe(RESULT.admin_password);
+        expect(screen.getByTestId('recovery-password').textContent).toBe(RESULT.recovery_password);
         expect(screen.getByText(/only if this router is new or factory-reset/i)).toBeTruthy();
+        // admin is the operator's; the UI must say NetGuard never sets it.
+        expect(screen.getByText(/never set by NetGuard/i)).toBeTruthy();
     });
 });
 

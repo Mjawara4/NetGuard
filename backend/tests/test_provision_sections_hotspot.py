@@ -4,7 +4,7 @@ from provision_helpers import sections
 P = build_params(
     site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
-    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", admin_password="Qw8ZeRtY3uIoP5aSdF1g",
+    wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
 )
 
 
@@ -184,7 +184,7 @@ def test_the_hotspot_login_is_a_parameter_not_a_constant():
         wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
         wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
         wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-        api_password="Abc23Abc23Abc23Abc23Abc2", admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
+        api_password="Abc23Abc23Abc23Abc23Abc2", recovery_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
         hotspot_login_user="staff", hotspot_login_password="s3cretPass")
     body = text(sections.voucher_profiles(p))
     assert "name=staff" in body and "password=s3cretPass" in body
@@ -202,5 +202,5 @@ def test_the_hotspot_login_cannot_carry_injection():
                 wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
                 wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
                 wg_server_endpoint="74.208.167.166", wg_server_port=51820,
-                api_password="Abc23Abc23Abc23Abc23Abc2", admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
+                api_password="Abc23Abc23Abc23Abc23Abc2", recovery_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
                 hotspot_login_user=bad)
