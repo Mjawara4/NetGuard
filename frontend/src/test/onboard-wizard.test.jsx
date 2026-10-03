@@ -62,6 +62,11 @@ describe('onboarding wizard', () => {
         expect(screen.getByText(new RegExp(SCRIPT.recovery_password))).toBeTruthy();
     });
 
+    it('displays the generated script, not just the download button', async () => {
+        await walkToScript();
+        expect(screen.getByTestId('wiz-script').textContent).toBe(SCRIPT.script);
+    });
+
     it('prefills the WiFi name from the router name', async () => {
         render(<OnboardWizard onClose={() => {}} onComplete={() => {}} />);
         fireEvent.change(screen.getByTestId('wiz-name'), { target: { value: 'Serrekunda Shop!' } });

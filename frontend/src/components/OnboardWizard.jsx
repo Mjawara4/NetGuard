@@ -235,6 +235,10 @@ export default function OnboardWizard({ onClose, onComplete }) {
                                             <code className="block font-mono text-sm break-all select-all text-ink-900 dark:text-ink-50">{result.recovery_password}</code>
                                         </div>
                                     </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Your setup file</div>
+                                        <pre data-testid="wiz-script" className="bg-ink-900 text-ink-100 p-3 rounded-md text-xs font-mono overflow-auto whitespace-pre-wrap max-h-48 border border-ink-700">{result.script}</pre>
+                                    </div>
                                     <div className="flex flex-wrap gap-3">
                                         <Button variant="outline" onClick={download}><Download size={16} className="mr-1" /> Download .rsc</Button>
                                         <Button variant="outline" onClick={copy}><Copy size={16} className="mr-1" /> {copied ? 'Copied' : 'Copy script'}</Button>
@@ -276,7 +280,7 @@ export default function OnboardWizard({ onClose, onComplete }) {
                                 <li>The login page comes up by itself.</li>
                                 <li>After logging in (test login <span className="font-mono text-xs">admin</span> / <span className="font-mono text-xs">root</span>), the internet works.</li>
                             </ol>
-                            <p className="text-xs text-warn">Set the router&rsquo;s admin password in WinBox now &mdash; a new router starts with a blank one.</p>
+                            <p className="text-xs text-warn">If you haven&rsquo;t already set the router&rsquo;s admin (WinBox) password, set it now &mdash; this script never changes it, and a factory router starts blank.</p>
                             <div className="flex justify-end">
                                 <Button onClick={finish}>Finish</Button>
                             </div>
