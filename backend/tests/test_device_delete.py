@@ -47,11 +47,20 @@ async def test_delete_clears_sales_and_batches_not_just_metrics_and_alerts():
     await devices.delete_device(str(device.id), db=db, actor=APIKey(organization_id=None))
 
     tables = _executed_tables(db)
+    # Depth-1: directly reference devices.
     assert "hotspot_sales" in tables, (
         "voucher sales not cleared; a device that sold any access cannot be deleted"
     )
     assert "voucher_batches" in tables, "voucher batches not cleared"
     assert "alerts" in tables
+    # Depth-2: reference alerts, so they must be cleared before alerts.
+    assert "incidents" in tables, (
+        "incidents reference alerts; deleting alerts fails while they exist"
+    )
+    assert "auto_fix_actions" in tables, "auto_fix_actions reference alerts"
+    # Grandchildren must come before alerts.
+    assert tables.index("incidents") < tables.index("alerts")
+    assert tables.index("auto_fix_actions") < tables.index("alerts")
     db.delete.assert_awaited_once_with(device)
     db.commit.assert_awaited_once()
 

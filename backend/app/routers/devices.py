@@ -173,17 +173,29 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), acto
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
-    # Cascade delete (manual). EVERY table with a NOT NULL foreign key to devices
-    # must be cleared first, or the final delete fails with a foreign-key
-    # violation -- surfaced to the operator as a bare "Failed to delete device".
-    # This missed hotspot_sales and voucher_batches, so any router that had ever
-    # sold a voucher or generated a batch could not be deleted at all.
+    # Cascade delete (manual), in dependency order. The full tree of foreign keys
+    # into a device, confirmed against the live schema:
+    #   devices <- alerts <- {incidents, auto_fix_actions}
+    #   devices <- hotspot_sales
+    #   devices <- voucher_batches
+    #   devices <- metrics (no enforced FK, but cleaned up here)
+    # Every child must go before its parent or the delete fails with a foreign-key
+    # violation, surfaced to the operator as "Failed to delete device". The first
+    # pass missed hotspot_sales/voucher_batches; the second missed that incidents
+    # and auto_fix_actions reference the alerts we were deleting.
     from app.models.core import VoucherSale, VoucherBatch
+    from app.models.monitoring import Incident, AutoFixAction
     dev_uuid = UUID(device_id)
-    await db.execute(delete(Metric).where(Metric.device_id == dev_uuid))
+    device_alerts = select(Alert.id).where(Alert.device_id == dev_uuid)
+
+    # Grandchildren first: they point at this device's alerts.
+    await db.execute(delete(Incident).where(Incident.alert_id.in_(device_alerts)))
+    await db.execute(delete(AutoFixAction).where(AutoFixAction.alert_id.in_(device_alerts)))
+    # Then the direct children.
     await db.execute(delete(Alert).where(Alert.device_id == dev_uuid))
     await db.execute(delete(VoucherSale).where(VoucherSale.device_id == dev_uuid))
     await db.execute(delete(VoucherBatch).where(VoucherBatch.device_id == dev_uuid))
+    await db.execute(delete(Metric).where(Metric.device_id == dev_uuid))
 
     # The device row goes last, after everything that references it.
     await db.delete(device)
