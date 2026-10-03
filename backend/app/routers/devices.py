@@ -173,13 +173,19 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), acto
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
-    # Cascade delete (Manual for MVP)
-    # Delete metrics
-    await db.execute(delete(Metric).where(Metric.device_id == UUID(device_id)))
-    # Delete alerts
-    await db.execute(delete(Alert).where(Alert.device_id == UUID(device_id)))
-    
-    # Delete device
+    # Cascade delete (manual). EVERY table with a NOT NULL foreign key to devices
+    # must be cleared first, or the final delete fails with a foreign-key
+    # violation -- surfaced to the operator as a bare "Failed to delete device".
+    # This missed hotspot_sales and voucher_batches, so any router that had ever
+    # sold a voucher or generated a batch could not be deleted at all.
+    from app.models.core import VoucherSale, VoucherBatch
+    dev_uuid = UUID(device_id)
+    await db.execute(delete(Metric).where(Metric.device_id == dev_uuid))
+    await db.execute(delete(Alert).where(Alert.device_id == dev_uuid))
+    await db.execute(delete(VoucherSale).where(VoucherSale.device_id == dev_uuid))
+    await db.execute(delete(VoucherBatch).where(VoucherBatch.device_id == dev_uuid))
+
+    # The device row goes last, after everything that references it.
     await db.delete(device)
     await db.commit()
     return

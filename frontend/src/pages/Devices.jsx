@@ -57,7 +57,14 @@ export default function Devices() {
                 }
             } catch (e) {
                 console.error(e);
-                alert("Failed to delete device.");
+                // Show the real reason instead of a bare "failed". A generic
+                // message hid a server-side foreign-key error for weeks.
+                const status = e.response?.status;
+                const detail = e.response?.data?.detail;
+                const msg = status
+                    ? `Failed to delete device (${status}): ${typeof detail === 'string' ? detail : 'see console'}`
+                    : `Failed to delete device: ${e.message || 'the request did not reach the server (check your connection or sign in again)'}`;
+                alert(msg);
             }
         }
     };
