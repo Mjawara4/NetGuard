@@ -101,9 +101,17 @@ def test_hotspot_objects_do_not_carry_comment():
     # /ip hotspot ip-binding is a DIFFERENT menu and does accept comment -- verified
     # on a CHR, which stored it without complaint. It is exempt rather than excluded,
     # so the binding stays attributable like every other object we create.
+    # Exempt menus that DO accept comment, each verified on a CHR which stored it:
+    #   /ip hotspot ip-binding  and  /ip hotspot user
+    # The rejection applies to /ip hotspot, /ip hotspot profile and
+    # /ip hotspot user profile. Note /ip hotspot user and /ip hotspot user
+    # profile are different menus with opposite behaviour, so the prefix test
+    # below must check the longer one first.
+    accepts_comment = ("/ip hotspot ip-binding", "/ip hotspot user add",
+                       "/ip hotspot user find", ":if ([:len [/ip hotspot user find")
     for fn in (sections.hotspot_server, sections.voucher_profiles):
         for l in fn(P):
-            if l.startswith("#") or l.startswith("/ip hotspot ip-binding"):
+            if l.startswith("#") or any(m in l for m in accepts_comment):
                 continue
             assert "comment=" not in l, l
 
@@ -142,3 +150,57 @@ def test_bypass_binding_is_idempotent():
     assert line.startswith(":if ([:len [/ip hotspot ip-binding find"), (
         f"re-running would stack duplicate bindings: {line[:100]}"
     )
+
+
+# --- a known hotspot login for staff and testing --------------------------
+#
+# Asked for so a router can be tested without minting a voucher. Parameterised
+# rather than hardcoded: `admin`/`root` is the first pair anyone guesses, and on
+# a customer site it is free internet for whoever tries it. One place to change.
+
+
+def test_a_hotspot_login_is_created_on_the_default_profile():
+    ls = sections.voucher_profiles(P)
+    line = [l for l in ls if "/ip hotspot user add" in l]
+    assert line, "no hotspot login; the site cannot be tested without a voucher"
+    body = line[0]
+    assert "name=admin" in body
+    assert "password=root" in body
+    assert "profile=default" in body
+
+
+def test_the_hotspot_login_is_idempotent():
+    from app.services.provisioning import sections as raw
+    line = [l for l in raw.voucher_profiles(P) if "/ip hotspot user add" in l][0]
+    assert line.startswith(':if ([:len [/ip hotspot user find where name="admin"]] = 0)'), (
+        f"re-running would stack duplicate hotspot logins: {line[:100]}"
+    )
+
+
+def test_the_hotspot_login_is_a_parameter_not_a_constant():
+    from app.services.provisioning.params import build_params
+    p = build_params(
+        site_slug="a-site", wg_client_ip="10.13.13.7",
+        wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+        wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+        wg_server_endpoint="74.208.167.166", wg_server_port=51820,
+        api_password="Abc23Abc23Abc23Abc23Abc2", admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
+        hotspot_login_user="staff", hotspot_login_password="s3cretPass")
+    body = text(sections.voucher_profiles(p))
+    assert "name=staff" in body and "password=s3cretPass" in body
+    assert "name=admin" not in body
+
+
+def test_the_hotspot_login_cannot_carry_injection():
+    """It reaches the router inside a quoted RouterOS argument."""
+    from app.services.provisioning.params import build_params
+    import pytest as _pytest
+    for bad in ('ad"min', "ad;min", "ad min", "admin\n/user add name=x"):
+        with _pytest.raises(ValueError):
+            build_params(
+                site_slug="a-site", wg_client_ip="10.13.13.7",
+                wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+                wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
+                wg_server_endpoint="74.208.167.166", wg_server_port=51820,
+                api_password="Abc23Abc23Abc23Abc23Abc2", admin_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
+                hotspot_login_user=bad)

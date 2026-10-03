@@ -48,6 +48,8 @@ class ProvisionParams:
     wg_server_port: int
     wg_subnet_cidr: str
     api_username: str
+    hotspot_login_user: str
+    hotspot_login_password: str
     api_password: str
     # None means "leave the router's admin password alone". It is never stored,
     # so a reused script cannot reproduce an earlier one -- and changing it on a
@@ -60,6 +62,8 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  wg_server_public_key: str, wg_server_endpoint: str,
                  wg_server_port: int, api_password: str,
                  admin_password: str | None = None,
+                 hotspot_login_user: str = "admin",
+                 hotspot_login_password: str = "root",
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -168,6 +172,18 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
     if admin_password is not None and api_password == admin_password:
         raise ValueError("admin_password must differ from api_password")
 
+    # The hotspot login reaches the router inside a quoted RouterOS argument, so a
+    # quote, space, semicolon or newline would either break the parse or create a
+    # different account than the one reported. Same reasoning as api_password.
+    for name, value in (("hotspot_login_user", hotspot_login_user),
+                        ("hotspot_login_password", hotspot_login_password)):
+        if not value:
+            raise ValueError(f"{name} is required")
+        if not re.compile(r"[A-Za-z0-9_.-]+").fullmatch(value):
+            raise ValueError(
+                f"{name} must contain only letters, digits, underscore, dot or hyphen"
+            )
+
     # Validate WireGuard server port (reject bool; bool is subclass of int in Python)
     if isinstance(wg_server_port, bool) or not isinstance(wg_server_port, int) or wg_server_port < 1 or wg_server_port > 65535:
         raise ValueError(
@@ -218,5 +234,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         wg_subnet_cidr=WG_SUBNET_CIDR,
         api_username="netguard", api_password=api_password,
         admin_password=admin_password,
+        hotspot_login_user=hotspot_login_user,
+        hotspot_login_password=hotspot_login_password,
         hotspot_dns_name="login.netguard.local",
     )

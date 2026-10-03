@@ -222,6 +222,22 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
             "/ip hotspot user profile", f'name="{name}"',
             f"name={name} session-timeout={timeout} shared-users={shared} {_TIER_COMMON}",
         ))
+
+    # A standing hotspot login, so the site can be tested and staff can get on
+    # without minting a voucher. On the `default` profile: no session timeout,
+    # so it does not expire mid-shift.
+    #
+    # SECURITY: this is a real credential on a public captive portal. The
+    # default pair is `admin`/`root`, which is the first thing anyone tries --
+    # anyone who guesses it gets free internet on the customer's connection.
+    # It is a parameter precisely so a site can be given its own; change it
+    # per customer rather than shipping the default to a live deployment.
+    lines.append("# A standing login for staff and testing. Change it per site: the default")
+    lines.append("# pair is guessable, and this account does not expire.")
+    lines.append(_once(
+        "/ip hotspot user", f'name="{p.hotspot_login_user}"',
+        f"name={p.hotspot_login_user} password={p.hotspot_login_password} profile=default comment=\"NetGuard\"",
+    ))
     return lines
 
 

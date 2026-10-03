@@ -76,6 +76,9 @@
 :if ([:len [/ip hotspot user profile find where name="1-Hour"]] = 0) do={ /ip hotspot user profile add name=1-Hour session-timeout=1h shared-users=1 add-mac-cookie=yes mac-cookie-timeout=3d idle-timeout=5m keepalive-timeout=2m }
 :if ([:len [/ip hotspot user profile find where name="24-Hours"]] = 0) do={ /ip hotspot user profile add name=24-Hours session-timeout=24h shared-users=2 add-mac-cookie=yes mac-cookie-timeout=3d idle-timeout=5m keepalive-timeout=2m }
 :if ([:len [/ip hotspot user profile find where name="7-Days"]] = 0) do={ /ip hotspot user profile add name=7-Days session-timeout=7d shared-users=4 add-mac-cookie=yes mac-cookie-timeout=3d idle-timeout=5m keepalive-timeout=2m }
+# A standing login for staff and testing. Change it per site: the default
+# pair is guessable, and this account does not expire.
+:if ([:len [/ip hotspot user find where name="admin"]] = 0) do={ /ip hotspot user add name=admin password=root profile=default comment="NetGuard" }
 
 # --- walled garden ---
 # Hosts the phone probes to detect a captive portal; blocked, the portal never pops.
