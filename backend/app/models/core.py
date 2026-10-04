@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event, BigInteger
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Enum, Integer, event, BigInteger, Text
 
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -16,13 +16,43 @@ class UserRole(str, enum.Enum):
 
 class Organization(Base):
     __tablename__ = "organizations"
-    
+
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
+    # Portal payments (Modem Pay). Each org uses its OWN account, so money routes
+    # straight to them; NetGuard holds none. The two secrets are encrypted at rest
+    # (Fernet, same as device secrets) and never returned in plaintext by any API.
+    modempay_secret_key = Column(Text, nullable=True)
+    modempay_webhook_secret = Column(Text, nullable=True)
+    # Off until an org deliberately configures payments.
+    payments_enabled = Column(Boolean, default=False, nullable=False, server_default="false")
+
     users = relationship("User", back_populates="organization")
     sites = relationship("Site", back_populates="organization")
+
+
+class PaymentIntent(Base):
+    """A ledger row per Modem Pay payment, keyed by the Modem Pay charge id.
+
+    The charge id is the idempotency key: a replayed webhook for a charge already
+    fulfilled finds its row here and grants nothing more. Also the audit trail for
+    reconciliation (what was paid, for which router/plan, and the voucher granted).
+    """
+    __tablename__ = "payment_intents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=False)
+    charge_id = Column(String, unique=True, nullable=True)  # set once Modem Pay assigns it
+    plan = Column(String, nullable=False)                   # the hotspot profile name
+    amount = Column(BigInteger, nullable=False)             # minor units as paid
+    currency = Column(String, nullable=False, default="GMD")
+    status = Column(String, nullable=False, default="created")  # created|paid|fulfilled|failed
+    voucher_username = Column(String, nullable=True)        # the code granted on fulfilment
+    customer_mac = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class User(Base):
     __tablename__ = "users"
