@@ -141,11 +141,12 @@ async def liveness_check():
     """Kubernetes liveness probe - basic alive check."""
     return {"status": "alive"}
 
-from app.routers import auth, devices, monitoring, api_keys
+from app.routers import auth, devices, monitoring, api_keys, payments_settings
 app.include_router(auth.router, prefix=f"{settings.API_PREFIX}/auth", tags=["auth"])
 app.include_router(devices.router, prefix=f"{settings.API_PREFIX}/inventory", tags=["inventory"])
 app.include_router(monitoring.router, prefix=f"{settings.API_PREFIX}/monitoring", tags=["monitoring"])
 app.include_router(api_keys.router, prefix=f"{settings.API_PREFIX}/api-keys", tags=["api-keys"])
+app.include_router(payments_settings.router, prefix=f"{settings.API_PREFIX}/payments", tags=["payments"])
 
 from app.routers import agents, hotspot, admin, ai_ops, ai_analytics
 app.include_router(agents.router, prefix=f"{settings.API_PREFIX}/agents", tags=["agents"])

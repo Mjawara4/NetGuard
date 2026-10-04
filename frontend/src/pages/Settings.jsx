@@ -4,6 +4,7 @@ import { Settings, Key, Trash2, Copy, Check, Plus, Shield, Lock } from 'lucide-r
 import { PageHeader, Badge, Card } from '../components/ui';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
+import PaymentSettings from './PaymentSettings';
 
 export default function SettingsPage() {
     const [apiKeys, setApiKeys] = useState([]);
@@ -265,6 +266,7 @@ export default function SettingsPage() {
                         </Card>
                     </div>
 
+                    <PaymentSettings />
                     <PasswordChangeSection />
                 </div>
 
