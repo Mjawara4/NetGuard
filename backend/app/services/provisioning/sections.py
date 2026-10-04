@@ -227,7 +227,7 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
         f"/ip hotspot user profile set [find where name=default] shared-users=1 {_TIER_COMMON}",
     ]
     # One device per voucher on every tier (shared-users=1); tiers differ by duration only.
-    for name, timeout, shared in (("1-Hour", "1h", 1), ("24-Hours", "24h", 1), ("7-Days", "7d", 1)):
+    for name, timeout, shared in (("3-Hours", "3h", 1), ("24-Hours", "24h", 1), ("7-Days", "7d", 1), ("30-Days", "30d", 1)):
         lines.append(_once(
             "/ip hotspot user profile", f'name="{name}"',
             f"name={name} session-timeout={timeout} shared-users={shared} {_TIER_COMMON}",
@@ -531,7 +531,7 @@ def summary(p: ProvisionParams) -> list[str]:
         f':if ([:len [/interface list find where name="LAN"]] > 0) do={{ :if ([:len [/interface list member find where list="LAN" interface="{p.bridge_name}"]] > 0) do={{ :put "Client bridge:    {p.bridge_name} is in the LAN interface list, so a stock drop-not-from-LAN rule does not block clients" }} else={{ :put "Client bridge:    WARNING {p.bridge_name} is NOT in the LAN interface list; a stock drop-not-from-LAN rule will block every client" }} }} else={{ :put "Client bridge:    this router has no LAN interface list, so no rule can key off one" }}',
         f':put "LAN:              {p.lan_cidr}  gateway {p.gateway}"',
         f':put "DHCP range:       {p.pool_start} - {p.pool_end}"',
-        ':put "Voucher profiles: 1-Hour, 24-Hours, 7-Days"',
+        ':put "Voucher profiles: 3-Hours, 24-Hours, 7-Days, 30-Days"',
         f':put "API user:         {p.api_username}  (password: see the NetGuard dashboard)"',
         # The admin password is the operator's own and is NEVER touched here. On a
         # fresh router it is still the factory BLANK, reachable over winbox from the

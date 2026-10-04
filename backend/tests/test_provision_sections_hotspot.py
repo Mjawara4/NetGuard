@@ -42,7 +42,7 @@ def test_hotspot_server_line_is_on_the_bridge_and_pool_with_clean_timeouts():
 
 def test_each_tier_has_its_own_duration_and_one_shared_user():
     # One voucher, one device at a time: every tier is shared-users=1, by request.
-    expected = {"1-Hour": "1h", "24-Hours": "24h", "7-Days": "7d"}
+    expected = {"3-Hours": "3h", "24-Hours": "24h", "7-Days": "7d", "30-Days": "30d"}
     for name, timeout in expected.items():
         toks = tier(name).split()
         assert f"session-timeout={timeout}" in toks

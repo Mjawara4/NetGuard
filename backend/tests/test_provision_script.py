@@ -131,7 +131,7 @@ def test_the_comment_exempt_objects_are_identifiable_by_name():
         if any(m in line for m in MENUS_WITHOUT_COMMENT):
             exempt += 1
             assert "name=" in line, line
-    assert exempt == 5  # hotspot profile, hotspot, three tiers
+    assert exempt == 6  # hotspot profile, hotspot, four tiers (3-Hours, 24-Hours, 7-Days, 30-Days)
 
 
 def test_summary_tells_the_installer_what_they_need():
