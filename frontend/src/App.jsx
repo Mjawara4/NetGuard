@@ -14,6 +14,7 @@ const NetworkMap = lazy(() => import('./pages/NetworkMap'));
 const Reports = lazy(() => import('./pages/Reports'));
 const Hotspot = lazy(() => import('./pages/Hotspot'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const Buy = lazy(() => import('./pages/Buy'));
 
 // Shown only while a route chunk is in flight. Deliberately minimal: a heavy
 // skeleton here would itself have to ship in the entry chunk.
@@ -31,6 +32,7 @@ function App() {
                     <Routes>
                         <Route path="/login" element={<Login />} />
                         <Route path="/signup" element={<Signup />} />
+                        <Route path="/buy" element={<Buy />} />
                         <Route
                             path="/settings"
                             element={

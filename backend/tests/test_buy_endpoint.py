@@ -1,0 +1,60 @@
+import uuid
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import HTTPException
+
+from app.models.core import Device, Organization
+from app.routers import buy
+
+
+pytestmark = pytest.mark.asyncio
+
+
+def _db():
+    db = MagicMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    return db
+
+
+async def test_plans_come_from_profile_pricing(monkeypatch):
+    dev = Device(id=uuid.uuid4(), name="r", ip_address="10.0.0.1", site_id=uuid.uuid4())
+    dev.voucher_template = {"profile_pricing": {"3-Hours": {"price": 10, "currency": "GMD"}}}
+    org = Organization(name="o", payments_enabled=True)
+    org.modempay_secret_key = "encrypted"
+    org.modempay_webhook_secret = "encrypted"
+    monkeypatch.setattr(buy, "_load_context", AsyncMock(return_value=(dev, org)))
+
+    out = await buy.get_plans(router=dev.id, db=_db())
+    assert {"profile": "3-Hours", "price": 10, "currency": "GMD"} in out["plans"]
+
+
+async def test_pay_refused_when_payments_disabled(monkeypatch):
+    dev = Device(id=uuid.uuid4(), name="r", ip_address="10.0.0.1", site_id=uuid.uuid4())
+    dev.voucher_template = {"profile_pricing": {"3-Hours": {"price": 10}}}
+    org = Organization(name="o", payments_enabled=False)
+    monkeypatch.setattr(buy, "_load_context", AsyncMock(return_value=(dev, org)))
+
+    with pytest.raises(HTTPException) as error:
+        await buy.pay(buy.PayRequest(router=dev.id, mac="AA:BB", plan="3-Hours"), db=_db())
+    assert error.value.status_code == 409
+
+
+async def test_pay_uses_server_price_and_persists_intent(monkeypatch):
+    dev = Device(id=uuid.uuid4(), name="r", ip_address="10.0.0.1", site_id=uuid.uuid4())
+    dev.voucher_template = {"profile_pricing": {"3-Hours": {"price": 10, "currency": "GMD"}}}
+    org = Organization(name="o", payments_enabled=True)
+    org.modempay_secret_key = "ciphertext"
+    org.modempay_webhook_secret = "ciphertext"
+    monkeypatch.setattr(buy, "_load_context", AsyncMock(return_value=(dev, org)))
+    monkeypatch.setattr(buy, "decrypt_value", lambda value: "sk_test")
+    create = AsyncMock(return_value={"payment_link": "https://checkout.test/1", "charge_id": "ch_1"})
+    monkeypatch.setattr(buy, "create_payment_intent", create)
+    db = _db()
+
+    out = await buy.pay(buy.PayRequest(router=dev.id, mac="AA:BB", plan="3-Hours"), db=db)
+    assert out == {"checkout_url": "https://checkout.test/1"}
+    assert create.await_args.args[1:3] == (10, "GMD")
+    assert db.add.call_args.args[0].charge_id == "ch_1"
+    db.commit.assert_awaited_once()
