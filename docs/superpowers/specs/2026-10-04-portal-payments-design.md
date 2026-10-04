@@ -110,12 +110,20 @@ charge ids for idempotency and reconciliation:
 - Encryption: `app.utils.encryption`.
 - Prices: `Device.voucher_template.profile_pricing`.
 
-## Router-side change (in the provisioning script)
+## Router-side change
 
-- Walled-garden entries for Modem Pay's checkout domain(s) and NetGuard's /buy
-  host, so the pages load before login.
-- The hotspot login page carries a "Buy WiFi" link to
-  `https://app.netguard.fun/buy?router=<device-id>&mac=$(mac)&ip=$(ip)`.
+- **Walled-garden** entries for Modem Pay's checkout domain(s) and NetGuard's
+  /buy host, so the pages load before login. (In the provisioning script.)
+- **The Buy button** is one line of HTML that must live INSIDE the router's
+  hotspot login page, because `$(mac)`/`$(ip)` are only substituted there:
+  `<a href="https://app.netguard.fun/buy?router=<device-id>&mac=$(mac)&ip=$(ip)">Buy WiFi</a>`
+  - **Default NetGuard portal:** the login page is ours, so the button is added
+    automatically with the router id pre-filled (login.html uploaded via the
+    router API after provisioning, or written by the setup flow).
+  - **Custom portal (owner's own login page):** we do NOT auto-edit their
+    arbitrary HTML. NetGuard shows a per-router copy-paste snippet (id pre-filled)
+    in the dashboard for the owner to drop into their page. This is the standard
+    model and the reliable one.
 - No change to `login-by`, `shared-users`, mac-cookie, or profiles.
 
 ## Out of scope (first version)
