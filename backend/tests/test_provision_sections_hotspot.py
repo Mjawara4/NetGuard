@@ -40,23 +40,24 @@ def test_hotspot_server_line_is_on_the_bridge_and_pool_with_clean_timeouts():
         assert tok in l, tok
 
 
-def test_each_tier_has_its_own_duration_and_sharing():
-    expected = {"1-Hour": ("1h", "1"), "24-Hours": ("24h", "2"), "7-Days": ("7d", "4")}
-    for name, (timeout, shared) in expected.items():
+def test_each_tier_has_its_own_duration_and_one_shared_user():
+    # One voucher, one device at a time: every tier is shared-users=1, by request.
+    expected = {"1-Hour": "1h", "24-Hours": "24h", "7-Days": "7d"}
+    for name, timeout in expected.items():
         toks = tier(name).split()
         assert f"session-timeout={timeout}" in toks
-        assert f"shared-users={shared}" in toks
+        assert "shared-users=1" in toks
         for common in ("add-mac-cookie=yes", "mac-cookie-timeout=3d",
                        "idle-timeout=5m", "keepalive-timeout=2m"):
             assert common in toks, (name, common)
 
 
-def test_default_tier_is_updated_in_place_with_sharing_4_and_no_session_timeout():
+def test_default_tier_is_updated_in_place_with_one_shared_user_and_no_session_timeout():
     # RouterOS ships a `default` profile; `add name=default` would be rejected.
     l = line_with(sections.voucher_profiles(P), "/ip hotspot user profile set ")
     toks = l.split()
     assert "[find" in toks and "name=default]" in toks
-    assert "shared-users=4" in toks
+    assert "shared-users=1" in toks
     assert not any(t.startswith("session-timeout=") for t in toks)
     for common in ("add-mac-cookie=yes", "mac-cookie-timeout=3d",
                    "idle-timeout=5m", "keepalive-timeout=2m"):
@@ -204,3 +205,11 @@ def test_the_hotspot_login_cannot_carry_injection():
                 wg_server_endpoint="74.208.167.166", wg_server_port=51820,
                 api_password="Abc23Abc23Abc23Abc23Abc2", recovery_password="Xyz89Xyz89Xyz89Xyz89Xyz8",
                 hotspot_login_user=bad)
+
+
+def test_no_profile_allows_more_than_one_shared_user():
+    """One voucher = one device. No shared-users value above 1 anywhere."""
+    import re
+    for l in sections.voucher_profiles(P):
+        for m in re.finditer(r"shared-users=(\d+)", l):
+            assert int(m.group(1)) == 1, f"shared-users>{1} in: {l[:90]}"

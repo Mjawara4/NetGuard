@@ -221,11 +221,13 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
         "# --- voucher tiers ---",
         "# /ip hotspot user profile has no comment property on RouterOS 7.16 (CHR rejected it), so tiers are untagged.",
         "# No rate-limit on any tier, by decision: tiers differ by duration and sharing only.",
-        "# shared-users=4 means a 500-session licence ceiling is as few as 125 vouchers.",
+        "# shared-users=1 on every profile: one voucher is one device at a time. A 500-session",
+        "# licence ceiling is then 500 vouchers in use at once.",
         "# RouterOS ships a `default` user profile, so it is updated, not added.",
-        f"/ip hotspot user profile set [find where name=default] shared-users=4 {_TIER_COMMON}",
+        f"/ip hotspot user profile set [find where name=default] shared-users=1 {_TIER_COMMON}",
     ]
-    for name, timeout, shared in (("1-Hour", "1h", 1), ("24-Hours", "24h", 2), ("7-Days", "7d", 4)):
+    # One device per voucher on every tier (shared-users=1); tiers differ by duration only.
+    for name, timeout, shared in (("1-Hour", "1h", 1), ("24-Hours", "24h", 1), ("7-Days", "7d", 1)):
         lines.append(_once(
             "/ip hotspot user profile", f'name="{name}"',
             f"name={name} session-timeout={timeout} shared-users={shared} {_TIER_COMMON}",
