@@ -69,6 +69,20 @@ async def get_plans(router: UUID, db: AsyncSession = Depends(get_db)):
     return {"enabled": True, "plans": plans}
 
 
+@router.get("/status")
+async def payment_status(intent: UUID, router: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(PaymentIntent).where(
+            PaymentIntent.id == intent,
+            PaymentIntent.device_id == router,
+        )
+    )
+    payment = result.scalar_one_or_none()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return {"status": payment.status, "voucher_username": payment.voucher_username}
+
+
 @router.post("/pay")
 async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
     device, org = await _load_context(db, payload.router)
@@ -93,7 +107,7 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
             amount,
             currency,
             metadata,
-            "https://app.netguard.fun/buy?payment=success",
+            f"https://app.netguard.fun/buy?router={device.id}&payment=success&intent={local_intent_id}",
             f"https://app.netguard.fun/buy?router={device.id}",
         )
     except httpx.HTTPStatusError as exc:

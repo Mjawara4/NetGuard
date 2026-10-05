@@ -46,6 +46,11 @@ def _add_router_user(device, username, password, plan, duration, charge_id):
 
     decrypt_device_secrets(device)
     port = getattr(device, "ssh_port", 8728) or 8728
+    # Device onboarding historically stored SSH's port (22) in this field,
+    # while RouterOS API is exposed on 8728. Other hotspot routes already
+    # apply this compatibility mapping.
+    if int(port) == 22:
+        port = 8728
     connection = get_api_pool(
         device.ip_address,
         device.ssh_username or "admin",

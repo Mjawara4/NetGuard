@@ -83,3 +83,18 @@ async def test_amount_mismatch_rejected(monkeypatch):
     add_user.assert_not_called()
     db.add.assert_not_called()
     db.commit.assert_not_awaited()
+
+
+async def test_router_user_maps_legacy_ssh_port_to_api_port(monkeypatch):
+    device = Device(id=uuid.uuid4(), site_id=uuid.uuid4(), name="r", ip_address="10.0.0.1")
+    device.ssh_port = 22
+    device.ssh_username = "netguard"
+    device.ssh_password = "secret"
+    connection = MagicMock()
+    pool = MagicMock(return_value=connection)
+    monkeypatch.setattr(webhook, "decrypt_device_secrets", lambda value: value)
+    monkeypatch.setattr("app.routers.hotspot.get_api_pool", pool)
+
+    webhook._add_router_user(device, "ABC12345", "ABC12345", "3-Hours", "3h", "ch_1")
+
+    assert pool.call_args.args[-1] == 8728

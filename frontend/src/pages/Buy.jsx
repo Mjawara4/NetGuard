@@ -16,9 +16,12 @@ export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
     const mac = params.get('mac');
+    const returnedPayment = params.get('payment') === 'success';
+    const intent = params.get('intent');
     const [state, setState] = useState({ loading: true, enabled: false, plans: [] });
     const [paying, setPaying] = useState(null);
     const [error, setError] = useState('');
+    const [paymentResult, setPaymentResult] = useState(null);
 
     useEffect(() => {
         if (!router) {
@@ -33,6 +36,24 @@ export default function Buy() {
                 setError('Unable to load WiFi plans.');
             });
     }, [router]);
+
+    useEffect(() => {
+        if (!returnedPayment || !router || !intent) return undefined;
+        let attempts = 0;
+        const check = async () => {
+            attempts += 1;
+            try {
+                const { data } = await api.get('/buy/status', { params: { router, intent } });
+                setPaymentResult(data);
+                if (data.status === 'fulfilled' || attempts >= 30) clearInterval(timer);
+            } catch {
+                if (attempts >= 30) clearInterval(timer);
+            }
+        };
+        const timer = setInterval(check, 2000);
+        check();
+        return () => clearInterval(timer);
+    }, [returnedPayment, router, intent]);
 
     const purchase = async (plan) => {
         setPaying(plan);
@@ -66,6 +87,16 @@ export default function Buy() {
                     <p className="text-center">Online payments are not available for this hotspot.</p>
                 )}
                 {error && <p role="alert" className="text-center text-down">{error}</p>}
+                {returnedPayment && paymentResult?.status !== 'fulfilled' && (
+                    <p className="text-center text-ink-900 dark:text-ink-50">Payment received. Creating your WiFi voucher…</p>
+                )}
+                {paymentResult?.status === 'fulfilled' && (
+                    <div className="rounded-md border border-up/30 bg-up/10 p-4 text-center">
+                        <p className="font-bold text-ink-900 dark:text-ink-50">Your WiFi voucher code</p>
+                        <p className="mt-2 text-2xl font-mono font-bold text-up">{paymentResult.voucher_username}</p>
+                        <p className="mt-2 text-sm text-ink-500 dark:text-ink-400">Return to the WiFi login page and enter this code.</p>
+                    </div>
+                )}
                 <div className="space-y-3">
                     {state.plans.map((plan) => (
                         <div key={plan.profile} className="flex items-center justify-between border border-ink-200 dark:border-ink-700 rounded-md p-4">

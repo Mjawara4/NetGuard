@@ -5,7 +5,7 @@ import pytest
 import httpx
 from fastapi import HTTPException
 
-from app.models.core import Device, Organization
+from app.models.core import Device, Organization, PaymentIntent
 from app.routers import buy
 
 
@@ -58,8 +58,26 @@ async def test_pay_uses_server_price_and_persists_intent(monkeypatch):
     assert out == {"checkout_url": "https://checkout.test/1"}
     assert create.await_args.args[1:3] == (10, "GMD")
     assert create.await_args.args[3]["payment_intent_id"]
+    assert f"router={dev.id}" in create.await_args.args[4]
+    assert f"intent={db.add.call_args.args[0].id}" in create.await_args.args[4]
     assert db.add.call_args.args[0].charge_id == "ch_1"
     db.commit.assert_awaited_once()
+
+
+async def test_payment_status_returns_fulfilled_voucher():
+    device_id = uuid.uuid4()
+    intent = PaymentIntent(
+        id=uuid.uuid4(), device_id=device_id, plan="3-Hours", amount=10,
+        currency="GMD", status="fulfilled", voucher_username="ABC12345",
+    )
+    db = MagicMock()
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = intent
+    db.execute = AsyncMock(return_value=result)
+
+    out = await buy.payment_status(intent=intent.id, router=device_id, db=db)
+
+    assert out == {"status": "fulfilled", "voucher_username": "ABC12345"}
 
 
 async def test_pay_reports_rejected_modempay_key(monkeypatch):
