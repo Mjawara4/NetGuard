@@ -109,8 +109,10 @@ def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
 def test_default_portal_can_list_configured_prices():
     priced = replace(P, portal_plans=(("3-Hours", "10", "GMD"), ("24-Hours", "25", "GMD")))
     rendered = text(sections.portal_page(priced))
-    assert "3-Hours" in rendered and "GMD 10" in rendered
-    assert "24-Hours" in rendered and "GMD 25" in rendered
+    assert "3-Hours" in rendered and "D10" in rendered
+    assert "24-Hours" in rendered and "D25" in rendered
+    assert "plan=3-Hours" in rendered
+    assert "plan=24-Hours" in rendered
 
 
 def test_walled_garden_objects_are_attributable():

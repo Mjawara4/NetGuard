@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Wifi } from 'lucide-react';
 import api from '../api';
 
@@ -26,6 +26,7 @@ export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
     const mac = params.get('mac');
+    const selectedPlan = params.get('plan');
     const returnedPayment = params.get('payment') === 'success';
     const connected = params.get('connected') === '1';
     const intent = params.get('intent');
@@ -33,6 +34,7 @@ export default function Buy() {
     const [paying, setPaying] = useState(null);
     const [error, setError] = useState('');
     const [paymentResult, setPaymentResult] = useState(null);
+    const automaticPurchaseStarted = useRef(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -103,6 +105,17 @@ export default function Buy() {
         }
     };
 
+    useEffect(() => {
+        if (!selectedPlan || state.loading || !state.enabled || returnedPayment || connected) return;
+        if (automaticPurchaseStarted.current) return;
+        if (!state.plans.some((plan) => plan.profile === selectedPlan)) {
+            setError('The selected WiFi plan is no longer available. Please choose another plan.');
+            return;
+        }
+        automaticPurchaseStarted.current = true;
+        purchase(selectedPlan);
+    }, [selectedPlan, state, returnedPayment, connected]);
+
     return (
         <main className="min-h-screen bg-ink-50 dark:bg-ink-950 p-4 flex items-center justify-center">
             <section className="w-full max-w-lg bg-white dark:bg-ink-900 rounded-xl shadow-xl p-6 space-y-6">
@@ -119,6 +132,9 @@ export default function Buy() {
                     </div>
                 )}
                 {!connected && state.loading && <p className="text-center">Loading plans...</p>}
+                {paying && selectedPlan && !error && (
+                    <p className="text-center text-ink-900 dark:text-ink-50">Opening secure Modem Pay checkout…</p>
+                )}
                 {!state.loading && !state.enabled && !error && (
                     <p className="text-center">Online payments are not available for this hotspot.</p>
                 )}

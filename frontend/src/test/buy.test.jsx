@@ -34,6 +34,16 @@ describe('Buy', () => {
         expect(await screen.findByText(/payments are not available/i)).toBeInTheDocument();
     });
 
+    it('starts checkout immediately when a portal plan was selected', async () => {
+        window.history.pushState({}, '', '/buy?router=11111111-1111-1111-1111-111111111111&mac=AA:BB&plan=3-Hours');
+        render(<Buy />);
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith('/buy/pay', {
+            router: '11111111-1111-1111-1111-111111111111',
+            mac: 'AA:BB',
+            plan: '3-Hours',
+        }));
+    });
+
     it('shows the connected confirmation after RouterOS logs the customer in', async () => {
         window.history.pushState({}, '', '/buy?router=11111111-1111-1111-1111-111111111111&connected=1');
         render(<Buy />);

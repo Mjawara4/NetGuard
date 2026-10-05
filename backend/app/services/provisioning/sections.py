@@ -9,6 +9,7 @@ unit test proves we emit what we intended; only a real RouterOS parser proves
 what we intended is valid.
 """
 import html
+from urllib.parse import quote
 
 from .params import ProvisionParams
 
@@ -282,21 +283,27 @@ def walled_garden(p: ProvisionParams) -> list[str]:
 def render_portal_html(device_id: str, plans=()) -> str:
     """Render the RouterOS login page, including the CHAP auto-login handoff."""
     buy_url = f"https://app.netguard.fun/buy?router={device_id}&mac=\\$(mac)&ip=\\$(ip)"
+    def price_label(price, currency):
+        amount = str(price).removesuffix(".0")
+        return f"D{amount}" if currency == "GMD" else f"{currency} {amount}"
+
     plan_cards = "".join(
-        f'<a class="plan" href="{buy_url}"><span>{html.escape(name)}</span>'
-        f'<strong>{html.escape(currency)} {html.escape(price)}</strong></a>'
+        f'<a class="plan" href="{buy_url}&plan={quote(name, safe="")}"><span><b>{html.escape(name)}</b>'
+        f'<small>{html.escape(price_label(price, currency))}</small></span><em>Buy</em></a>'
         for name, price, currency in plans
     )
     # Dollar signs are escaped for the provisioning script so RouterOS writes
     # the hotspot variables literally; the hotspot renderer expands them per client.
     return (
         '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>WiFi Login</title><style>body{margin:0;background:#101412;color:#fff;font-family:Arial,sans-serif}'
-        '.box{max-width:420px;margin:8vh auto;padding:28px;background:#191f1c}.plans{display:grid;gap:10px;margin:20px 0}'
-        '.plan{display:flex;justify-content:space-between;padding:16px;color:#fff;text-decoration:none;border:1px solid #46504b;border-radius:8px}'
-        '.buy,button{display:inline-block;background:#8737aa;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-weight:bold;text-decoration:none}'
-        'input{padding:12px;margin:8px;border-radius:6px;border:1px solid #68726d}</style></head><body><main class="box"><h1>Buy WiFi</h1>'
-        '<p>Choose a plan to pay online, or enter an existing voucher.</p>'
+        '<title>Buy WiFi</title><style>*{box-sizing:border-box}body{margin:0;background:#0d110f;color:#fff;font-family:Arial,sans-serif}'
+        '.box{max-width:500px;margin:7vh auto;padding:32px;background:#171d1a;box-shadow:0 18px 50px #0008;text-align:center}'
+        '.wifi{font-size:44px;color:#8d3caf}h1{font-size:34px;margin:8px 0}p{color:#aeb6b2}.plans{display:grid;gap:12px;margin:24px 0;text-align:left}'
+        '.plan{display:flex;align-items:center;justify-content:space-between;padding:17px;color:#fff;text-decoration:none;border:1px solid #46504b;border-radius:10px}'
+        '.plan:hover{border-color:#8d3caf}.plan span{display:grid;gap:5px}.plan small{color:#aeb6b2;font-size:16px}.plan em,.buy,button{background:#8737aa;color:#fff;border:0;border-radius:9px;padding:12px 18px;font-weight:bold;text-decoration:none;font-style:normal}'
+        '.voucher{border-top:1px solid #343c38;margin-top:26px;padding-top:20px}input{width:60%;padding:12px;margin:8px;border-radius:7px;border:1px solid #68726d;background:#0d110f;color:#fff}'
+        '@media(max-width:540px){.box{margin:0;min-height:100vh;padding:28px 20px}}</style></head><body><main class="box">'
+        '<div class="wifi">⌁</div><h1>Buy WiFi</h1><p>Choose a plan and pay securely with Modem Pay.</p>'
         f'<div class="plans">{plan_cards}</div>'
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
@@ -305,13 +312,13 @@ def render_portal_html(device_id: str, plans=()) -> str:
         'document.login.username.value;document.sendin.password.value=hexMD5("\\$(chap-id)"+'
         'document.login.username.value+"\\$(chap-challenge)");document.sendin.submit();return false}</script>'
         '\\$(endif)'
-        '<form name="login" action="\\$(link-login-only)" method="post" '
+        '<div class="voucher"><p>Already have a voucher?</p><form name="login" action="\\$(link-login-only)" method="post" '
         'onsubmit="return typeof doLogin===\'function\'?doLogin():true">'
         '<input type="hidden" name="dst" value="\\$(link-orig)">'
         '<label>Voucher code <input name="username" autocomplete="username"></label>'
         '<input type="hidden" name="password" value="">'
-        '<button type="submit">Connect</button></form>'
-        f'<p><a class="buy" href="{buy_url}">View plans and pay</a></p>'
+        '<button type="submit">Connect</button></form></div>'
+        f'<p><a class="buy" href="{buy_url}">View all plans</a></p>'
         '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst");'
         'if(!v)return;document.login.username.value=v;document.login.password.value=v;'
         'if(d){document.login.dst.value=d;if(document.sendin)document.sendin.dst.value=d;}'
