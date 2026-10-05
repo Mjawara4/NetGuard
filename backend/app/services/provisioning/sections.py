@@ -254,16 +254,26 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
 def walled_garden(p: ProvisionParams) -> list[str]:
     lines = ["# --- walled garden ---",
              "# Hosts the phone probes to detect a captive portal; blocked, the portal never pops."]
+    portal_hosts = (
+        "app.netguard.fun", "api.modempay.com", "checkout.modempay.com",
+        "test.checkout.modempay.com",
+        # Live hosted checkout dependencies. Captive clients need these
+        # before they have general internet access.
+        "cdnjs.cloudflare.com", "fonts.googleapis.com",
+        "fonts.gstatic.com", "na-gateway.mastercard.com",
+    )
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
-                 "www.msftconnecttest.com", p.hotspot_dns_name,
-                 "app.netguard.fun", "api.modempay.com", "checkout.modempay.com",
-                 "test.checkout.modempay.com",
-                 # Live hosted checkout dependencies. Captive clients need these
-                 # before they have general internet access.
-                 "cdnjs.cloudflare.com", "fonts.googleapis.com",
-                 "fonts.gstatic.com", "na-gateway.mastercard.com"):
+                 "www.msftconnecttest.com", p.hotspot_dns_name, *portal_hosts):
         lines.append(_once("/ip hotspot walled-garden", f'dst-host="{host}"',
                            f"dst-host={host} {TAG}"))
+    # HTTPS is encrypted before the HTTP walled-garden proxy can inspect the
+    # request. Add IP-walled-garden hostname entries as well; RouterOS resolves
+    # these dynamically and lets TCP/443 reach only the payment dependencies.
+    for host in portal_hosts:
+        lines.append(_once(
+            "/ip hotspot walled-garden ip", f'dst-host="{host}"',
+            f"dst-host={host} protocol=tcp dst-port=443 action=accept {TAG}",
+        ))
     return lines
 
 

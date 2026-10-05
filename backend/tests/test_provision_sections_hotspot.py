@@ -110,7 +110,7 @@ def test_walled_garden_objects_are_attributable():
         if " add " in l and not l.startswith("#"):
             seen += 1
             assert 'comment="NetGuard"' in l, l
-    assert seen == 12
+    assert seen == 20
 
 
 def test_hotspot_objects_do_not_carry_comment():
