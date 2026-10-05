@@ -78,7 +78,7 @@ export default function Hotspot() {
     const [logFilter, setLogFilter] = useState('all');
     const [reportSearch, setReportSearch] = useState('');
     const [showPriceModal, setShowPriceModal] = useState(false);
-    const [selectedProfileSettings, setSelectedProfileSettings] = useState({ name: '', price: 0, currency: 'TZS' });
+    const [selectedProfileSettings, setSelectedProfileSettings] = useState({ name: '', price: 0, currency: 'GMD' });
     const [reportPeriod, setReportPeriod] = useState('');
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
@@ -511,7 +511,7 @@ export default function Hotspot() {
         try {
             await api.post(`/hotspot/${selectedDevice}/profiles/${selectedProfileSettings.name}/settings`, {
                 price: selectedProfileSettings.price,
-                currency: selectedProfileSettings.currency
+                currency: 'GMD'
             });
             setShowPriceModal(false);
             fetchData();
@@ -1246,27 +1246,17 @@ export default function Hotspot() {
                 <form onSubmit={handleUpdatePriceSettings} className="space-y-6">
                     <div className="space-y-4">
                         <div>
-                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Voucher Price</label>
+                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Voucher Price (Dalasi)</label>
                             <input
                                 type="number"
                                 required
                                 value={selectedProfileSettings.price}
                                 onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, price: parseFloat(e.target.value) })}
                                 className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-3 px-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none focus:ring-2 focus:ring-up/20"
-                                placeholder="e.g. 500"
+                                placeholder="e.g. 10"
                             />
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Currency Symbol (e.g. TZS, $, UGX)</label>
-                            <input
-                                type="text"
-                                required
-                                value={selectedProfileSettings.currency || template.default_currency || 'TZS'}
-                                onChange={(e) => setSelectedProfileSettings({ ...selectedProfileSettings, currency: e.target.value.toUpperCase() })}
-                                className="placeholder:text-ink-500 dark:placeholder:text-ink-400 w-full bg-ink-50 dark:bg-ink-800 border-none rounded-lg py-3 px-4 text-sm font-bold text-ink-900 dark:text-ink-100 outline-none focus:ring-2 focus:ring-up/20"
-                                placeholder="TZS"
-                            />
-                        </div>
+                        <p className="text-xs font-medium text-ink-500 dark:text-ink-400">Currency: Gambian dalasi (D)</p>
                     </div>
                     <div className="flex gap-4">
                         <button
@@ -1289,4 +1279,3 @@ export default function Hotspot() {
         </div >
     );
 }
-

@@ -19,7 +19,7 @@ describe('Buy', () => {
 
     it('renders server plans and sends the selected plan to checkout', async () => {
         render(<Buy />);
-        expect(await screen.findByText('GMD 10')).toBeInTheDocument();
+        expect(await screen.findByText('D10')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Buy' }));
         await waitFor(() => expect(api.post).toHaveBeenCalledWith('/buy/pay', {
             router: '11111111-1111-1111-1111-111111111111',

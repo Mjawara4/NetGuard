@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,14 +87,25 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
         "mac": payload.mac,
         "plan": payload.plan,
     }
-    result = await create_payment_intent(
-        decrypt_value(org.modempay_secret_key),
-        amount,
-        currency,
-        metadata,
-        "https://app.netguard.fun/buy?payment=success",
-        f"https://app.netguard.fun/buy?router={device.id}",
-    )
+    try:
+        result = await create_payment_intent(
+            decrypt_value(org.modempay_secret_key),
+            amount,
+            currency,
+            metadata,
+            "https://app.netguard.fun/buy?payment=success",
+            f"https://app.netguard.fun/buy?router={device.id}",
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            raise HTTPException(
+                status_code=502,
+                detail="Modem Pay rejected the saved API key. Update it in NetGuard Settings.",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Modem Pay could not start checkout. Please try again.",
+        ) from exc
     intent = PaymentIntent(
         id=local_intent_id,
         device_id=device.id,

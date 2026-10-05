@@ -277,7 +277,7 @@ async def sync_hotspot_sales(device: Device, db: AsyncSession):
         # Build price map
         hs_settings = device.voucher_template or {}
         profile_pricing = hs_settings.get('profile_pricing', {})
-        default_currency = hs_settings.get('default_currency', 'TZS')
+        default_currency = hs_settings.get('default_currency', 'GMD')
 
         # Build case-insensitive lookup index
         profile_pricing_lower = {k.lower(): v for k, v in profile_pricing.items()}
@@ -614,7 +614,7 @@ async def get_hotspot_profiles(
         # Parse price/currency from local database settings (Device.voucher_template)
         settings = device.voucher_template or {}
         profile_pricing = settings.get('profile_pricing', {})
-        default_currency = settings.get('default_currency', 'TZS')
+        default_currency = settings.get('default_currency', 'GMD')
 
         # Build serializable result dicts
         result = []
@@ -1016,7 +1016,7 @@ class VoucherTemplate(BaseModel):
     logo_url: Optional[str] = None
     color_primary: Optional[str] = "#2563EB"
     profile_pricing: Optional[dict] = {}
-    default_currency: Optional[str] = "TZS"
+    default_currency: Optional[str] = "GMD"
 
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
@@ -1809,7 +1809,7 @@ async def record_hotspot_sale(
     # Determine price and currency from profile pricing map or regex heuristic
     hs_settings = device.voucher_template or {}
     profile_pricing = hs_settings.get('profile_pricing', {})
-    default_currency = hs_settings.get('default_currency', 'TZS')
+    default_currency = hs_settings.get('default_currency', 'GMD')
 
     price = 0
     currency = default_currency

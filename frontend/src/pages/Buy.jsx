@@ -7,6 +7,11 @@ const isCaptivePopup = () => {
     return /CaptiveNetworkSupport|; wv\)|WebView/i.test(agent);
 };
 
+const formatPrice = (price, currency) => {
+    const amount = Number(price).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return currency === 'GMD' ? `D${amount}` : `${currency} ${amount}`;
+};
+
 export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
@@ -66,7 +71,7 @@ export default function Buy() {
                         <div key={plan.profile} className="flex items-center justify-between border border-ink-200 dark:border-ink-700 rounded-md p-4">
                             <div>
                                 <h2 className="font-bold text-ink-900 dark:text-ink-50">{plan.profile}</h2>
-                                <p className="text-sm text-ink-500 dark:text-ink-400">{plan.currency} {plan.price}</p>
+                                <p className="text-sm text-ink-500 dark:text-ink-400">{formatPrice(plan.price, plan.currency)}</p>
                             </div>
                             <button
                                 type="button"

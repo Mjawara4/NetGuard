@@ -57,13 +57,13 @@ export default function ProfilesPanel({ profiles, handleProfileDelete, setShowPr
                                             setSelectedProfileSettings({
                                                 name: p.name,
                                                 price: p.custom_price || 0,
-                                                currency: p.custom_currency || 'TZS'
+                                                currency: 'GMD'
                                             });
                                             setShowPriceModal(true);
                                         }}
                                         className="inline-flex items-center gap-1.5 bg-up/10 dark:bg-up/20 text-ink-900 dark:text-ink-50 px-3 py-1 rounded-md text-xs font-bold hover:bg-up/20 transition-colors"
                                     >
-                                        {p.custom_price ? `${p.custom_price.toLocaleString()} ${p.custom_currency || 'TZS'}` : 'Set price'}
+                                        {p.custom_price ? `${p.custom_currency === 'GMD' || !p.custom_currency ? 'D' : `${p.custom_currency} `}${p.custom_price.toLocaleString()}` : 'Set price'}
                                         <Settings size={12} />
                                     </button>
                                 )
@@ -124,13 +124,13 @@ export default function ProfilesPanel({ profiles, handleProfileDelete, setShowPr
                                             setSelectedProfileSettings({
                                                 name: p.name,
                                                 price: p.custom_price || 0,
-                                                currency: p.custom_currency || 'TZS'
+                                                currency: 'GMD'
                                             });
                                             setShowPriceModal(true);
                                         }}
                                         className="w-full text-center text-ink-900 dark:text-ink-50 font-semibold text-xs bg-up/10 dark:bg-up/20 py-2 rounded-lg flex items-center justify-center gap-2"
                                     >
-                                        <Settings size={14} /> Configure Price ({p.custom_price || '0'} {p.custom_currency || 'TZS'})
+                                        <Settings size={14} /> Configure Price ({p.custom_currency === 'GMD' || !p.custom_currency ? 'D' : `${p.custom_currency} `}{p.custom_price || '0'})
                                     </button>
                                     <button onClick={() => handleProfileDelete(p.name)} className="w-full text-center text-down dark:text-ink-100 font-semibold text-xs bg-down/10 dark:bg-down/20 py-2 rounded-lg">Delete Profile</button>
                                 </div>
