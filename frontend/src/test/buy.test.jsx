@@ -33,4 +33,12 @@ describe('Buy', () => {
         render(<Buy />);
         expect(await screen.findByText(/payments are not available/i)).toBeInTheDocument();
     });
+
+    it('shows the connected confirmation after RouterOS logs the customer in', async () => {
+        window.history.pushState({}, '', '/buy?router=11111111-1111-1111-1111-111111111111&connected=1');
+        render(<Buy />);
+        expect(await screen.findByRole('heading', { name: 'Successfully connected' })).toBeInTheDocument();
+        expect(screen.getByText(/WiFi access is active/i)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
 });

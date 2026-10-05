@@ -267,14 +267,12 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     return lines
 
 
-def portal_page(p: ProvisionParams) -> list[str]:
-    """Install the default portal page; custom portals use the dashboard snippet."""
-    if not p.device_id:
-        return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
-    buy_url = f"https://app.netguard.fun/buy?router={p.device_id}&mac=\\$(mac)&ip=\\$(ip)"
+def render_portal_html(device_id: str) -> str:
+    """Render the RouterOS login page, including the CHAP auto-login handoff."""
+    buy_url = f"https://app.netguard.fun/buy?router={device_id}&mac=\\$(mac)&ip=\\$(ip)"
     # Dollar signs are escaped for the provisioning script so RouterOS writes
     # the hotspot variables literally; the hotspot renderer expands them per client.
-    html = (
+    return (
         '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>WiFi Login</title></head><body><h1>WiFi Login</h1>'
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
@@ -290,8 +288,20 @@ def portal_page(p: ProvisionParams) -> list[str]:
         '<label>Voucher code <input name="username" autocomplete="username"></label>'
         '<input type="hidden" name="password" value="">'
         '<button type="submit">Connect</button></form>'
-        f'<p><a href="{buy_url}">Buy WiFi</a></p></body></html>'
+        f'<p><a href="{buy_url}">Buy WiFi</a></p>'
+        '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst");'
+        'if(!v)return;document.login.username.value=v;document.login.password.value=v;'
+        'if(d){document.login.dst.value=d;if(document.sendin)document.sendin.dst.value=d;}'
+        'if(typeof doLogin==="function")doLogin();else document.login.submit();})();</script>'
+        '</body></html>'
     )
+
+
+def portal_page(p: ProvisionParams) -> list[str]:
+    """Install the default portal page; custom portals use the dashboard snippet."""
+    if not p.device_id:
+        return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
+    html = render_portal_html(p.device_id)
     escaped = html.replace('"', '\\"')
     return [
         "# --- captive portal page ---",

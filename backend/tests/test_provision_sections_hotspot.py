@@ -99,6 +99,9 @@ def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
     assert "Buy WiFi" in rendered
     assert "hexMD5" in rendered
     assert "document.login.username.value" in rendered
+    assert 'q.get(\\"voucher\\")' in rendered
+    assert 'document.login.password.value=v' in rendered
+    assert 'document.sendin.dst.value=d' in rendered
 
 
 def test_walled_garden_objects_are_attributable():

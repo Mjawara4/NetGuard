@@ -17,6 +17,7 @@ export default function Buy() {
     const router = params.get('router');
     const mac = params.get('mac');
     const returnedPayment = params.get('payment') === 'success';
+    const connected = params.get('connected') === '1';
     const intent = params.get('intent');
     const [state, setState] = useState({ loading: true, enabled: false, plans: [] });
     const [paying, setPaying] = useState(null);
@@ -55,6 +56,17 @@ export default function Buy() {
         return () => clearInterval(timer);
     }, [returnedPayment, router, intent]);
 
+    useEffect(() => {
+        const voucher = paymentResult?.voucher_username;
+        if (!voucher || !router) return undefined;
+        const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
+        const login = new URL('http://login.netguard.local/login');
+        login.searchParams.set('voucher', voucher);
+        login.searchParams.set('dst', destination);
+        const redirect = setTimeout(() => window.location.assign(login.toString()), 1200);
+        return () => clearTimeout(redirect);
+    }, [paymentResult, router]);
+
     const purchase = async (plan) => {
         setPaying(plan);
         setError('');
@@ -72,8 +84,8 @@ export default function Buy() {
             <section className="w-full max-w-lg bg-white dark:bg-ink-900 rounded-xl shadow-xl p-6 space-y-6">
                 <header className="text-center">
                     <Wifi className="mx-auto text-signal-600" size={36} />
-                    <h1 className="mt-3 text-2xl font-bold text-ink-900 dark:text-ink-50">Buy WiFi</h1>
-                    <p className="text-sm text-ink-500 dark:text-ink-400">Choose a plan and pay securely with Modem Pay.</p>
+                    <h1 className="mt-3 text-2xl font-bold text-ink-900 dark:text-ink-50">{connected ? 'Successfully connected' : 'Buy WiFi'}</h1>
+                    <p className="text-sm text-ink-500 dark:text-ink-400">{connected ? 'Your WiFi access is active. You can close this page.' : 'Choose a plan and pay securely with Modem Pay.'}</p>
                 </header>
 
                 {isCaptivePopup() && (
@@ -82,7 +94,7 @@ export default function Buy() {
                         <p className="mt-1 break-all">{window.location.href}</p>
                     </div>
                 )}
-                {state.loading && <p className="text-center">Loading plans...</p>}
+                {!connected && state.loading && <p className="text-center">Loading plans...</p>}
                 {!state.loading && !state.enabled && !error && (
                     <p className="text-center">Online payments are not available for this hotspot.</p>
                 )}
@@ -94,10 +106,10 @@ export default function Buy() {
                     <div className="rounded-md border border-up/30 bg-up/10 p-4 text-center">
                         <p className="font-bold text-ink-900 dark:text-ink-50">Your WiFi voucher code</p>
                         <p className="mt-2 text-2xl font-mono font-bold text-up">{paymentResult.voucher_username}</p>
-                        <p className="mt-2 text-sm text-ink-500 dark:text-ink-400">Return to the WiFi login page and enter this code.</p>
+                        <p className="mt-2 text-sm text-ink-500 dark:text-ink-400">Connecting you automatically…</p>
                     </div>
                 )}
-                <div className="space-y-3">
+                {!connected && <div className="space-y-3">
                     {state.plans.map((plan) => (
                         <div key={plan.profile} className="flex items-center justify-between border border-ink-200 dark:border-ink-700 rounded-md p-4">
                             <div>
@@ -114,7 +126,7 @@ export default function Buy() {
                             </button>
                         </div>
                     ))}
-                </div>
+                </div>}
             </section>
         </main>
     );
