@@ -99,6 +99,7 @@
 :if ([:len [/ip hotspot walled-garden find where dst-host="app.netguard.fun"]] = 0) do={ /ip hotspot walled-garden add dst-host=app.netguard.fun comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="api.modempay.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=api.modempay.com comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="checkout.modempay.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=checkout.modempay.com comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden find where dst-host="test.checkout.modempay.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=test.checkout.modempay.com comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="cdnjs.cloudflare.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=cdnjs.cloudflare.com comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="fonts.googleapis.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=fonts.googleapis.com comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="fonts.gstatic.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=fonts.gstatic.com comment="NetGuard" }

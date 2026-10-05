@@ -257,6 +257,7 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
                  "www.msftconnecttest.com", p.hotspot_dns_name,
                  "app.netguard.fun", "api.modempay.com", "checkout.modempay.com",
+                 "test.checkout.modempay.com",
                  # Live hosted checkout dependencies. Captive clients need these
                  # before they have general internet access.
                  "cdnjs.cloudflare.com", "fonts.googleapis.com",
