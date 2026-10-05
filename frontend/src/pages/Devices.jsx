@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { Link } from 'react-router-dom';
-import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText } from 'lucide-react';
+import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText, Copy, Check } from 'lucide-react';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 import { Button } from '../components/ui';
@@ -13,6 +13,20 @@ export default function Devices() {
     const [showWizard, setShowWizard] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState(null);
     const [deviceMetrics, setDeviceMetrics] = useState({});
+    const [portalCopied, setPortalCopied] = useState(false);
+
+    const portalSnippet = selectedDevice ? `<a href="https://app.netguard.fun/buy?router=${selectedDevice.id}&mac=$(mac)&ip=$(ip)" style="display:inline-block;padding:14px 24px;background:#8737aa;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Buy WiFi</a>` : '';
+
+    const copyPortalSnippet = async () => {
+        try {
+            await navigator.clipboard.writeText(portalSnippet);
+            setPortalCopied(true);
+            window.setTimeout(() => setPortalCopied(false), 2000);
+        } catch {
+            setPortalCopied(false);
+            alert('Copy was blocked by the browser. Select and copy the code manually.');
+        }
+    };
 
     const [newDevice, setNewDevice] = useState({
         name: '',
@@ -468,6 +482,32 @@ export default function Devices() {
                                         )) || <div className="text-center py-6 text-ink-500 dark:text-ink-400 text-sm font-medium italic">No data.</div>}
                                     </div>
                                 </div>
+
+                                {selectedDevice.device_type === 'router' && (
+                                    <div className="bg-white dark:bg-ink-800 p-6 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700">
+                                        <div className="flex items-start justify-between gap-4 mb-4">
+                                            <div>
+                                                <h4 className="font-bold text-ink-900 dark:text-ink-50">Custom Portal Payment Button</h4>
+                                                <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">For a custom-designed captive portal. The router ID is already included.</p>
+                                            </div>
+                                            <button onClick={copyPortalSnippet} className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-md bg-signal-600 text-white text-xs font-bold">
+                                                {portalCopied ? <Check size={15} /> : <Copy size={15} />}
+                                                {portalCopied ? 'Copied' : 'Copy HTML'}
+                                            </button>
+                                        </div>
+                                        <textarea readOnly value={portalSnippet} aria-label="Custom portal Buy WiFi HTML" className="w-full min-h-32 p-3 rounded-md bg-ink-900 text-ink-100 font-mono text-xs border border-ink-700 resize-y" />
+                                        <div className="mt-4 rounded-md bg-ink-50 dark:bg-ink-900 p-4 text-xs text-ink-600 dark:text-ink-300 space-y-2">
+                                            <p className="font-bold text-ink-900 dark:text-ink-50">Where to paste it</p>
+                                            <p>WinBox → Files → hotspot → download <code>login.html</code>.</p>
+                                            <p>Paste the HTML inside the page&rsquo;s <code>&lt;body&gt;</code>, save it, then upload it back into the <code>hotspot</code> folder.</p>
+                                            <p>Keep <code>$(mac)</code> and <code>$(ip)</code> unchanged; MikroTik fills them for each customer.</p>
+                                        </div>
+                                        <div className="mt-4">
+                                            <span className="inline-block px-6 py-3 rounded-md bg-[#8737aa] text-white font-bold">Buy WiFi</span>
+                                            <span className="ml-3 text-xs text-ink-500 dark:text-ink-400">Button preview</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="bg-white dark:bg-ink-800 p-12 rounded-lg border border-dashed border-ink-200 dark:border-ink-700 text-center text-ink-500 dark:text-ink-400 flex flex-col items-center justify-center sticky top-8 h-[500px]">
