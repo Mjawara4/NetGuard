@@ -1,9 +1,12 @@
 # Captive-Portal Payments Acceptance
 
 This is the release gate for Modem Pay captive-portal payments. Complete the
-sandbox section before enabling live credentials. Do not run the database
-migration on a live deployment until the additive SQL in
-`backend/alembic/versions/0010_portal_payments.py` has explicit human approval.
+sandbox section before enabling live credentials.
+
+Migration approval: **approved by the project owner on 2026-10-05** for
+`backend/alembic/versions/0010_portal_payments.py`. This records approval for
+the migration to accompany a future deployment; it does not record that the
+migration has already been applied to production.
 
 ## Automated evidence
 
