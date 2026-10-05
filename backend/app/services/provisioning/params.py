@@ -58,6 +58,7 @@ class ProvisionParams:
     recovery_password: str | None
     hotspot_dns_name: str
     device_id: str | None
+    portal_plans: tuple[tuple[str, str, str], ...]
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
@@ -67,6 +68,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  hotspot_login_user: str = "admin",
                  hotspot_login_password: str = "root",
                  device_id: str | None = None,
+                 portal_plans: tuple[tuple[str, str, str], ...] = (),
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -241,4 +243,5 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         hotspot_login_password=hotspot_login_password,
         hotspot_dns_name="login.netguard.local",
         device_id=device_id,
+        portal_plans=portal_plans,
     )

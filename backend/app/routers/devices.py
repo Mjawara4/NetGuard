@@ -469,6 +469,12 @@ async def generate_provision_script(
     # `admin` password is never set or changed by the script -- it belongs to the
     # operator.
     recovery_password = generate_api_password()
+    pricing = (device.voucher_template or {}).get("profile_pricing", {})
+    portal_plans = tuple(
+        (str(profile), str(details.get("price", "")), str(details.get("currency", "GMD")))
+        for profile, details in pricing.items()
+        if isinstance(details, dict) and details.get("price") not in (None, "")
+    )
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,
@@ -478,6 +484,7 @@ async def generate_provision_script(
             wg_server_endpoint=settings.WG_SERVER_ENDPOINT,
             wg_server_port=settings.WG_SERVER_PORT,
             api_password=api_password, recovery_password=recovery_password,
+            portal_plans=portal_plans,
         )
     except ValueError as e:
         msg = str(e)

@@ -5,7 +5,7 @@ import csv
 from typing import List, Optional
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from app.core.database import get_db
 from app.auth.deps import get_authorized_actor, get_current_user
 from app.models import Device, User, Site, APIKey, UserRole, VoucherSale, VoucherBatch
@@ -1604,6 +1604,7 @@ async def get_hotspot_reports(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     period: Optional[str] = None,
+    purchase_type: str = "all",
     background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
@@ -1623,7 +1624,9 @@ async def get_hotspot_reports(
     decrypt_device_secrets(device)
 
     # Try cache first (cache key includes filters)
-    cache_params = f"{period or ''}:{start_date or ''}:{end_date or ''}"
+    if purchase_type not in {"all", "online", "in_person"}:
+        raise HTTPException(status_code=400, detail="Invalid purchase type")
+    cache_params = f"{period or ''}:{start_date or ''}:{end_date or ''}:{purchase_type}"
     key = cache_key(device_id, f"reports:{cache_params}")
     cached = _redis_get(key)
     if cached:
@@ -1642,6 +1645,12 @@ async def get_hotspot_reports(
         from sqlalchemy import and_, func
 
         stmt = select(VoucherSale).where(VoucherSale.device_id == device.id)
+        if purchase_type == "online":
+            stmt = stmt.where(VoucherSale.comment.ilike("Modem Pay %"))
+        elif purchase_type == "in_person":
+            stmt = stmt.where(
+                or_(VoucherSale.comment.is_(None), ~VoucherSale.comment.ilike("Modem Pay %"))
+            )
 
         # Handle period presets
         from datetime import timedelta
@@ -1689,7 +1698,8 @@ async def get_hotspot_reports(
                 "bytes": sale.bytes_total,
                 "price": sale.price,
                 "currency": sale.currency,
-                "comment": sale.comment
+                "comment": sale.comment,
+                "purchase_type": "online" if (sale.comment or "").startswith("Modem Pay ") else "in_person"
             })
 
         # Aggregation by period (Mikhmon Style)
@@ -1715,6 +1725,7 @@ async def get_hotspot_reports(
         result = {
             "status": "success",
             "period": period or f"{start_date} to {end_date}",
+            "purchase_type": purchase_type,
             "total_sold": total_sold,
             "total_revenue": total_revenue,
             "data": report_data,

@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from app.services.provisioning.params import build_params
 from provision_helpers import sections
 
@@ -102,6 +104,13 @@ def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
     assert 'q.get(\\"voucher\\")' in rendered
     assert 'document.login.password.value=v' in rendered
     assert 'document.sendin.dst.value=d' in rendered
+
+
+def test_default_portal_can_list_configured_prices():
+    priced = replace(P, portal_plans=(("3-Hours", "10", "GMD"), ("24-Hours", "25", "GMD")))
+    rendered = text(sections.portal_page(priced))
+    assert "3-Hours" in rendered and "GMD 10" in rendered
+    assert "24-Hours" in rendered and "GMD 25" in rendered
 
 
 def test_walled_garden_objects_are_attributable():

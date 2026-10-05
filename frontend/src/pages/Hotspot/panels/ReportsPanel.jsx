@@ -3,7 +3,7 @@ import { Activity, Clock, FileText, Plus, Search, Users } from 'lucide-react';
 import ResponsiveTable from '../../../components/ResponsiveTable';
 import { bandFor } from '../profileBand';
 
-export default function ReportsPanel({ reportData, filteredReports, reportSearch, setReportSearch, reportPeriod, setReportPeriod, reportStartDate, setReportStartDate, reportEndDate, setReportEndDate, reportPage, setReportPage, selectedDevice }) {
+export default function ReportsPanel({ reportData, filteredReports, reportSearch, setReportSearch, reportPeriod, setReportPeriod, reportStartDate, setReportStartDate, reportEndDate, setReportEndDate, reportPurchaseType, setReportPurchaseType, reportPage, setReportPage, selectedDevice }) {
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Stats Controls */}
@@ -30,6 +30,19 @@ export default function ReportsPanel({ reportData, filteredReports, reportSearch
                             </button>
                         ))}
                     </div>
+                </div>
+
+                <div className="flex-1 bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm">
+                    <label className="block text-xs font-medium text-ink-500 dark:text-ink-400 mb-2">Purchase channel</label>
+                    <select
+                        value={reportPurchaseType}
+                        onChange={(e) => { setReportPurchaseType(e.target.value); setReportPage(1); }}
+                        className="w-full bg-ink-50 dark:bg-ink-900 border-none rounded-md py-2 px-3 text-xs font-bold text-ink-900 dark:text-ink-100"
+                    >
+                        <option value="all">All purchases</option>
+                        <option value="online">Online (Modem Pay)</option>
+                        <option value="in_person">In-person vouchers</option>
+                    </select>
                 </div>
 
                 <div className="flex-1 bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700 shadow-sm flex items-center gap-3">

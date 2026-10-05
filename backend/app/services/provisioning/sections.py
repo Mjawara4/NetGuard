@@ -8,6 +8,8 @@ and is verified by `scripts/chr-smoke-test.sh`, not by these unit tests. A
 unit test proves we emit what we intended; only a real RouterOS parser proves
 what we intended is valid.
 """
+import html
+
 from .params import ProvisionParams
 
 TAG = 'comment="NetGuard"'
@@ -277,14 +279,25 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     return lines
 
 
-def render_portal_html(device_id: str) -> str:
+def render_portal_html(device_id: str, plans=()) -> str:
     """Render the RouterOS login page, including the CHAP auto-login handoff."""
     buy_url = f"https://app.netguard.fun/buy?router={device_id}&mac=\\$(mac)&ip=\\$(ip)"
+    plan_cards = "".join(
+        f'<a class="plan" href="{buy_url}"><span>{html.escape(name)}</span>'
+        f'<strong>{html.escape(currency)} {html.escape(price)}</strong></a>'
+        for name, price, currency in plans
+    )
     # Dollar signs are escaped for the provisioning script so RouterOS writes
     # the hotspot variables literally; the hotspot renderer expands them per client.
     return (
         '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<title>WiFi Login</title></head><body><h1>WiFi Login</h1>'
+        '<title>WiFi Login</title><style>body{margin:0;background:#101412;color:#fff;font-family:Arial,sans-serif}'
+        '.box{max-width:420px;margin:8vh auto;padding:28px;background:#191f1c}.plans{display:grid;gap:10px;margin:20px 0}'
+        '.plan{display:flex;justify-content:space-between;padding:16px;color:#fff;text-decoration:none;border:1px solid #46504b;border-radius:8px}'
+        '.buy,button{display:inline-block;background:#8737aa;color:#fff;border:0;border-radius:8px;padding:12px 18px;font-weight:bold;text-decoration:none}'
+        'input{padding:12px;margin:8px;border-radius:6px;border:1px solid #68726d}</style></head><body><main class="box"><h1>Buy WiFi</h1>'
+        '<p>Choose a plan to pay online, or enter an existing voucher.</p>'
+        f'<div class="plans">{plan_cards}</div>'
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
         '<input type="hidden" name="dst" value="\\$(link-orig)"></form>'
@@ -298,12 +311,12 @@ def render_portal_html(device_id: str) -> str:
         '<label>Voucher code <input name="username" autocomplete="username"></label>'
         '<input type="hidden" name="password" value="">'
         '<button type="submit">Connect</button></form>'
-        f'<p><a href="{buy_url}">Buy WiFi</a></p>'
+        f'<p><a class="buy" href="{buy_url}">View plans and pay</a></p>'
         '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst");'
         'if(!v)return;document.login.username.value=v;document.login.password.value=v;'
         'if(d){document.login.dst.value=d;if(document.sendin)document.sendin.dst.value=d;}'
         'if(typeof doLogin==="function")doLogin();else document.login.submit();})();</script>'
-        '</body></html>'
+        '</main></body></html>'
     )
 
 
@@ -311,7 +324,7 @@ def portal_page(p: ProvisionParams) -> list[str]:
     """Install the default portal page; custom portals use the dashboard snippet."""
     if not p.device_id:
         return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
-    html = render_portal_html(p.device_id)
+    html = render_portal_html(p.device_id, p.portal_plans)
     escaped = html.replace('"', '\\"')
     return [
         "# --- captive portal page ---",

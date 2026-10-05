@@ -82,6 +82,7 @@ export default function Hotspot() {
     const [reportPeriod, setReportPeriod] = useState('');
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
+    const [reportPurchaseType, setReportPurchaseType] = useState('all');
 
     const filteredReports = reportData?.data?.filter(r =>
         (r.username || '').toLowerCase().includes(reportSearch.toLowerCase()) ||
@@ -171,7 +172,7 @@ export default function Hotspot() {
         if (selectedDevice && activeTab === 'reports') {
             fetchData();
         }
-    }, [reportPeriod, reportStartDate, reportEndDate]);
+    }, [reportPeriod, reportStartDate, reportEndDate, reportPurchaseType]);
 
     // Search fallback: if local filter returns nothing, query router directly
     useEffect(() => {
@@ -425,6 +426,7 @@ export default function Hotspot() {
                 if (reportPeriod) params.append('period', reportPeriod);
                 if (reportStartDate) params.append('start_date', reportStartDate);
                 if (reportEndDate) params.append('end_date', reportEndDate);
+                if (reportPurchaseType !== 'all') params.append('purchase_type', reportPurchaseType);
                 const [reportRes, templateRes] = await Promise.all([
                     api.get(`/hotspot/${selectedDevice}/reports?${params.toString()}`),
                     api.get(`/hotspot/${selectedDevice}/voucher-template`)
@@ -1099,6 +1101,8 @@ export default function Hotspot() {
                             setReportStartDate={setReportStartDate}
                             reportEndDate={reportEndDate}
                             setReportEndDate={setReportEndDate}
+                            reportPurchaseType={reportPurchaseType}
+                            setReportPurchaseType={setReportPurchaseType}
                             reportPage={reportPage}
                             setReportPage={setReportPage}
                             selectedDevice={selectedDevice}
