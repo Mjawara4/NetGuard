@@ -35,17 +35,35 @@ export default function Buy() {
     const [paymentResult, setPaymentResult] = useState(null);
 
     useEffect(() => {
+        let cancelled = false;
         if (!router) {
             setState({ loading: false, enabled: false, plans: [] });
             setError('This payment link is missing its router ID.');
-            return;
+            return undefined;
         }
-        api.get('/buy/plans', { params: { router } })
-            .then(({ data }) => setState({ loading: false, ...data }))
-            .catch(() => {
+        const loadPlans = async () => {
+            for (const delay of [0, 750, 2000]) {
+                if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+                if (cancelled) return;
+                try {
+                    const { data } = await api.get('/buy/plans', { params: { router } });
+                    if (!cancelled) {
+                        setState({ loading: false, ...data });
+                        setError('');
+                    }
+                    return;
+                } catch {
+                    // Captive networks often drop the first request while switching
+                    // between cellular and WiFi. Retry before showing an error.
+                }
+            }
+            if (!cancelled) {
                 setState({ loading: false, enabled: false, plans: [] });
-                setError('Unable to load WiFi plans.');
-            });
+                setError('Unable to load WiFi plans. Please refresh and try again.');
+            }
+        };
+        loadPlans();
+        return () => { cancelled = true; };
     }, [router]);
 
     useEffect(() => {
