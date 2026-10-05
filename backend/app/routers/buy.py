@@ -1,7 +1,7 @@
 """Public captive-portal plan listing and hosted-checkout creation."""
 
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -79,7 +79,9 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Unknown plan")
     amount = details["price"]
     currency = details.get("currency", "GMD")
+    local_intent_id = uuid4()
     metadata = {
+        "payment_intent_id": str(local_intent_id),
         "device_id": str(device.id),
         "mac": payload.mac,
         "plan": payload.plan,
@@ -93,6 +95,7 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
         f"https://app.netguard.fun/buy?router={device.id}",
     )
     intent = PaymentIntent(
+        id=local_intent_id,
         device_id=device.id,
         charge_id=result.get("charge_id"),
         plan=payload.plan,

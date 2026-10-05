@@ -53,5 +53,5 @@ async def create_payment_intent(
         raise ValueError("Modem Pay response did not include a payment link")
     return {
         "payment_link": payment_link,
-        "charge_id": data.get("charge_id") or data.get("id"),
+        "charge_id": data.get("charge_id") or data.get("id") or data.get("intent_secret"),
     }

@@ -56,5 +56,6 @@ async def test_pay_uses_server_price_and_persists_intent(monkeypatch):
     out = await buy.pay(buy.PayRequest(router=dev.id, mac="AA:BB", plan="3-Hours"), db=db)
     assert out == {"checkout_url": "https://checkout.test/1"}
     assert create.await_args.args[1:3] == (10, "GMD")
+    assert create.await_args.args[3]["payment_intent_id"]
     assert db.add.call_args.args[0].charge_id == "ch_1"
     db.commit.assert_awaited_once()
