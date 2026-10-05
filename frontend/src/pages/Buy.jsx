@@ -12,6 +12,16 @@ const formatPrice = (price, currency) => {
     return currency === 'GMD' ? `D${amount}` : `${currency} ${amount}`;
 };
 
+const hotspotLoginUrl = (voucher, router) => {
+    const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
+    // Use the gateway IP directly. Safari may try HTTPS for the .local hotspot
+    // hostname, but RouterOS serves its captive login over HTTP only.
+    const login = new URL('http://10.15.0.1/login');
+    login.searchParams.set('voucher', voucher);
+    login.searchParams.set('dst', destination);
+    return login.toString();
+};
+
 export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
@@ -59,11 +69,7 @@ export default function Buy() {
     useEffect(() => {
         const voucher = paymentResult?.voucher_username;
         if (!voucher || !router) return undefined;
-        const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
-        const login = new URL('http://login.netguard.local/login');
-        login.searchParams.set('voucher', voucher);
-        login.searchParams.set('dst', destination);
-        const redirect = setTimeout(() => window.location.assign(login.toString()), 1200);
+        const redirect = setTimeout(() => window.location.assign(hotspotLoginUrl(voucher, router)), 1200);
         return () => clearTimeout(redirect);
     }, [paymentResult, router]);
 
@@ -107,6 +113,7 @@ export default function Buy() {
                         <p className="font-bold text-ink-900 dark:text-ink-50">Your WiFi voucher code</p>
                         <p className="mt-2 text-2xl font-mono font-bold text-up">{paymentResult.voucher_username}</p>
                         <p className="mt-2 text-sm text-ink-500 dark:text-ink-400">Connecting you automatically…</p>
+                        <a className="mt-3 inline-block rounded-md bg-up px-4 py-2 text-sm font-bold text-white" href={hotspotLoginUrl(paymentResult.voucher_username, router)}>Connect now</a>
                     </div>
                 )}
                 {!connected && <div className="space-y-3">
