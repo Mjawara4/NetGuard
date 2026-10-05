@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.core import Device, Organization, PaymentIntent, Site, VoucherSale, decrypt_device_secrets
 from app.services.modempay import verify_webhook
+from app.services import hotspot_cache
 from app.services.voucher_jobs import generate_candidate
 from app.utils.encryption import decrypt_value
 
@@ -126,6 +127,10 @@ async def process_webhook(raw_body: bytes, signature: str, db: AsyncSession):
     intent.status = "fulfilled"
     intent.voucher_username = username
     await db.commit()
+    # Hotspot Manager serves users from Redis rather than querying the router
+    # on every page load. Make the newly purchased voucher visible promptly.
+    hotspot_cache.invalidate(str(device.id), "users")
+    hotspot_cache.request_refresh(str(device.id))
     return {"status": "fulfilled", "voucher_username": username}
 
 

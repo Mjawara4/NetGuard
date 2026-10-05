@@ -61,14 +61,20 @@ async def test_replayed_charge_grants_once(monkeypatch):
     context = _context()
     db = _db()
     add_user = MagicMock()
+    invalidate = MagicMock()
+    refresh = MagicMock()
     monkeypatch.setattr(webhook, "_load_locked_intent", AsyncMock(return_value=context))
     monkeypatch.setattr(webhook, "_add_router_user", add_user)
+    monkeypatch.setattr(webhook.hotspot_cache, "invalidate", invalidate)
+    monkeypatch.setattr(webhook.hotspot_cache, "request_refresh", refresh)
     body = _body()
     await webhook.process_webhook(body, _signature(body), db)
     await webhook.process_webhook(body, _signature(body), db)
     add_user.assert_called_once()
     assert context[0].status == "fulfilled"
     assert db.commit.await_count == 1
+    invalidate.assert_called_once_with(str(context[1].id), "users")
+    refresh.assert_called_once_with(str(context[1].id))
 
 
 async def test_amount_mismatch_rejected(monkeypatch):
