@@ -83,7 +83,9 @@ def test_walled_garden_allows_each_probe_host_on_its_own_line():
 
 def test_walled_garden_allows_payment_and_buy_hosts_without_todo():
     rendered = text(sections.walled_garden(P))
-    for host in ("app.netguard.fun", "api.modempay.com", "checkout.modempay.com"):
+    for host in ("app.netguard.fun", "api.modempay.com", "checkout.modempay.com",
+                 "cdnjs.cloudflare.com", "fonts.googleapis.com", "fonts.gstatic.com",
+                 "na-gateway.mastercard.com"):
         assert f"dst-host={host}" in rendered
     assert "TODO PAYMENT PROVIDER" not in rendered
 
@@ -104,7 +106,7 @@ def test_walled_garden_objects_are_attributable():
         if " add " in l and not l.startswith("#"):
             seen += 1
             assert 'comment="NetGuard"' in l, l
-    assert seen == 7
+    assert seen == 11
 
 
 def test_hotspot_objects_do_not_carry_comment():
