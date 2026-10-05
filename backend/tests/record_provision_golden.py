@@ -18,6 +18,7 @@ FIXED = dict(
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
     api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
+    device_id="11111111-1111-1111-1111-111111111111",
 )
 OUT = Path(__file__).parent / "fixtures" / "provision_expected.rsc"
 

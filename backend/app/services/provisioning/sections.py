@@ -255,11 +255,45 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     lines = ["# --- walled garden ---",
              "# Hosts the phone probes to detect a captive portal; blocked, the portal never pops."]
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
-                 "www.msftconnecttest.com", p.hotspot_dns_name):
+                 "www.msftconnecttest.com", p.hotspot_dns_name,
+                 "app.netguard.fun", "api.modempay.com", "checkout.modempay.com"):
         lines.append(_once("/ip hotspot walled-garden", f'dst-host="{host}"',
                            f"dst-host={host} {TAG}"))
-    lines.append("# TODO PAYMENT PROVIDER: add the provider's hosts here before going live.")
     return lines
+
+
+def portal_page(p: ProvisionParams) -> list[str]:
+    """Install the default portal page; custom portals use the dashboard snippet."""
+    if not p.device_id:
+        return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
+    buy_url = f"https://app.netguard.fun/buy?router={p.device_id}&mac=\\$(mac)&ip=\\$(ip)"
+    # Dollar signs are escaped for the provisioning script so RouterOS writes
+    # the hotspot variables literally; the hotspot renderer expands them per client.
+    html = (
+        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>WiFi Login</title></head><body><h1>WiFi Login</h1>'
+        '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
+        '<input type="hidden" name="username"><input type="hidden" name="password">'
+        '<input type="hidden" name="dst" value="\\$(link-orig)"></form>'
+        '<script src="/md5.js"></script><script>function doLogin(){document.sendin.username.value='
+        'document.login.username.value;document.sendin.password.value=hexMD5("\\$(chap-id)"+'
+        'document.login.username.value+"\\$(chap-challenge)");document.sendin.submit();return false}</script>'
+        '\\$(endif)'
+        '<form name="login" action="\\$(link-login-only)" method="post" '
+        'onsubmit="return typeof doLogin===\'function\'?doLogin():true">'
+        '<input type="hidden" name="dst" value="\\$(link-orig)">'
+        '<label>Voucher code <input name="username" autocomplete="username"></label>'
+        '<input type="hidden" name="password" value="">'
+        '<button type="submit">Connect</button></form>'
+        f'<p><a href="{buy_url}">Buy WiFi</a></p></body></html>'
+    )
+    escaped = html.replace('"', '\\"')
+    return [
+        "# --- captive portal page ---",
+        ':if ([:len [/file find where name="hotspot/login.html"]] = 0) do={ '
+        f'/file add name="hotspot/login.html" contents="{escaped}" '
+        f'}} else={{ /file set [find where name="hotspot/login.html"] contents="{escaped}" }}',
+    ]
 
 
 def _fw_comment(name: str) -> str:

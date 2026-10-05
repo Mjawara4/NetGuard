@@ -5,6 +5,7 @@ P = build_params(
     site_slug="serrekunda-counter", wg_private_key="cHJpdmF0ZS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_client_ip="10.13.13.7",
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=", wg_server_endpoint="74.208.167.166",
     wg_server_port=51820, api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
+    device_id="11111111-1111-1111-1111-111111111111",
 )
 
 
@@ -80,10 +81,21 @@ def test_walled_garden_allows_each_probe_host_on_its_own_line():
         assert 'comment="NetGuard"' in l
 
 
-def test_walled_garden_ends_with_the_visible_payment_todo():
-    assert sections.walled_garden(P)[-1] == (
-        "# TODO PAYMENT PROVIDER: add the provider's hosts here before going live."
-    )
+def test_walled_garden_allows_payment_and_buy_hosts_without_todo():
+    rendered = text(sections.walled_garden(P))
+    for host in ("app.netguard.fun", "api.modempay.com", "checkout.modempay.com"):
+        assert f"dst-host={host}" in rendered
+    assert "TODO PAYMENT PROVIDER" not in rendered
+
+
+def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
+    rendered = text(sections.portal_page(P))
+    assert "https://app.netguard.fun/buy?router=11111111-1111-1111-1111-111111111111" in rendered
+    assert "\\$(mac)" in rendered
+    assert "\\$(ip)" in rendered
+    assert "Buy WiFi" in rendered
+    assert "hexMD5" in rendered
+    assert "document.login.username.value" in rendered
 
 
 def test_walled_garden_objects_are_attributable():
@@ -92,7 +104,7 @@ def test_walled_garden_objects_are_attributable():
         if " add " in l and not l.startswith("#"):
             seen += 1
             assert 'comment="NetGuard"' in l, l
-    assert seen == 4
+    assert seen == 7
 
 
 def test_hotspot_objects_do_not_carry_comment():

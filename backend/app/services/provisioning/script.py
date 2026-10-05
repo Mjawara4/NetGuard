@@ -39,6 +39,7 @@ SECTION_ORDER = (
     sections.hotspot_server,
     sections.voucher_profiles,
     sections.walled_garden,
+    sections.portal_page,
     sections.api_user,
     sections.wireguard,
     sections.capsman,

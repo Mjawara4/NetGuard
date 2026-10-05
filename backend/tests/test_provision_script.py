@@ -10,6 +10,7 @@ FIXED = dict(
     wg_server_public_key="c2VydmVyLS1rZXktbm90LXJlYWwtcGFkZGluZy0zYiE=",
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
     api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
+    device_id="11111111-1111-1111-1111-111111111111",
 )
 EXPECTED = Path(__file__).parent / "fixtures" / "provision_expected.rsc"
 
@@ -46,7 +47,7 @@ def test_wireguard_is_created_before_the_firewall_that_references_it():
 
 def test_every_section_is_present_exactly_once():
     names = [fn.__name__ for fn in SECTION_ORDER]
-    assert len(names) == len(set(names)) == 13
+    assert len(names) == len(set(names)) == 14
     for name in names:
         assert getattr(sections, name) in SECTION_ORDER
 
@@ -112,6 +113,9 @@ def test_every_add_is_attributable_to_netguard():
         if line.lstrip().startswith("#") or " add " not in line:
             continue
         if any(m in line for m in MENUS_WITHOUT_COMMENT):
+            continue
+        # RouterOS files do not have a comment property; the fixed path is the handle.
+        if '/file add name="hotspot/login.html"' in line:
             continue
         seen += 1
         # Prefix match: firewall rules say "NetGuard fw: ...", the API user

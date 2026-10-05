@@ -472,6 +472,7 @@ async def generate_provision_script(
     try:
         params = build_params(
             site_slug=site_slug, timezone=timezone,
+            device_id=str(device.id),
             wg_private_key=device.wg_private_key, wg_client_ip=device.wg_ip_address,
             wg_server_public_key=server_pub_key,
             wg_server_endpoint=settings.WG_SERVER_ENDPOINT,
