@@ -115,6 +115,26 @@ def test_default_portal_can_list_configured_prices():
     assert "plan=24-Hours" in rendered
 
 
+def test_custom_portal_mode_preserves_login_and_installs_autologin_helper():
+    custom = replace(P, portal_mode="custom")
+    rendered = text(sections.portal_page(custom))
+    assert 'name="hotspot/netguard-login.html"' in rendered
+    assert 'name="hotspot/login.html"' not in rendered
+    assert "preserving hotspot/login.html unchanged" in rendered
+    assert "hexMD5" in rendered
+    assert 'q.get(\\"voucher\\")' in rendered
+
+
+def test_custom_portal_button_has_client_variables_and_no_plan():
+    from app.services.provisioning import sections as raw
+    rendered = raw.custom_portal_button(P.device_id)
+    assert "<!-- NETGUARD-BUY-START -->" in rendered
+    assert f"router={P.device_id}" in rendered
+    assert "mac=$(mac)" in rendered
+    assert "ip=$(ip)" in rendered
+    assert "plan=" not in rendered
+
+
 def test_walled_garden_objects_are_attributable():
     seen = 0
     for l in sections.walled_garden(P):

@@ -16,7 +16,7 @@ const hotspotLoginUrl = (voucher, router) => {
     const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
     // Use the gateway IP directly. Safari may try HTTPS for the .local hotspot
     // hostname, but RouterOS serves its captive login over HTTP only.
-    const login = new URL('http://10.15.0.1/login');
+    const login = new URL('http://10.15.0.1/netguard-login.html');
     login.searchParams.set('voucher', voucher);
     login.searchParams.set('dst', destination);
     return login.toString();
@@ -118,7 +118,7 @@ export default function Buy() {
 
     return (
         <main className="min-h-screen bg-ink-50 dark:bg-ink-950 p-4 flex items-center justify-center">
-            <section className="w-full max-w-lg bg-white dark:bg-ink-900 rounded-xl shadow-xl p-6 space-y-6">
+            <section className="w-full max-w-lg bg-white dark:bg-ink-900 rounded-lg shadow-xl p-6 space-y-6">
                 <header className="text-center">
                     <Wifi className="mx-auto text-signal-600" size={36} />
                     <h1 className="mt-3 text-2xl font-bold text-ink-900 dark:text-ink-50">{connected ? 'Successfully connected' : 'Buy WiFi'}</h1>

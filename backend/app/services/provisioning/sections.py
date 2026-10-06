@@ -327,18 +327,52 @@ def render_portal_html(device_id: str, plans=()) -> str:
     )
 
 
+def render_autologin_html() -> str:
+    """A design-independent voucher handoff used by default and custom portals."""
+    return (
+        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Connecting</title></head><body><p>Connecting you to WiFi...</p>'
+        '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
+        '<input type="hidden" name="username"><input type="hidden" name="password">'
+        '<input type="hidden" name="dst"></form><script src="/md5.js"></script>\\$(endif)'
+        '<form name="login" action="\\$(link-login-only)" method="post">'
+        '<input type="hidden" name="username"><input type="hidden" name="password"><input type="hidden" name="dst"></form>'
+        '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst")||"https://app.netguard.fun/buy?connected=1";'
+        'if(!v){document.body.innerHTML="<p>Missing voucher code.</p>";return;}'
+        'if(document.sendin){document.sendin.username.value=v;document.sendin.password.value=hexMD5("\\$(chap-id)"+v+"\\$(chap-challenge)");document.sendin.dst.value=d;document.sendin.submit();}'
+        'else{document.login.username.value=v;document.login.password.value=v;document.login.dst.value=d;document.login.submit();}})();</script>'
+        '</body></html>'
+    )
+
+
+def custom_portal_button(device_id: str) -> str:
+    url = f"https://app.netguard.fun/buy?router={device_id}&mac=$(mac)&ip=$(ip)"
+    return ('<!-- NETGUARD-BUY-START --><a href="' + url + '" '
+            'style="display:inline-block;padding:14px 24px;background:#8737aa;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">'
+            'Buy WiFi</a><!-- NETGUARD-BUY-END -->')
+
+
 def portal_page(p: ProvisionParams) -> list[str]:
     """Install the default portal page; custom portals use the dashboard snippet."""
     if not p.device_id:
         return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
-    html = render_portal_html(p.device_id, p.portal_plans)
-    escaped = html.replace('"', '\\"')
-    return [
+    helper = render_autologin_html().replace('"', '\\"')
+    lines = [
         "# --- captive portal page ---",
-        ':if ([:len [/file find where name="hotspot/login.html"]] = 0) do={ '
-        f'/file add name="hotspot/login.html" contents="{escaped}" '
-        f'}} else={{ /file set [find where name="hotspot/login.html"] contents="{escaped}" }}',
+        ':if ([:len [/file find where name="hotspot/netguard-login.html"]] = 0) do={ '
+        f'/file add name="hotspot/netguard-login.html" contents="{helper}" '
+        f'}} else={{ /file set [find where name="hotspot/netguard-login.html"] contents="{helper}" }}',
     ]
+    if p.portal_mode == "custom":
+        lines.append("# Custom portal mode: preserving hotspot/login.html unchanged.")
+        return lines
+    portal_html = render_portal_html(p.device_id, p.portal_plans).replace('"', '\\"')
+    lines.append(
+        ':if ([:len [/file find where name="hotspot/login.html"]] = 0) do={ '
+        f'/file add name="hotspot/login.html" contents="{portal_html}" '
+        f'}} else={{ /file set [find where name="hotspot/login.html"] contents="{portal_html}" }}'
+    )
+    return lines
 
 
 def _fw_comment(name: str) -> str:

@@ -59,6 +59,7 @@ class ProvisionParams:
     hotspot_dns_name: str
     device_id: str | None
     portal_plans: tuple[tuple[str, str, str], ...]
+    portal_mode: str
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
@@ -69,6 +70,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  hotspot_login_password: str = "root",
                  device_id: str | None = None,
                  portal_plans: tuple[tuple[str, str, str], ...] = (),
+                 portal_mode: str = "netguard",
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -80,6 +82,8 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
 
     if timezone not in KNOWN_TIMEZONES:
         raise ValueError(f"timezone {timezone!r} is not in KNOWN_TIMEZONES")
+    if portal_mode not in {"netguard", "custom"}:
+        raise ValueError("portal_mode must be netguard or custom")
 
     # Validate required fields
     for name, value in (("wg_private_key", wg_private_key),
@@ -244,4 +248,5 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         hotspot_dns_name="login.netguard.local",
         device_id=device_id,
         portal_plans=portal_plans,
+        portal_mode=portal_mode,
     )
