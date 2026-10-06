@@ -13,6 +13,7 @@ from app.models.core import decrypt_device_secrets
 from app.services import hotspot_cache
 from app.services import voucher_jobs
 import routeros_api
+import paramiko
 from uuid import UUID
 from datetime import datetime
 import time
@@ -1103,6 +1104,67 @@ def _read_router_files(device, name):
         connection.disconnect()
 
 
+def _active_hotspot_directory(device):
+    """Read the enabled hotspot's configured, case-sensitive HTML directory."""
+    connection = _portal_api(device)
+    try:
+        api = connection.get_api()
+        servers = api.get_resource("/ip/hotspot").get()
+        profiles = api.get_resource("/ip/hotspot/profile").get()
+        active = next((row for row in servers if not row.get("disabled", False)), None)
+        if not active and servers:
+            active = servers[0]
+        profile_name = active.get("profile") if active else None
+        profile = next((row for row in profiles if row.get("name") == profile_name), None)
+        directory = str((profile or {}).get("html-directory") or "hotspot").strip("/")
+        if not directory or ".." in directory or not re.fullmatch(r"[A-Za-z0-9._/-]+", directory):
+            raise HTTPException(status_code=409, detail="The router hotspot HTML directory is not safe to modify")
+        return directory
+    finally:
+        connection.disconnect()
+
+
+def _read_router_file_content(device, name, rows=None):
+    """Read text through the API, with SFTP fallback for RouterOS variants.
+
+    Some RouterOS 7 builds return file metadata from `/file print` but omit
+    `contents`. SFTP exposes the same active file without changing the router.
+    """
+    rows = _read_router_files(device, name) if rows is None else rows
+    if not rows:
+        return None
+    contents = rows[0].get("contents")
+    if contents:
+        return contents
+
+    decrypt_device_secrets(device)
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(
+            device.ip_address,
+            port=22,
+            username=device.ssh_username or "admin",
+            password=device.ssh_password or "admin",
+            timeout=10,
+            banner_timeout=10,
+            auth_timeout=10,
+            look_for_keys=False,
+            allow_agent=False,
+        )
+        sftp = ssh.open_sftp()
+        try:
+            with sftp.open(name, "rb") as handle:
+                return handle.read().decode("utf-8")
+        finally:
+            sftp.close()
+    except (OSError, UnicodeError, paramiko.SSHException) as exc:
+        logger.warning("Could not read RouterOS portal file %s over SFTP: %s", name, exc)
+        return None
+    finally:
+        ssh.close()
+
+
 def _write_router_file(device, name, contents):
     """Write a RouterOS file, accepting RouterOS 7's successful `!empty` reply.
 
@@ -1153,13 +1215,16 @@ async def set_portal_mode(device_id: str, body: PortalModeUpdate, db: AsyncSessi
 @router.post("/{device_id}/portal/install-custom")
 async def install_custom_portal_support(device_id: str, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
     device = await _portal_device(device_id, db, actor)
-    login_rows = _read_router_files(device, "hotspot/login.html")
+    directory = _active_hotspot_directory(device)
+    login_name = f"{directory}/login.html"
+    backup_name = f"{directory}/login.netguard-backup.html"
+    helper_name = f"{directory}/netguard-login.html"
+    login_rows = _read_router_files(device, login_name)
     if not login_rows:
-        raise HTTPException(status_code=409, detail="hotspot/login.html was not found on the router")
-    original = login_rows[0].get("contents", "")
+        raise HTTPException(status_code=409, detail=f"{login_name} was not found on the router")
+    original = _read_router_file_content(device, login_name, login_rows)
     if not original:
         raise HTTPException(status_code=409, detail="Router did not return the custom portal contents; no changes were made")
-    backup_name = "hotspot/login.netguard-backup.html"
     if not _read_router_files(device, backup_name):
         _write_router_file(device, backup_name, original)
     from app.services.provisioning.sections import custom_portal_button, render_autologin_html
@@ -1169,23 +1234,27 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
         button = custom_portal_button(str(device.id))
         pos = original.lower().rfind("</body>")
         updated = original[:pos] + button + original[pos:] if pos >= 0 else original + button
-        _write_router_file(device, "hotspot/login.html", updated)
-    _write_router_file(device, "hotspot/netguard-login.html", render_autologin_html().replace("\\$", "$"))
+        _write_router_file(device, login_name, updated)
+    _write_router_file(device, helper_name, render_autologin_html().replace("\\$", "$"))
     settings = dict(device.voucher_template or {})
     settings["portal_mode"] = "custom"
     device.voucher_template = settings
     await db.commit()
-    return {"status": "installed", "mode": "custom", "backup": backup_name}
+    return {"status": "installed", "mode": "custom", "directory": directory, "backup": backup_name}
 
 
 @router.post("/{device_id}/portal/restore")
 async def restore_custom_portal(device_id: str, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
     device = await _portal_device(device_id, db, actor)
-    backups = _read_router_files(device, "hotspot/login.netguard-backup.html")
-    if not backups or not backups[0].get("contents"):
+    directory = _active_hotspot_directory(device)
+    login_name = f"{directory}/login.html"
+    backup_name = f"{directory}/login.netguard-backup.html"
+    backups = _read_router_files(device, backup_name)
+    backup_contents = _read_router_file_content(device, backup_name, backups)
+    if not backup_contents:
         raise HTTPException(status_code=404, detail="No NetGuard portal backup exists on this router")
-    _write_router_file(device, "hotspot/login.html", backups[0]["contents"])
-    return {"status": "restored", "mode": (device.voucher_template or {}).get("portal_mode", "custom")}
+    _write_router_file(device, login_name, backup_contents)
+    return {"status": "restored", "mode": (device.voucher_template or {}).get("portal_mode", "custom"), "directory": directory}
 
 @router.post("/{device_id}/users/batch", status_code=202)
 async def batch_generate_users(device_id: str, batch: BatchUserCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
