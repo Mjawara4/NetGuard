@@ -1077,18 +1077,40 @@ async def _portal_device(device_id: str, db: AsyncSession, actor):
 
 def _portal_api(device):
     decrypt_device_secrets(device)
-    port = int(getattr(device, "ssh_port", 8728) or 8728)
-    if port == 22:
-        port = 8728
+    port = _portal_api_port(device)
     return get_api_pool(device.ip_address, device.ssh_username or "admin", device.ssh_password or "admin", port)
 
 
-def _write_router_file(files, name, contents):
-    rows = files.get(name=name)
-    if rows:
-        files.set(id=rows[0]["id"], contents=contents)
-    else:
-        files.add(name=name, contents=contents)
+def _portal_api_port(device):
+    port = int(getattr(device, "ssh_port", 8728) or 8728)
+    return 8728 if port == 22 else port
+
+
+def _write_router_file(device, name, contents):
+    """Write a RouterOS file, accepting RouterOS 7's successful `!empty` reply.
+
+    Older routeros_api releases cannot parse the `!empty` sentence returned by
+    newer RouterOS versions for successful commands. The command has already
+    completed when that reply arrives. Evict the now-desynchronised connection
+    so the next operation starts with a clean protocol stream.
+    """
+    port = _portal_api_port(device)
+    connection = _portal_api(device)
+    try:
+        files = connection.get_api().get_resource("/file")
+        rows = files.get(name=name)
+        try:
+            if rows:
+                files.set(id=rows[0]["id"], contents=contents)
+            else:
+                files.add(name=name, contents=contents)
+        except routeros_api.exceptions.RouterOsApiParsingError as exc:
+            if "!empty" not in str(exc):
+                raise
+            logger.info("RouterOS accepted file write for %s with an !empty response", name)
+            _evict_pool(device.ip_address, port)
+    finally:
+        connection.disconnect()
 
 
 @router.get("/{device_id}/portal-config")
@@ -1125,7 +1147,7 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
             raise HTTPException(status_code=409, detail="Router did not return the custom portal contents; no changes were made")
         backup_name = "hotspot/login.netguard-backup.html"
         if not files.get(name=backup_name):
-            _write_router_file(files, backup_name, original)
+            _write_router_file(device, backup_name, original)
         from app.services.provisioning.sections import custom_portal_button, render_autologin_html
         marker = "<!-- NETGUARD-BUY-START -->"
         updated = original
@@ -1133,8 +1155,8 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
             button = custom_portal_button(str(device.id))
             pos = original.lower().rfind("</body>")
             updated = original[:pos] + button + original[pos:] if pos >= 0 else original + button
-            _write_router_file(files, "hotspot/login.html", updated)
-        _write_router_file(files, "hotspot/netguard-login.html", render_autologin_html().replace("\\$", "$"))
+            _write_router_file(device, "hotspot/login.html", updated)
+        _write_router_file(device, "hotspot/netguard-login.html", render_autologin_html().replace("\\$", "$"))
     finally:
         connection.disconnect()
     settings = dict(device.voucher_template or {})
@@ -1153,7 +1175,7 @@ async def restore_custom_portal(device_id: str, db: AsyncSession = Depends(get_d
         backups = files.get(name="hotspot/login.netguard-backup.html")
         if not backups or not backups[0].get("contents"):
             raise HTTPException(status_code=404, detail="No NetGuard portal backup exists on this router")
-        _write_router_file(files, "hotspot/login.html", backups[0]["contents"])
+        _write_router_file(device, "hotspot/login.html", backups[0]["contents"])
     finally:
         connection.disconnect()
     return {"status": "restored", "mode": (device.voucher_template or {}).get("portal_mode", "custom")}
