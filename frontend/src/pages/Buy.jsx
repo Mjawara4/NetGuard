@@ -33,7 +33,14 @@ export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
     const mac = params.get('mac');
-    const loginBase = params.get('login');
+    const loginParam = params.get('login');
+    let rememberedLogin = null;
+    try {
+        rememberedLogin = router ? window.sessionStorage.getItem(`netguard-login:${router}`) : null;
+    } catch {
+        // Captive browsers can disable storage; the return URL still carries it.
+    }
+    const loginBase = loginParam || rememberedLogin;
     const selectedPlan = params.get('plan');
     const returnedPayment = params.get('payment') === 'success';
     const connected = params.get('connected') === '1';
@@ -43,6 +50,15 @@ export default function Buy() {
     const [error, setError] = useState('');
     const [paymentResult, setPaymentResult] = useState(null);
     const automaticPurchaseStarted = useRef(false);
+
+    useEffect(() => {
+        if (!router || !loginParam) return;
+        try {
+            window.sessionStorage.setItem(`netguard-login:${router}`, loginParam);
+        } catch {
+            // The server-side return URL remains the primary persistence path.
+        }
+    }, [router, loginParam]);
 
     useEffect(() => {
         let cancelled = false;
@@ -105,7 +121,9 @@ export default function Buy() {
         setPaying(plan);
         setError('');
         try {
-            const { data } = await api.post('/buy/pay', { router, mac, plan });
+            const payload = { router, mac, plan };
+            if (loginBase) payload.login = loginBase;
+            const { data } = await api.post('/buy/pay', payload);
             window.location.assign(data.checkout_url);
         } catch (requestError) {
             setError(requestError.response?.data?.detail || 'Unable to start checkout.');

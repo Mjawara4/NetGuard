@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -62,6 +63,27 @@ async def test_pay_uses_server_price_and_persists_intent(monkeypatch):
     assert f"intent={db.add.call_args.args[0].id}" in create.await_args.args[4]
     assert db.add.call_args.args[0].charge_id == "ch_1"
     db.commit.assert_awaited_once()
+
+
+async def test_pay_preserves_router_login_url_through_checkout(monkeypatch):
+    dev = Device(id=uuid.uuid4(), name="r", ip_address="10.0.0.1", site_id=uuid.uuid4())
+    dev.voucher_template = {"profile_pricing": {"3-Hours": {"price": 10, "currency": "GMD"}}}
+    org = Organization(name="o", payments_enabled=True)
+    org.modempay_secret_key = "ciphertext"
+    org.modempay_webhook_secret = "ciphertext"
+    monkeypatch.setattr(buy, "_load_context", AsyncMock(return_value=(dev, org)))
+    monkeypatch.setattr(buy, "decrypt_value", lambda value: "sk_test")
+    create = AsyncMock(return_value={"payment_link": "https://checkout.test/1", "charge_id": "ch_1"})
+    monkeypatch.setattr(buy, "create_payment_intent", create)
+
+    await buy.pay(buy.PayRequest(
+        router=dev.id, mac="AA:BB", plan="3-Hours", login="http://mowifi.io/login"
+    ), db=_db())
+
+    return_query = parse_qs(urlsplit(create.await_args.args[4]).query)
+    cancel_query = parse_qs(urlsplit(create.await_args.args[5]).query)
+    assert return_query["login"] == ["http://mowifi.io/login"]
+    assert cancel_query["login"] == ["http://mowifi.io/login"]
 
 
 async def test_payment_status_returns_fulfilled_voucher():

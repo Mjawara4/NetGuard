@@ -1,6 +1,7 @@
 """Public captive-portal plan listing and hosted-checkout creation."""
 
 from typing import Optional
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,7 @@ class PayRequest(BaseModel):
     router: UUID
     mac: Optional[str] = None
     plan: str
+    login: Optional[str] = None
 
 
 def _pricing(device: Device) -> dict:
@@ -95,20 +97,36 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
     amount = details["price"]
     currency = details.get("currency", "GMD")
     local_intent_id = uuid4()
+    login_url = None
+    if payload.login:
+        parsed_login = urlsplit(payload.login)
+        if (parsed_login.scheme not in {"http", "https"} or not parsed_login.hostname
+                or parsed_login.username or parsed_login.password or len(payload.login) > 500):
+            raise HTTPException(status_code=400, detail="Invalid hotspot login URL")
+        login_url = payload.login
     metadata = {
         "payment_intent_id": str(local_intent_id),
         "device_id": str(device.id),
         "mac": payload.mac,
         "plan": payload.plan,
     }
+    return_params = {
+        "router": str(device.id),
+        "payment": "success",
+        "intent": str(local_intent_id),
+    }
+    cancel_params = {"router": str(device.id)}
+    if login_url:
+        return_params["login"] = login_url
+        cancel_params["login"] = login_url
     try:
         result = await create_payment_intent(
             decrypt_value(org.modempay_secret_key),
             amount,
             currency,
             metadata,
-            f"https://app.netguard.fun/buy?router={device.id}&payment=success&intent={local_intent_id}",
-            f"https://app.netguard.fun/buy?router={device.id}",
+            f"https://app.netguard.fun/buy?{urlencode(return_params)}",
+            f"https://app.netguard.fun/buy?{urlencode(cancel_params)}",
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in (401, 403):
