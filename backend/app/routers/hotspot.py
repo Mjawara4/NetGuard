@@ -1086,6 +1086,23 @@ def _portal_api_port(device):
     return 8728 if port == 22 else port
 
 
+def _read_router_files(device, name):
+    """Return matching files; RouterOS 7 reports no matches as `!empty`."""
+    port = _portal_api_port(device)
+    connection = _portal_api(device)
+    try:
+        files = connection.get_api().get_resource("/file")
+        try:
+            return files.get(name=name)
+        except routeros_api.exceptions.RouterOsApiParsingError as exc:
+            if "!empty" not in str(exc):
+                raise
+            _evict_pool(device.ip_address, port)
+            return []
+    finally:
+        connection.disconnect()
+
+
 def _write_router_file(device, name, contents):
     """Write a RouterOS file, accepting RouterOS 7's successful `!empty` reply.
 
@@ -1095,10 +1112,10 @@ def _write_router_file(device, name, contents):
     so the next operation starts with a clean protocol stream.
     """
     port = _portal_api_port(device)
+    rows = _read_router_files(device, name)
     connection = _portal_api(device)
     try:
         files = connection.get_api().get_resource("/file")
-        rows = files.get(name=name)
         try:
             if rows:
                 files.set(id=rows[0]["id"], contents=contents)
@@ -1136,29 +1153,24 @@ async def set_portal_mode(device_id: str, body: PortalModeUpdate, db: AsyncSessi
 @router.post("/{device_id}/portal/install-custom")
 async def install_custom_portal_support(device_id: str, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
     device = await _portal_device(device_id, db, actor)
-    connection = _portal_api(device)
-    try:
-        files = connection.get_api().get_resource("/file")
-        login_rows = files.get(name="hotspot/login.html")
-        if not login_rows:
-            raise HTTPException(status_code=409, detail="hotspot/login.html was not found on the router")
-        original = login_rows[0].get("contents", "")
-        if not original:
-            raise HTTPException(status_code=409, detail="Router did not return the custom portal contents; no changes were made")
-        backup_name = "hotspot/login.netguard-backup.html"
-        if not files.get(name=backup_name):
-            _write_router_file(device, backup_name, original)
-        from app.services.provisioning.sections import custom_portal_button, render_autologin_html
-        marker = "<!-- NETGUARD-BUY-START -->"
-        updated = original
-        if marker not in original:
-            button = custom_portal_button(str(device.id))
-            pos = original.lower().rfind("</body>")
-            updated = original[:pos] + button + original[pos:] if pos >= 0 else original + button
-            _write_router_file(device, "hotspot/login.html", updated)
-        _write_router_file(device, "hotspot/netguard-login.html", render_autologin_html().replace("\\$", "$"))
-    finally:
-        connection.disconnect()
+    login_rows = _read_router_files(device, "hotspot/login.html")
+    if not login_rows:
+        raise HTTPException(status_code=409, detail="hotspot/login.html was not found on the router")
+    original = login_rows[0].get("contents", "")
+    if not original:
+        raise HTTPException(status_code=409, detail="Router did not return the custom portal contents; no changes were made")
+    backup_name = "hotspot/login.netguard-backup.html"
+    if not _read_router_files(device, backup_name):
+        _write_router_file(device, backup_name, original)
+    from app.services.provisioning.sections import custom_portal_button, render_autologin_html
+    marker = "<!-- NETGUARD-BUY-START -->"
+    updated = original
+    if marker not in original:
+        button = custom_portal_button(str(device.id))
+        pos = original.lower().rfind("</body>")
+        updated = original[:pos] + button + original[pos:] if pos >= 0 else original + button
+        _write_router_file(device, "hotspot/login.html", updated)
+    _write_router_file(device, "hotspot/netguard-login.html", render_autologin_html().replace("\\$", "$"))
     settings = dict(device.voucher_template or {})
     settings["portal_mode"] = "custom"
     device.voucher_template = settings
@@ -1169,15 +1181,10 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
 @router.post("/{device_id}/portal/restore")
 async def restore_custom_portal(device_id: str, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
     device = await _portal_device(device_id, db, actor)
-    connection = _portal_api(device)
-    try:
-        files = connection.get_api().get_resource("/file")
-        backups = files.get(name="hotspot/login.netguard-backup.html")
-        if not backups or not backups[0].get("contents"):
-            raise HTTPException(status_code=404, detail="No NetGuard portal backup exists on this router")
-        _write_router_file(device, "hotspot/login.html", backups[0]["contents"])
-    finally:
-        connection.disconnect()
+    backups = _read_router_files(device, "hotspot/login.netguard-backup.html")
+    if not backups or not backups[0].get("contents"):
+        raise HTTPException(status_code=404, detail="No NetGuard portal backup exists on this router")
+    _write_router_file(device, "hotspot/login.html", backups[0]["contents"])
     return {"status": "restored", "mode": (device.voucher_template or {}).get("portal_mode", "custom")}
 
 @router.post("/{device_id}/users/batch", status_code=202)
