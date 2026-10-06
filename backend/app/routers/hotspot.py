@@ -1230,10 +1230,19 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
     from app.services.provisioning.sections import custom_portal_button, render_autologin_html
     marker = "<!-- NETGUARD-BUY-START -->"
     updated = original
-    if marker not in original:
-        button = custom_portal_button(str(device.id))
+    button = custom_portal_button(str(device.id))
+    if marker in original:
+        updated = re.sub(
+            r"<!-- NETGUARD-BUY-START -->.*?<!-- NETGUARD-BUY-END -->",
+            button,
+            original,
+            count=1,
+            flags=re.DOTALL,
+        )
+    else:
         pos = original.lower().rfind("</body>")
         updated = original[:pos] + button + original[pos:] if pos >= 0 else original + button
+    if updated != original:
         _write_router_file(device, login_name, updated)
     _write_router_file(device, helper_name, render_autologin_html().replace("\\$", "$"))
     settings = dict(device.voucher_template or {})

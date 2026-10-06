@@ -132,6 +132,7 @@ def test_custom_portal_button_has_client_variables_and_no_plan():
     assert f"router={P.device_id}" in rendered
     assert "mac=$(mac)" in rendered
     assert "ip=$(ip)" in rendered
+    assert "login=$(link-login-only)" in rendered
     assert "plan=" not in rendered
 
 

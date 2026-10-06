@@ -282,7 +282,8 @@ def walled_garden(p: ProvisionParams) -> list[str]:
 
 def render_portal_html(device_id: str, plans=()) -> str:
     """Render the RouterOS login page, including the CHAP auto-login handoff."""
-    buy_url = f"https://app.netguard.fun/buy?router={device_id}&mac=\\$(mac)&ip=\\$(ip)"
+    buy_url = (f"https://app.netguard.fun/buy?router={device_id}&mac=\\$(mac)&ip=\\$(ip)"
+               "&login=\\$(link-login-only)")
     def price_label(price, currency):
         amount = str(price).removesuffix(".0")
         return f"D{amount}" if currency == "GMD" else f"{currency} {amount}"
@@ -346,7 +347,8 @@ def render_autologin_html() -> str:
 
 
 def custom_portal_button(device_id: str) -> str:
-    url = f"https://app.netguard.fun/buy?router={device_id}&mac=$(mac)&ip=$(ip)"
+    url = (f"https://app.netguard.fun/buy?router={device_id}&mac=$(mac)&ip=$(ip)"
+           "&login=$(link-login-only)")
     return ('<!-- NETGUARD-BUY-START --><a href="' + url + '" '
             'style="display:inline-block;padding:14px 24px;background:#8737aa;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">'
             'Buy WiFi</a><!-- NETGUARD-BUY-END -->')

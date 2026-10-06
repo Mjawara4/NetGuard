@@ -12,11 +12,18 @@ const formatPrice = (price, currency) => {
     return currency === 'GMD' ? `D${amount}` : `${currency} ${amount}`;
 };
 
-const hotspotLoginUrl = (voucher, router) => {
+const hotspotLoginUrl = (voucher, router, loginBase) => {
     const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
-    // Use the gateway IP directly. Safari may try HTTPS for the .local hotspot
-    // hostname, but RouterOS serves its captive login over HTTP only.
-    const login = new URL('http://10.15.0.1/netguard-login.html');
+    // Each custom hotspot can use a different gateway or DNS name. RouterOS
+    // supplies link-login-only in the portal button; retain the NetGuard
+    // gateway only for previously-installed portal links.
+    let login;
+    try {
+        login = new URL('/netguard-login.html', loginBase || 'http://10.15.0.1/login');
+        if (!['http:', 'https:'].includes(login.protocol)) throw new Error('Unsupported login protocol');
+    } catch {
+        login = new URL('http://10.15.0.1/netguard-login.html');
+    }
     login.searchParams.set('voucher', voucher);
     login.searchParams.set('dst', destination);
     return login.toString();
@@ -26,6 +33,7 @@ export default function Buy() {
     const params = useMemo(() => new URLSearchParams(window.location.search), []);
     const router = params.get('router');
     const mac = params.get('mac');
+    const loginBase = params.get('login');
     const selectedPlan = params.get('plan');
     const returnedPayment = params.get('payment') === 'success';
     const connected = params.get('connected') === '1';
@@ -89,9 +97,9 @@ export default function Buy() {
     useEffect(() => {
         const voucher = paymentResult?.voucher_username;
         if (!voucher || !router) return undefined;
-        const redirect = setTimeout(() => window.location.assign(hotspotLoginUrl(voucher, router)), 1200);
+        const redirect = setTimeout(() => window.location.assign(hotspotLoginUrl(voucher, router, loginBase)), 1200);
         return () => clearTimeout(redirect);
-    }, [paymentResult, router]);
+    }, [paymentResult, router, loginBase]);
 
     const purchase = async (plan) => {
         setPaying(plan);
@@ -147,7 +155,7 @@ export default function Buy() {
                         <p className="font-bold text-ink-900 dark:text-ink-50">Your WiFi voucher code</p>
                         <p className="mt-2 text-2xl font-mono font-bold text-up">{paymentResult.voucher_username}</p>
                         <p className="mt-2 text-sm text-ink-500 dark:text-ink-400">Connecting you automatically…</p>
-                        <a className="mt-3 inline-block rounded-md bg-up px-4 py-2 text-sm font-bold text-white" href={hotspotLoginUrl(paymentResult.voucher_username, router)}>Connect now</a>
+                        <a className="mt-3 inline-block rounded-md bg-up px-4 py-2 text-sm font-bold text-white" href={hotspotLoginUrl(paymentResult.voucher_username, router, loginBase)}>Connect now</a>
                     </div>
                 )}
                 {!connected && <div className="space-y-3">
