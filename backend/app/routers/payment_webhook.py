@@ -1,5 +1,6 @@
 """Signed Modem Pay webhook fulfillment for captive-portal purchases."""
 
+import asyncio
 import json
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -12,12 +13,16 @@ from app.core.database import get_db
 from app.models.core import Device, Organization, PaymentIntent, Site, VoucherSale, decrypt_device_secrets
 from app.services.modempay import verify_webhook
 from app.services import hotspot_cache
+from app.services.portal_plans import normalise_currency, plan_duration
 from app.services.voucher_jobs import generate_candidate
 from app.utils.encryption import decrypt_value
 
 
 router = APIRouter()
-PLAN_DURATIONS = {"3-Hours": "3h", "24-Hours": "24h", "7-Days": "7d", "30-Days": "30d"}
+# RouterOsApiPool takes no socket timeout, and the intent row stays locked
+# while the router is being written to. Past this, answer 504 so Modem Pay
+# retries; the retry reuses the reserved voucher code.
+ROUTER_TIMEOUT_SECONDS = 20
 
 
 async def _load_locked_intent(db, charge_id, local_intent_id):
@@ -66,6 +71,10 @@ def _add_router_user(device, username, password, plan, duration, charge_id):
             "limit-uptime": duration,
             "comment": f"Modem Pay {charge_id}",
         })
+    except Exception as exc:
+        # A retried webhook re-adds the code it reserved the first time.
+        if "already have" not in str(exc).lower():
+            raise
     finally:
         connection.disconnect()
 
@@ -94,24 +103,45 @@ async def process_webhook(raw_body: bytes, signature: str, db: AsyncSession):
     if intent.status == "fulfilled":
         return {"status": "already_fulfilled"}
 
-    # Only the locally stored intent and current server-side price choose the grant.
-    pricing = (device.voucher_template or {}).get("profile_pricing", {})
-    details = pricing.get(intent.plan)
-    if not isinstance(details, dict) or "price" not in details:
-        raise HTTPException(status_code=400, detail="Plan is no longer available")
+    # The customer is owed what they paid for at checkout. Pricing may have
+    # been edited since, so the stored intent decides the grant, not the form.
     try:
         paid = Decimal(str(charge.get("amount")))
-        expected = Decimal(str(details["price"]))
+        expected = Decimal(str(intent.amount))
     except (InvalidOperation, TypeError):
         raise HTTPException(status_code=400, detail="Invalid payment amount")
-    if paid != expected or charge.get("currency", intent.currency) != details.get("currency", intent.currency):
+    currency = normalise_currency(intent.currency)
+    if paid != expected or normalise_currency(charge.get("currency") or currency) != currency:
         raise HTTPException(status_code=400, detail="Payment amount does not match the plan")
 
-    duration = PLAN_DURATIONS.get(intent.plan)
+    duration = plan_duration(intent.plan)
     if not duration:
         raise HTTPException(status_code=400, detail="Unsupported plan duration")
-    username, password = generate_candidate("", length=8, random_mode=True)
-    _add_router_user(device, username, password, intent.plan, duration, charge_id)
+
+    if not intent.voucher_username:
+        # Reserve the code durably BEFORE touching the router, so a retry after
+        # any later failure re-adds this code instead of minting a second one.
+        intent.voucher_username, _ = generate_candidate("", length=8, random_mode=True)
+        intent.charge_id = charge_id
+        intent.status = "paid"
+        await db.commit()
+        # The commit released the row lock; take it again before granting.
+        row = await _load_locked_intent(db, charge_id, str(intent.id))
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment intent not found")
+        intent, device, org = row
+        if intent.status == "fulfilled":
+            return {"status": "already_fulfilled"}
+    username = intent.voucher_username
+
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_add_router_user, device, username, username,
+                              intent.plan, duration, charge_id),
+            timeout=ROUTER_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Router did not respond in time")
 
     db.add(VoucherSale(
         device_id=device.id,
@@ -121,7 +151,7 @@ async def process_webhook(raw_body: bytes, signature: str, db: AsyncSession):
         comment=f"Modem Pay {charge_id}",
         uptime=duration,
         price=int(expected),
-        currency=details.get("currency", intent.currency),
+        currency=currency,
     ))
     intent.charge_id = charge_id
     intent.status = "fulfilled"

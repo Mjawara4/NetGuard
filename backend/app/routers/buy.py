@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.core import Device, Organization, PaymentIntent, Site
 from app.services.modempay import create_payment_intent
+from app.services.portal_plans import sellable_plans
 from app.utils.encryption import decrypt_value
 
 
@@ -24,12 +25,6 @@ class PayRequest(BaseModel):
     mac: Optional[str] = None
     plan: str
     login: Optional[str] = None
-
-
-def _pricing(device: Device) -> dict:
-    template = device.voucher_template or {}
-    pricing = template.get("profile_pricing", {})
-    return pricing if isinstance(pricing, dict) else {}
 
 
 async def _load_context(db: AsyncSession, device_id: UUID):
@@ -59,15 +54,10 @@ async def get_plans(router: UUID, db: AsyncSession = Depends(get_db)):
     if not _available(org):
         return {"enabled": False, "plans": []}
 
-    plans = []
-    for profile, details in _pricing(device).items():
-        if not isinstance(details, dict) or "price" not in details:
-            continue
-        plans.append({
-            "profile": profile,
-            "price": details["price"],
-            "currency": details.get("currency", "GMD"),
-        })
+    plans = [
+        {"profile": profile, "price": details["price"], "currency": details["currency"]}
+        for profile, details in sellable_plans(device).items()
+    ]
     return {"enabled": True, "plans": plans}
 
 
@@ -82,7 +72,13 @@ async def payment_status(intent: UUID, router: UUID, db: AsyncSession = Depends(
     payment = result.scalar_one_or_none()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
-    return {"status": payment.status, "voucher_username": payment.voucher_username}
+    # The code is reserved before the router has it; handing it out early
+    # would auto-login the customer with a voucher that does not exist yet.
+    fulfilled = payment.status == "fulfilled"
+    return {
+        "status": payment.status,
+        "voucher_username": payment.voucher_username if fulfilled else None,
+    }
 
 
 @router.post("/pay")
@@ -91,11 +87,11 @@ async def pay(payload: PayRequest, db: AsyncSession = Depends(get_db)):
     if not _available(org):
         raise HTTPException(status_code=409, detail="Payments are not available for this router")
 
-    details = _pricing(device).get(payload.plan)
-    if not isinstance(details, dict) or "price" not in details:
+    details = sellable_plans(device).get(payload.plan)
+    if not details:
         raise HTTPException(status_code=400, detail="Unknown plan")
     amount = details["price"]
-    currency = details.get("currency", "GMD")
+    currency = details["currency"]
     local_intent_id = uuid4()
     login_url = None
     if payload.login:

@@ -10,6 +10,7 @@ from app.auth.deps import get_current_user, get_authorized_actor
 from app.models import Device, Site, User, APIKey, Metric, Alert, UserRole
 from app.schemas.inventory import DeviceCreate, DeviceCredentials, DeviceResponse, SiteCreate, SiteResponse, WireGuardProvisionResponse, ProvisionScriptResponse
 from app.services.wireguard import WireGuardService
+from app.services.portal_plans import sellable_plans
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -469,11 +470,10 @@ async def generate_provision_script(
     # `admin` password is never set or changed by the script -- it belongs to the
     # operator.
     recovery_password = generate_api_password()
-    pricing = (device.voucher_template or {}).get("profile_pricing", {})
+    # Only plans the fulfilment webhook can deliver get a Buy card.
     portal_plans = tuple(
-        (str(profile), str(details.get("price", "")), str(details.get("currency", "GMD")))
-        for profile, details in pricing.items()
-        if isinstance(details, dict) and details.get("price") not in (None, "")
+        (str(profile), str(details["price"]), details["currency"])
+        for profile, details in sellable_plans(device).items()
     )
     try:
         params = build_params(
