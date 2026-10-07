@@ -115,7 +115,8 @@ def test_every_add_is_attributable_to_netguard():
         if any(m in line for m in MENUS_WITHOUT_COMMENT):
             continue
         # RouterOS files do not have a comment property; the fixed path is the handle.
-        if '/file add name="hotspot/login.html"' in line:
+        if ('/file add name="hotspot/login.html"' in line
+                or '/file add name="hotspot/netguard-login.html"' in line):
             continue
         seen += 1
         # Prefix match: firewall rules say "NetGuard fw: ...", the API user

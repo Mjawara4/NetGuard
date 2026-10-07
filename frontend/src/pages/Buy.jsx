@@ -12,17 +12,19 @@ const formatPrice = (price, currency) => {
     return currency === 'GMD' ? `D${amount}` : `${currency} ${amount}`;
 };
 
-const hotspotLoginUrl = (voucher, router, loginBase) => {
+export const hotspotLoginUrl = (voucher, router, loginBase) => {
     const destination = `https://app.netguard.fun/buy?router=${encodeURIComponent(router)}&connected=1`;
     // Each custom hotspot can use a different gateway or DNS name. RouterOS
     // supplies link-login-only in the portal button; retain the NetGuard
     // gateway only for previously-installed portal links.
     let login;
     try {
-        login = new URL('/netguard-login.html', loginBase || 'http://10.15.0.1/login');
+        // RouterOS exposes CHAP challenge variables only on its /login page.
+        // A separate .html helper cannot create a valid CHAP password.
+        login = new URL('/login', loginBase || 'http://10.15.0.1/login');
         if (!['http:', 'https:'].includes(login.protocol)) throw new Error('Unsupported login protocol');
     } catch {
-        login = new URL('http://10.15.0.1/netguard-login.html');
+        login = new URL('http://10.15.0.1/login');
     }
     login.searchParams.set('voucher', voucher);
     login.searchParams.set('dst', destination);

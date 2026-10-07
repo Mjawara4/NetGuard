@@ -1,9 +1,15 @@
 {
     # Global options
     email admin@netguard.fun
+    # UDP/443 is not published by this deployment. Do not advertise HTTP/3.
+    servers {
+        protocols h1 h2
+    }
 }
 
 app.netguard.fun {
+    # Discard HTTP/3 alternatives cached by browsers before this correction.
+    header Alt-Svc clear
     reverse_proxy /api/* backend:8000
     reverse_proxy frontend:80
 }

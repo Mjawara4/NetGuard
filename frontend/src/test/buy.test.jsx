@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import Buy from '../pages/Buy';
+import Buy, { hotspotLoginUrl } from '../pages/Buy';
 import api from '../api';
 
 vi.mock('../api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
@@ -50,5 +50,12 @@ describe('Buy', () => {
         expect(await screen.findByRole('heading', { name: 'Successfully connected' })).toBeInTheDocument();
         expect(screen.getByText(/WiFi access is active/i)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Buy' })).not.toBeInTheDocument();
+    });
+
+    it('returns a paid voucher to the RouterOS login servlet for CHAP', () => {
+        const url = new URL(hotspotLoginUrl('code1234', '11111111-1111-1111-1111-111111111111', 'http://login.netguard.local/login'));
+        expect(url.pathname).toBe('/login');
+        expect(url.searchParams.get('voucher')).toBe('code1234');
+        expect(url.searchParams.get('dst')).toContain('connected=1');
     });
 });

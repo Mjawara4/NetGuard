@@ -277,8 +277,14 @@ def walled_garden(p: ProvisionParams) -> list[str]:
     # these dynamically and lets TCP/443 reach only the payment dependencies.
     for host in portal_hosts:
         lines.append(_once(
-            "/ip hotspot walled-garden ip", f'dst-host="{host}"',
+            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol=tcp and dst-port=443',
             f"dst-host={host} protocol=tcp dst-port=443 action=accept {TAG}",
+        ))
+    # The certificate's AIA and CRL endpoints use plain HTTP, not HTTPS.
+    for host in ("ye1.i.lencr.org", "ye1.c.lencr.org"):
+        lines.append(_once(
+            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol=tcp and dst-port=80',
+            f"dst-host={host} protocol=tcp dst-port=80 action=accept {TAG}",
         ))
     return lines
 
@@ -314,9 +320,9 @@ def render_portal_html(device_id: str, plans=()) -> str:
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
         '<input type="hidden" name="dst" value="\\$(link-orig)"></form>'
-        '<script src="/md5.js"></script><script>function doLogin(){var login=document.forms["login"],sendin=document.forms["sendin"];sendin.username.value='
-        'login.username.value;sendin.password.value=hexMD5("\\$(chap-id)"+'
-        'login.username.value+"\\$(chap-challenge)");sendin.submit();return false}</script>'
+        '<script src="/md5.js"></script><script>function doLogin(){var login=document.forms["login"],sendin=document.forms["sendin"],v=login.elements.namedItem("username").value;'
+        'sendin.elements.namedItem("username").value=v;sendin.elements.namedItem("password").value=hexMD5("\\$(chap-id)"+'
+        'v+"\\$(chap-challenge)");sendin.submit();return false}</script>'
         '\\$(endif)'
         '<div class="voucher"><p>Already have a voucher?</p><form name="login" action="\\$(link-login-only)" method="post" '
         'onsubmit="return typeof doLogin===\'function\'?doLogin():true">'
@@ -326,28 +332,22 @@ def render_portal_html(device_id: str, plans=()) -> str:
         '<button type="submit">Connect</button></form></div>'
         f'<p><a class="buy" href="{buy_url}">View all plans</a></p>'
         '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst");'
-        'if(!v)return;var login=document.forms["login"],sendin=document.forms["sendin"];login.username.value=v;login.password.value=v;'
-        'if(d){login.dst.value=d;if(sendin)sendin.dst.value=d;}'
+        'if(!v)return;var login=document.forms["login"],sendin=document.forms["sendin"];login.elements.namedItem("username").value=v;login.elements.namedItem("password").value=v;'
+        'if(d){login.elements.namedItem("dst").value=d;if(sendin)sendin.elements.namedItem("dst").value=d;}'
         'if(typeof doLogin==="function")doLogin();else login.submit();})();</script>'
         '</main></body></html>'
     )
 
 
 def render_autologin_html() -> str:
-    """A design-independent voucher handoff used by default and custom portals."""
+    """Compatibility handoff: CHAP variables only exist on RouterOS /login."""
     return (
         '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Connecting</title></head><body><p>Connecting you to WiFi...</p>'
-        '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
-        '<input type="hidden" name="username"><input type="hidden" name="password">'
-        '<input type="hidden" name="dst"></form><script src="/md5.js"></script>\\$(endif)'
-        '<form name="login" action="\\$(link-login-only)" method="post">'
-        '<input type="hidden" name="username"><input type="hidden" name="password"><input type="hidden" name="dst"></form>'
-        '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst")||"https://app.netguard.fun/buy?connected=1";'
-        'if(!v){document.body.innerHTML="<p>Missing voucher code.</p>";return;}'
-        'var sendin=document.forms["sendin"],login=document.forms["login"];'
-        'if(sendin){sendin.username.value=v;sendin.password.value=hexMD5("\\$(chap-id)"+v+"\\$(chap-challenge)");sendin.dst.value=d;sendin.submit();}'
-        'else{login.username.value=v;login.password.value=v;login.dst.value=d;login.submit();}})();</script>'
+        '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher");'
+        'if(!v){document.body.textContent="Missing voucher code.";return;}'
+        'var login=new URL("\\$(link-login-only)",location.href);login.searchParams.set("voucher",v);'
+        'if(q.get("dst"))login.searchParams.set("dst",q.get("dst"));location.replace(login.toString());})();</script>'
         '</body></html>'
     )
 
@@ -355,9 +355,21 @@ def render_autologin_html() -> str:
 def custom_portal_button(device_id: str) -> str:
     url = (f"https://app.netguard.fun/buy?router={device_id}&mac=$(mac)&ip=$(ip)"
            "&login=$(link-login-only)")
+    destination = f"https://app.netguard.fun/buy?router={device_id}&connected=1"
     return ('<!-- NETGUARD-BUY-START --><a href="' + url + '" '
             'style="display:inline-block;padding:14px 24px;background:#8737aa;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">'
-            'Buy WiFi</a><!-- NETGUARD-BUY-END -->')
+            'Buy WiFi</a>'
+            '$(if chap-id)<form id="netguard-chap" action="$(link-login-only)" method="post" hidden>'
+            '<input name="username"><input name="password"><input name="dst"></form>'
+            '<script src="/md5.js"></script>$(endif)'
+            '<form id="netguard-pap" action="$(link-login-only)" method="post" hidden>'
+            '<input name="username"><input name="password"><input name="dst"></form>'
+            '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher");if(!v)return;'
+            f'var dst=q.get("dst")||"{destination}",chap=document.getElementById("netguard-chap"),'
+            'form=chap||document.getElementById("netguard-pap");'
+            'form.elements.namedItem("username").value=v;form.elements.namedItem("dst").value=dst;'
+            'form.elements.namedItem("password").value=chap?hexMD5("$(chap-id)"+v+"$(chap-challenge)"):v;'
+            'form.submit()})();</script><!-- NETGUARD-BUY-END -->')
 
 
 def portal_page(p: ProvisionParams) -> list[str]:

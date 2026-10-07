@@ -91,6 +91,8 @@ def test_walled_garden_allows_payment_and_buy_hosts_without_todo():
                  "na-gateway.mastercard.com", "ye1.i.lencr.org", "ye1.c.lencr.org"):
         assert f"dst-host={host}" in rendered
     assert "TODO PAYMENT PROVIDER" not in rendered
+    for host in ("ye1.i.lencr.org", "ye1.c.lencr.org"):
+        assert f"dst-host={host} protocol=tcp dst-port=80 action=accept" in rendered
 
 
 def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
@@ -122,10 +124,9 @@ def test_custom_portal_mode_preserves_login_and_installs_autologin_helper():
     assert 'name="hotspot/netguard-login.html"' in rendered
     assert 'name="hotspot/login.html"' not in rendered
     assert "preserving hotspot/login.html unchanged" in rendered
-    assert "hexMD5" in rendered
+    assert 'new URL(\\"\\$(link-login-only)\\"' in rendered
     assert 'q.get(\\"voucher\\")' in rendered
-    assert 'document.forms[\\"sendin\\"]' in rendered
-    assert 'document.forms[\\"login\\"]' in rendered
+    assert "hexMD5" not in rendered
 
 
 def test_custom_portal_button_has_client_variables_and_no_plan():
@@ -137,6 +138,9 @@ def test_custom_portal_button_has_client_variables_and_no_plan():
     assert "ip=$(ip)" in rendered
     assert "login=$(link-login-only)" in rendered
     assert "plan=" not in rendered
+    assert 'id="netguard-chap"' in rendered
+    assert 'hexMD5("$(chap-id)"+v+"$(chap-challenge)")' in rendered
+    assert "connected=1" in rendered
 
 
 def test_walled_garden_objects_are_attributable():
@@ -145,7 +149,7 @@ def test_walled_garden_objects_are_attributable():
         if " add " in l and not l.startswith("#"):
             seen += 1
             assert 'comment="NetGuard"' in l, l
-    assert seen == 24
+    assert seen == 26
 
 
 def test_hotspot_objects_do_not_carry_comment():
