@@ -264,6 +264,9 @@ def walled_garden(p: ProvisionParams) -> list[str]:
         # before they have general internet access.
         "cdnjs.cloudflare.com", "fonts.googleapis.com",
         "fonts.gstatic.com", "na-gateway.mastercard.com",
+        # Safari may fetch the issuing certificate and CRL before accepting
+        # app.netguard.fun. Chrome commonly serves these from its own cache.
+        "ye1.i.lencr.org", "ye1.c.lencr.org",
     )
     for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
                  "www.msftconnecttest.com", p.hotspot_dns_name, *portal_hosts):
@@ -296,7 +299,7 @@ def render_portal_html(device_id: str, plans=()) -> str:
     # Dollar signs are escaped for the provisioning script so RouterOS writes
     # the hotspot variables literally; the hotspot renderer expands them per client.
     return (
-        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Buy WiFi</title><style>*{box-sizing:border-box}body{margin:0;background:#0d110f;color:#fff;font-family:Arial,sans-serif}'
         '.box{max-width:500px;margin:7vh auto;padding:32px;background:#171d1a;box-shadow:0 18px 50px #0008;text-align:center}'
         '.wifi{font-size:44px;color:#8d3caf}h1{font-size:34px;margin:8px 0}p{color:#aeb6b2}.plans{display:grid;gap:12px;margin:24px 0;text-align:left}'
@@ -304,7 +307,9 @@ def render_portal_html(device_id: str, plans=()) -> str:
         '.plan:hover{border-color:#8d3caf}.plan span{display:grid;gap:5px}.plan small{color:#aeb6b2;font-size:16px}.plan em,.buy,button{background:#8737aa;color:#fff;border:0;border-radius:9px;padding:12px 18px;font-weight:bold;text-decoration:none;font-style:normal}'
         '.voucher{border-top:1px solid #343c38;margin-top:26px;padding-top:20px}input{width:60%;padding:12px;margin:8px;border-radius:7px;border:1px solid #68726d;background:#0d110f;color:#fff}'
         '@media(max-width:540px){.box{margin:0;min-height:100vh;padding:28px 20px}}</style></head><body><main class="box">'
-        '<div class="wifi">⌁</div><h1>Buy WiFi</h1><p>Choose a plan and pay securely with Modem Pay.</p>'
+        '<div class="wifi"><svg aria-hidden="true" viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+        '<path d="M5 12.6a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg></div>'
+        '<h1>Buy WiFi</h1><p>Choose a plan and pay securely with Modem Pay.</p>'
         f'<div class="plans">{plan_cards}</div>'
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
@@ -331,7 +336,7 @@ def render_portal_html(device_id: str, plans=()) -> str:
 def render_autologin_html() -> str:
     """A design-independent voucher handoff used by default and custom portals."""
     return (
-        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Connecting</title></head><body><p>Connecting you to WiFi...</p>'
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
