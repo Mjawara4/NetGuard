@@ -314,9 +314,9 @@ def render_portal_html(device_id: str, plans=()) -> str:
         '\\$(if chap-id)<form name="sendin" action="\\$(link-login-only)" method="post">'
         '<input type="hidden" name="username"><input type="hidden" name="password">'
         '<input type="hidden" name="dst" value="\\$(link-orig)"></form>'
-        '<script src="/md5.js"></script><script>function doLogin(){document.sendin.username.value='
-        'document.login.username.value;document.sendin.password.value=hexMD5("\\$(chap-id)"+'
-        'document.login.username.value+"\\$(chap-challenge)");document.sendin.submit();return false}</script>'
+        '<script src="/md5.js"></script><script>function doLogin(){var login=document.forms["login"],sendin=document.forms["sendin"];sendin.username.value='
+        'login.username.value;sendin.password.value=hexMD5("\\$(chap-id)"+'
+        'login.username.value+"\\$(chap-challenge)");sendin.submit();return false}</script>'
         '\\$(endif)'
         '<div class="voucher"><p>Already have a voucher?</p><form name="login" action="\\$(link-login-only)" method="post" '
         'onsubmit="return typeof doLogin===\'function\'?doLogin():true">'
@@ -326,9 +326,9 @@ def render_portal_html(device_id: str, plans=()) -> str:
         '<button type="submit">Connect</button></form></div>'
         f'<p><a class="buy" href="{buy_url}">View all plans</a></p>'
         '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst");'
-        'if(!v)return;document.login.username.value=v;document.login.password.value=v;'
-        'if(d){document.login.dst.value=d;if(document.sendin)document.sendin.dst.value=d;}'
-        'if(typeof doLogin==="function")doLogin();else document.login.submit();})();</script>'
+        'if(!v)return;var login=document.forms["login"],sendin=document.forms["sendin"];login.username.value=v;login.password.value=v;'
+        'if(d){login.dst.value=d;if(sendin)sendin.dst.value=d;}'
+        'if(typeof doLogin==="function")doLogin();else login.submit();})();</script>'
         '</main></body></html>'
     )
 
@@ -345,8 +345,9 @@ def render_autologin_html() -> str:
         '<input type="hidden" name="username"><input type="hidden" name="password"><input type="hidden" name="dst"></form>'
         '<script>(function(){var q=new URLSearchParams(location.search),v=q.get("voucher"),d=q.get("dst")||"https://app.netguard.fun/buy?connected=1";'
         'if(!v){document.body.innerHTML="<p>Missing voucher code.</p>";return;}'
-        'if(document.sendin){document.sendin.username.value=v;document.sendin.password.value=hexMD5("\\$(chap-id)"+v+"\\$(chap-challenge)");document.sendin.dst.value=d;document.sendin.submit();}'
-        'else{document.login.username.value=v;document.login.password.value=v;document.login.dst.value=d;document.login.submit();}})();</script>'
+        'var sendin=document.forms["sendin"],login=document.forms["login"];'
+        'if(sendin){sendin.username.value=v;sendin.password.value=hexMD5("\\$(chap-id)"+v+"\\$(chap-challenge)");sendin.dst.value=d;sendin.submit();}'
+        'else{login.username.value=v;login.password.value=v;login.dst.value=d;login.submit();}})();</script>'
         '</body></html>'
     )
 

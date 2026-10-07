@@ -100,10 +100,11 @@ def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
     assert "\\$(ip)" in rendered
     assert "Buy WiFi" in rendered
     assert "hexMD5" in rendered
-    assert "document.login.username.value" in rendered
+    assert 'document.forms[\\"login\\"]' in rendered
+    assert 'document.forms[\\"sendin\\"]' in rendered
     assert 'q.get(\\"voucher\\")' in rendered
-    assert 'document.login.password.value=v' in rendered
-    assert 'document.sendin.dst.value=d' in rendered
+    assert "document.login" not in rendered
+    assert "document.sendin" not in rendered
 
 
 def test_default_portal_can_list_configured_prices():
@@ -123,6 +124,8 @@ def test_custom_portal_mode_preserves_login_and_installs_autologin_helper():
     assert "preserving hotspot/login.html unchanged" in rendered
     assert "hexMD5" in rendered
     assert 'q.get(\\"voucher\\")' in rendered
+    assert 'document.forms[\\"sendin\\"]' in rendered
+    assert 'document.forms[\\"login\\"]' in rendered
 
 
 def test_custom_portal_button_has_client_variables_and_no_plan():
