@@ -486,6 +486,7 @@ async def generate_provision_script(
             api_password=api_password, recovery_password=recovery_password,
             portal_plans=portal_plans,
             portal_mode=(device.voucher_template or {}).get("portal_mode", "custom"),
+            portal_directory=(device.voucher_template or {}).get("portal_directory") or "",
         )
     except ValueError as e:
         msg = str(e)

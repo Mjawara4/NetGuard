@@ -18,6 +18,14 @@ _LEGACY_NETGUARD_TEXT = "Choose a plan and pay securely with Modem Pay."
 _BUTTON_RE = re.compile(r"<!-- NETGUARD-BUY-START -->.*?<!-- NETGUARD-BUY-END -->", re.DOTALL)
 
 
+# What a folder name may contain: it ends up quoted inside the setup script.
+_SAFE_DIRECTORY_RE = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*")
+
+
+def is_safe_directory(directory) -> bool:
+    return bool(directory) and ".." not in directory and bool(_SAFE_DIRECTORY_RE.fullmatch(directory))
+
+
 class PortalError(Exception):
     """The portal was left exactly as it was; the message says why."""
 
@@ -32,6 +40,28 @@ def backup_name(directory: str) -> str:
 
 def is_netguard_page(html) -> bool:
     return bool(html) and (NETGUARD_PAGE_MARKER in html or _LEGACY_NETGUARD_TEXT in html)
+
+
+def portal_folders(names) -> list[str]:
+    """Folders on the router that hold a login page, i.e. could be a portal.
+
+    A portal's own sub-folders (xml/ carries a login.html too) are not portals.
+    """
+    holding = {name[:-len("/login.html")] for name in names if name.endswith("/login.html")}
+    return sorted(d for d in holding
+                  if is_safe_directory(d) and d.rsplit("/", 1)[0] not in holding - {d})
+
+
+def attention(mode: str, chosen: str, status: dict):
+    """Why the router is not showing what the owner chose, or None.
+
+    Nothing is changed on the strength of this: it is only shown to the owner.
+    """
+    if chosen and status.get("directory") != chosen:
+        return "wrong_folder"
+    if mode == "custom" and status.get("login_page") == "netguard":
+        return "netguard_page"
+    return None
 
 
 def without_buy_button(html: str) -> str:

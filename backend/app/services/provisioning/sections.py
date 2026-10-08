@@ -374,18 +374,36 @@ def custom_portal_button(device_id: str) -> str:
             'form.submit()})();</script><!-- NETGUARD-BUY-END -->')
 
 
+def _owners_portal_folder(p: ProvisionParams) -> list[str]:
+    """Put the hotspot back on the folder the owner picked in the dashboard.
+
+    A reset router serves from hotspot/ again; without this the owner's portal
+    would silently stop showing. Skipped when the folder is no longer there.
+    """
+    if not p.portal_directory:
+        return []
+    d = p.portal_directory
+    return [
+        f"# The owner serves their portal from {d}/ (chosen in the dashboard).",
+        f':if ([:len [/file find where name="{d}/login.html"]] > 0) do={{ '
+        f'/ip hotspot profile set [find where name="netguard"] html-directory="{d}" '
+        f'}} else={{ :log warning "NetGuard: portal folder {d} not found on this router; hotspot folder left as is" }}',
+    ]
+
+
 def portal_page(p: ProvisionParams) -> list[str]:
     """Install NetGuard's login page -- only when the owner chose NetGuard's portal.
 
     Any other router keeps the login page it has. The dashboard can add a Buy
     button to that page; this script never touches it.
     """
+    folder = _owners_portal_folder(p)
     if p.portal_mode != "netguard" or not p.device_id:
-        return ["# --- captive portal page ---",
+        return ["# --- captive portal page ---", *folder,
                 "# NetGuard's portal was not chosen for this router; leaving the router's login page unchanged."]
     portal_html = render_portal_html(p.device_id, p.portal_plans).replace('"', '\\"')
     return [
-        "# --- captive portal page ---",
+        "# --- captive portal page ---", *folder,
         "# Written into the folder the hotspot actually serves, which need not be hotspot/.",
         ':local ngPortalDir [/ip hotspot profile get [find where name="netguard"] html-directory]',
         ':local ngLogin ($ngPortalDir . "/login.html")',

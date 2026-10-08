@@ -1023,6 +1023,10 @@ class VoucherTemplate(BaseModel):
 class PortalModeUpdate(BaseModel):
     mode: str
 
+
+class PortalFolderUpdate(BaseModel):
+    directory: str
+
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
@@ -1040,9 +1044,10 @@ async def update_voucher_template(device_id: str, template: VoucherTemplate, db:
     saved = template.model_dump()
     # The portal choice lives in the same record but is not this form's to
     # set: only the portal endpoints change it.
-    portal_mode = (device.voucher_template or {}).get("portal_mode")
-    if portal_mode:
-        saved["portal_mode"] = portal_mode
+    for key in ("portal_mode", "portal_directory"):
+        kept = (device.voucher_template or {}).get(key)
+        if kept:
+            saved[key] = kept
     device.voucher_template = saved
     await db.commit()
 
@@ -1123,11 +1128,39 @@ def _active_hotspot_directory(device):
         profile_name = active.get("profile") if active else None
         profile = next((row for row in profiles if row.get("name") == profile_name), None)
         directory = str((profile or {}).get("html-directory") or "hotspot").strip("/")
-        if not directory or ".." in directory or not re.fullmatch(r"[A-Za-z0-9._/-]+", directory):
+        if not portal_install.is_safe_directory(directory):
             raise HTTPException(status_code=409, detail="The router hotspot HTML directory is not safe to modify")
         return directory
     finally:
         connection.disconnect()
+
+
+def _set_hotspot_directory(device, directory):
+    """Point the hotspot in use at `directory`."""
+    port = _portal_api_port(device)
+    connection = _portal_api(device)
+    try:
+        api = connection.get_api()
+        servers = api.get_resource("/ip/hotspot").get()
+        active = next((row for row in servers if not row.get("disabled", False)), None) or (servers[0] if servers else None)
+        profiles = api.get_resource("/ip/hotspot/profile")
+        profile = next((row for row in profiles.get() if active and row.get("name") == active.get("profile")), None)
+        if not profile:
+            raise portal_install.PortalError("The router has no hotspot to point at that folder")
+        try:
+            profiles.set(id=profile["id"], **{"html-directory": directory})
+        except routeros_api.exceptions.RouterOsApiParsingError as exc:
+            if "!empty" not in str(exc):
+                raise
+            _evict_pool(device.ip_address, port)
+    finally:
+        connection.disconnect()
+
+
+def _router_file_names(device):
+    """Every file and folder name on the router."""
+    rows = _RouterFiles(device)._call("print", {".proplist": b"name"}) or []
+    return [row.get("name", b"").decode("utf-8", "replace") for row in rows]
 
 
 class _RouterFiles:
@@ -1209,15 +1242,22 @@ def _write_router_file(device, name, contents):
         connection.disconnect()
 
 
+def _saved_portal_directory(device) -> str:
+    return (device.voucher_template or {}).get("portal_directory") or ""
+
+
 def _saved_portal_mode(device) -> str:
     # No saved choice means the login page is the owner's: NetGuard only
     # manages it once they pick NetGuard's portal themselves.
     return (device.voucher_template or {}).get("portal_mode") or "custom"
 
 
-async def _save_portal_mode(device, mode: str, db: AsyncSession) -> None:
+async def _save_portal_mode(device, mode: str, db: AsyncSession, directory: str = "") -> None:
     settings = dict(device.voucher_template or {})
     settings["portal_mode"] = mode
+    if directory:
+        # The folder holding the owner's portal, so a reset router can be put back on it.
+        settings["portal_directory"] = directory
     device.voucher_template = settings
     await db.commit()
 
@@ -1242,10 +1282,37 @@ async def get_portal_status(device_id: str, db: AsyncSession = Depends(get_db), 
     """What the router is serving right now, read from the router itself."""
     device = await _portal_device(device_id, db, actor)
 
+    chosen = _saved_portal_directory(device)
+
     def read():
-        return portal_install.describe(_router_files(device), _active_hotspot_directory(device))
+        status = portal_install.describe(_router_files(device), _active_hotspot_directory(device))
+        return {**status,
+                "folders": portal_install.portal_folders(_router_file_names(device)),
+                "chosen_directory": chosen,
+                "attention": portal_install.attention(_saved_portal_mode(device), chosen, status)}
 
     return await _portal_action(read)
+
+
+@router.post("/{device_id}/portal/folder")
+async def set_portal_folder(device_id: str, body: PortalFolderUpdate, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
+    """Serve the owner's portal from the folder they picked, and remember it.
+
+    The setup script puts the hotspot back on this folder after a router reset.
+    No login page is written.
+    """
+    device = await _portal_device(device_id, db, actor)
+    directory = body.directory.strip().strip("/")
+
+    def switch():
+        if directory not in portal_install.portal_folders(_router_file_names(device)):
+            raise portal_install.PortalError(f"{directory}/login.html was not found on the router")
+        _set_hotspot_directory(device, directory)
+        return portal_install.describe(_router_files(device), directory)
+
+    result = await _portal_action(switch)
+    await _save_portal_mode(device, "custom", db, directory=directory)
+    return {"status": "saved", "mode": "custom", **result}
 
 
 @router.post("/{device_id}/portal-mode")
@@ -1284,7 +1351,7 @@ async def install_custom_portal_support(device_id: str, db: AsyncSession = Depen
             custom_portal_button(str(device.id)))
 
     result = await _portal_action(install)
-    await _save_portal_mode(device, "custom", db)
+    await _save_portal_mode(device, "custom", db, directory=result["directory"])
     return {"status": "installed", "mode": "custom", **result}
 
 

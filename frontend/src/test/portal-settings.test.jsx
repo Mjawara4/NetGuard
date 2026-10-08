@@ -83,4 +83,36 @@ describe('PortalSettings', () => {
         await screen.findByText(/serving NetGuard's login page/i);
         expect(screen.getByRole('button', { name: 'Restore my page' })).toBeDisabled();
     });
+
+    it('lists the router\'s portal folders and lets the owner pick one', async () => {
+        serve({ status: { directory: 'hotspot', login_page: 'custom', has_backup: false, folders: ['hotspot', 'test'], chosen_directory: '', attention: null } });
+        render(<PortalSettings device={DEVICE} />);
+        const picker = await screen.findByLabelText('Portal folder');
+        expect(picker).toHaveValue('hotspot');
+        expect(screen.getByRole('button', { name: 'Use this folder' })).toBeDisabled();
+        fireEvent.change(picker, { target: { value: 'test' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Use this folder' }));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith(`/hotspot/${DEVICE.id}/portal/folder`, { directory: 'test' }));
+    });
+
+    it('warns when the router left the folder the owner chose, with a one-click fix', async () => {
+        serve({ status: { directory: 'hotspot', login_page: 'netguard', has_backup: false, folders: ['hotspot', 'test'], chosen_directory: 'test', attention: 'wrong_folder' } });
+        render(<PortalSettings device={DEVICE} />);
+        expect(await screen.findByRole('alert')).toHaveTextContent(/hotspot.*instead of.*test/i);
+        fireEvent.click(screen.getByRole('button', { name: 'Switch back to test' }));
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith(`/hotspot/${DEVICE.id}/portal/folder`, { directory: 'test' }));
+    });
+
+    it('warns when NetGuard\'s page is showing on a router set to the owner\'s portal', async () => {
+        serve({ status: { directory: 'hotspot', login_page: 'netguard', has_backup: false, folders: ['hotspot', 'test'], chosen_directory: '', attention: 'netguard_page' } });
+        render(<PortalSettings device={DEVICE} />);
+        expect(await screen.findByRole('alert')).toHaveTextContent(/NetGuard's page/i);
+    });
+
+    it('shows no warning when the router serves what the owner chose', async () => {
+        serve({ status: { directory: 'test', login_page: 'custom', has_backup: true, folders: ['hotspot', 'test'], chosen_directory: 'test', attention: null } });
+        render(<PortalSettings device={DEVICE} />);
+        await screen.findByLabelText('Portal folder');
+        expect(screen.queryByRole('alert')).toBeNull();
+    });
 });

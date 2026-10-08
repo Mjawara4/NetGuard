@@ -10,6 +10,8 @@ import ipaddress
 import re
 from dataclasses import dataclass
 
+from app.services.portal_install import is_safe_directory
+
 # Rejected, not escaped: the generated script runs with full admin rights, and
 # an escaping bug in a config language with several quoting contexts is a
 # hole. A site name is ours to constrain.
@@ -60,6 +62,8 @@ class ProvisionParams:
     device_id: str | None
     portal_plans: tuple[tuple[str, str, str], ...]
     portal_mode: str
+    # The folder the owner serves their portal from, or "" to leave it alone.
+    portal_directory: str = ""
 
 
 def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
@@ -71,6 +75,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  device_id: str | None = None,
                  portal_plans: tuple[tuple[str, str, str], ...] = (),
                  portal_mode: str = "custom",
+                 portal_directory: str = "",
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines
@@ -84,6 +89,8 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         raise ValueError(f"timezone {timezone!r} is not in KNOWN_TIMEZONES")
     if portal_mode not in {"netguard", "custom"}:
         raise ValueError("portal_mode must be netguard or custom")
+    if portal_directory and not is_safe_directory(portal_directory):
+        raise ValueError("portal_directory is not a plain folder path")
 
     # Validate required fields
     for name, value in (("wg_private_key", wg_private_key),
@@ -249,4 +256,5 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
         device_id=device_id,
         portal_plans=portal_plans,
         portal_mode=portal_mode,
+        portal_directory=portal_directory,
     )

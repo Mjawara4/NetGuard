@@ -150,3 +150,32 @@ def test_restore_refuses_a_backup_that_is_only_netguards_page():
     with pytest.raises(pi.PortalError):
         pi.restore(files, DIR)
     assert files.writes == []
+
+
+# --- which folders hold a portal, and whether the owner's choice is honoured ---
+
+def test_portal_folders_are_the_folders_holding_a_login_page():
+    names = ["hotspot", "hotspot/login.html", "hotspot/xml/login.html", "test/login.html",
+             "test/login.netguard-backup.html", "skins/status.html", "flash/hotspot/login.html",
+             "log.0.txt", "login.html"]
+    assert pi.portal_folders(names) == ["flash/hotspot", "hotspot", "test"]
+
+
+def test_portal_folders_skip_names_the_router_script_could_not_quote_safely():
+    assert pi.portal_folders(['bad"dir/login.html', "a b/login.html", "../x/login.html", "ok/login.html"]) == ["ok"]
+
+
+def test_no_attention_needed_when_the_router_serves_what_the_owner_chose():
+    status = {"directory": "test", "login_page": "custom"}
+    assert pi.attention("custom", "test", status) is None
+    assert pi.attention("custom", "", status) is None
+    assert pi.attention("netguard", "", {"directory": "hotspot", "login_page": "netguard"}) is None
+
+
+def test_attention_when_the_router_left_the_folder_the_owner_chose():
+    assert pi.attention("custom", "test", {"directory": "hotspot", "login_page": "netguard"}) == "wrong_folder"
+    assert pi.attention("custom", "test", {"directory": "hotspot", "login_page": "custom"}) == "wrong_folder"
+
+
+def test_attention_when_netguards_page_shows_on_a_router_set_to_the_owners_portal():
+    assert pi.attention("custom", "", {"directory": "hotspot", "login_page": "netguard"}) == "netguard_page"

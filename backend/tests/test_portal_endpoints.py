@@ -109,8 +109,10 @@ async def test_restore_puts_the_owners_page_back_and_marks_the_router_custom(mon
 async def test_status_says_what_the_router_is_actually_serving(monkeypatch):
     files = Files({"test/login.html": CUSTOM})
     device, db = _setup(monkeypatch, files)
+    _folders(monkeypatch, ["test/login.html"], active="test")
     out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
-    assert out == {"directory": "test", "login_page": "custom", "has_backup": False}
+    assert out == {"directory": "test", "login_page": "custom", "has_backup": False,
+                   "folders": ["test"], "chosen_directory": "", "attention": None}
 
 
 def test_large_pages_are_read_with_get_not_print(monkeypatch):
@@ -178,3 +180,81 @@ async def test_a_template_save_cannot_switch_a_router_to_netguards_portal(monkey
     await hotspot.update_voucher_template(
         str(device.id), hotspot.VoucherTemplate(portal_mode="netguard"), db=db, actor=actor)
     assert device.voucher_template.get("portal_mode") != "netguard"
+
+
+# --- the owner's portal folder ---
+
+def _folders(monkeypatch, names, active="hotspot"):
+    state = {"active": active, "set": []}
+    monkeypatch.setattr(hotspot, "_active_hotspot_directory", lambda d: state["active"])
+    monkeypatch.setattr(hotspot, "_router_file_names", lambda d: names)
+
+    def set_dir(device, directory):
+        state["set"].append(directory)
+        state["active"] = directory
+
+    monkeypatch.setattr(hotspot, "_set_hotspot_directory", set_dir)
+    return state
+
+
+NAMES = ["hotspot/login.html", "test/login.html", "test/xml/login.html"]
+
+
+async def test_status_lists_the_portal_folders_and_the_owners_choice(monkeypatch):
+    files = Files({"test/login.html": CUSTOM})
+    device, db = _setup(monkeypatch, files, {"portal_directory": "test"})
+    _folders(monkeypatch, NAMES, active="test")
+    out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
+    assert out["folders"] == ["hotspot", "test"]
+    assert out["chosen_directory"] == "test"
+    assert out["attention"] is None
+
+
+async def test_status_flags_a_router_that_went_back_to_another_folder(monkeypatch):
+    files = Files({"hotspot/login.html": NETGUARD_PAGE_MARKER, "test/login.html": CUSTOM})
+    device, db = _setup(monkeypatch, files, {"portal_directory": "test"})
+    _folders(monkeypatch, NAMES, active="hotspot")
+    out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
+    assert out["directory"] == "hotspot"
+    assert out["attention"] == "wrong_folder"
+
+
+async def test_choosing_a_folder_points_the_hotspot_at_it_and_remembers_it(monkeypatch):
+    files = Files({"test/login.html": CUSTOM})
+    device, db = _setup(monkeypatch, files, {"profile_pricing": {"3-Hours": {"price": 10}}})
+    state = _folders(monkeypatch, NAMES)
+    out = await hotspot.set_portal_folder(str(device.id), hotspot.PortalFolderUpdate(directory="test"), db=db, actor=None)
+    assert state["set"] == ["test"]
+    assert out["directory"] == "test"
+    assert device.voucher_template["portal_directory"] == "test"
+    assert device.voucher_template["portal_mode"] == "custom"
+    assert device.voucher_template["profile_pricing"] == {"3-Hours": {"price": 10}}
+    assert files.writes == []
+
+
+async def test_a_folder_without_a_login_page_is_refused(monkeypatch):
+    device, db = _setup(monkeypatch, Files(), {"portal_directory": "test"})
+    state = _folders(monkeypatch, NAMES)
+    with pytest.raises(HTTPException) as error:
+        await hotspot.set_portal_folder(str(device.id), hotspot.PortalFolderUpdate(directory="skins"), db=db, actor=None)
+    assert error.value.status_code == 409
+    assert state["set"] == []
+    assert device.voucher_template["portal_directory"] == "test"
+    db.commit.assert_not_awaited()
+
+
+async def test_adding_the_buy_button_remembers_the_folder_it_was_added_in(monkeypatch):
+    files = Files({"test/login.html": CUSTOM})
+    device, db = _setup(monkeypatch, files)
+    await hotspot.install_custom_portal_support(str(device.id), db=db, actor=None)
+    assert device.voucher_template["portal_directory"] == "test"
+
+
+async def test_saving_the_voucher_template_keeps_the_portal_folder(monkeypatch):
+    device, db = _setup(monkeypatch, Files(), {"portal_mode": "custom", "portal_directory": "test"})
+    result = MagicMock()
+    result.scalars.return_value.first.return_value = device
+    db.execute = AsyncMock(return_value=result)
+    actor = hotspot.User(role=hotspot.UserRole.SUPER_ADMIN)
+    await hotspot.update_voucher_template(str(device.id), hotspot.VoucherTemplate(), db=db, actor=actor)
+    assert device.voucher_template["portal_directory"] == "test"

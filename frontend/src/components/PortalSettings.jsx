@@ -26,10 +26,14 @@ export default function PortalSettings({ device }) {
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState('');
     const [copied, setCopied] = useState(false);
+    const [folder, setFolder] = useState('');
 
     const loadStatus = useCallback(() => {
         api.get(`/hotspot/${device.id}/portal/status`)
-            .then(({ data }) => setStatus(data))
+            .then(({ data }) => {
+                setStatus(data);
+                setFolder(data.directory || '');
+            })
             .catch(() => setStatus(null));
     }, [device.id]);
 
@@ -103,6 +107,11 @@ export default function PortalSettings({ device }) {
         setNotice('Buy WiFi button added to your login page. The original is saved on the router.');
     });
 
+    const useFolder = (directory) => request('portal/folder', { directory }, () => {
+        setMode('custom');
+        setNotice(`The hotspot now serves your portal from ${directory}/. NetGuard will put it back there after a router reset.`);
+    });
+
     const restore = () => request('portal/restore', undefined, () => {
         setMode('custom');
         setNotice('Your own login page is back.');
@@ -128,6 +137,31 @@ export default function PortalSettings({ device }) {
                     {status.directory && <> — <code>{`${status.directory}/login.html`}</code></>}
                     {status.has_backup && <span className="block mt-1 text-ink-500 dark:text-ink-400">A copy of your own page is saved on the router.</span>}
                 </p>
+            )}
+
+            {status?.attention === 'wrong_folder' && (
+                <div role="alert" className="mb-4 rounded-md border border-warn bg-warn/10 p-3 text-xs text-ink-800 dark:text-ink-100">
+                    <p>The router is serving <code>{status.directory}/</code> instead of <code>{status.chosen_directory}/</code>, the folder you chose. This usually follows a router reset.</p>
+                    <button type="button" disabled={busy} onClick={() => useFolder(status.chosen_directory)} className="mt-2 px-3 py-2 rounded-md bg-signal-600 text-white text-xs font-bold disabled:opacity-50">{`Switch back to ${status.chosen_directory}`}</button>
+                </div>
+            )}
+            {status?.attention === 'netguard_page' && (
+                <div role="alert" className="mb-4 rounded-md border border-warn bg-warn/10 p-3 text-xs text-ink-800 dark:text-ink-100">
+                    The router is showing NetGuard&apos;s page although this router is set to your own portal. Pick the folder holding your portal below{status.has_backup ? ', or use "Restore my page"' : ''}.
+                </div>
+            )}
+
+            {status?.folders?.length > 0 && (
+                <div className="mb-4 flex flex-wrap items-end gap-2">
+                    <label className="text-xs font-bold text-ink-700 dark:text-ink-200">
+                        <span className="block mb-1">Portal folder</span>
+                        <select aria-label="Portal folder" value={folder} disabled={busy} onChange={(e) => setFolder(e.target.value)} className="px-3 py-2 rounded-md border border-ink-300 dark:border-ink-600 bg-white dark:bg-ink-900 text-xs font-normal text-ink-900 dark:text-ink-50">
+                            {!status.folders.includes(folder) && <option value={folder}>{folder || 'Choose a folder'}</option>}
+                            {status.folders.map((name) => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                    </label>
+                    <button type="button" disabled={busy || !folder || folder === status.directory} onClick={() => useFolder(folder)} className="px-4 py-2 rounded-md border border-ink-300 dark:border-ink-600 text-xs font-bold text-ink-700 dark:text-ink-200 disabled:opacity-50">Use this folder</button>
+                </div>
             )}
 
             <div className="flex flex-wrap gap-2">

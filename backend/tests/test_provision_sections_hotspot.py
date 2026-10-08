@@ -300,3 +300,34 @@ def test_no_profile_allows_more_than_one_shared_user():
     for l in sections.voucher_profiles(P):
         for m in re.finditer(r"shared-users=(\d+)", l):
             assert int(m.group(1)) == 1, f"shared-users>{1} in: {l[:90]}"
+
+
+def test_the_script_does_not_choose_a_portal_folder_the_owner_never_chose():
+    assert "html-directory=" not in text(sections.portal_page(P))
+    assert "html-directory=" not in text(sections.portal_page(NG))
+
+
+def test_the_script_puts_the_hotspot_back_on_the_owners_folder_if_it_is_still_there():
+    rendered = text(sections.portal_page(replace(P, portal_directory="test")))
+    assert ':if ([:len [/file find where name="test/login.html"]] > 0) do={' in rendered
+    assert '/ip hotspot profile set [find where name="netguard"] html-directory="test"' in rendered
+    # Still never writes a login page in custom mode.
+    assert "/file add" not in rendered and "/file set" not in rendered
+
+
+def test_netguard_mode_restores_the_folder_before_it_reads_which_one_to_write_into():
+    ls = sections.portal_page(replace(NG, portal_directory="test"))
+    rendered = text(ls)
+    assert rendered.index('html-directory="test"') < rendered.index(":local ngPortalDir")
+
+
+def test_a_portal_folder_that_could_break_out_of_the_script_is_rejected():
+    import pytest
+    from app.services.provisioning.params import build_params
+    base = dict(site_slug="site-a", wg_private_key=P.wg_private_key, wg_client_ip=P.wg_client_ip,
+                wg_server_public_key=P.wg_server_public_key, wg_server_endpoint=P.wg_server_endpoint,
+                wg_server_port=P.wg_server_port, api_password=P.api_password)
+    assert build_params(**base, portal_directory="flash/hotspot").portal_directory == "flash/hotspot"
+    for bad in ('x" ; /system reset', "../x", "a b", "/abs"):
+        with pytest.raises(ValueError):
+            build_params(**base, portal_directory=bad)
