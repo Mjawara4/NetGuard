@@ -95,8 +95,11 @@ def test_walled_garden_allows_payment_and_buy_hosts_without_todo():
         assert f"dst-host={host} protocol=tcp dst-port=80 action=accept" in rendered
 
 
+NG = replace(P, portal_mode="netguard")
+
+
 def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
-    rendered = text(sections.portal_page(P))
+    rendered = text(sections.portal_page(NG))
     assert "https://app.netguard.fun/buy?router=11111111-1111-1111-1111-111111111111" in rendered
     assert "\\$(mac)" in rendered
     assert "\\$(ip)" in rendered
@@ -110,7 +113,7 @@ def test_default_portal_contains_device_buy_url_and_mikrotik_client_variables():
 
 
 def test_default_portal_can_list_configured_prices():
-    priced = replace(P, portal_plans=(("3-Hours", "10", "GMD"), ("24-Hours", "25", "GMD")))
+    priced = replace(NG, portal_plans=(("3-Hours", "10", "GMD"), ("24-Hours", "25", "GMD")))
     rendered = text(sections.portal_page(priced))
     assert "3-Hours" in rendered and "D10" in rendered
     assert "24-Hours" in rendered and "D25" in rendered
@@ -118,15 +121,42 @@ def test_default_portal_can_list_configured_prices():
     assert "plan=24-Hours" in rendered
 
 
-def test_custom_portal_mode_preserves_login_and_installs_autologin_helper():
-    custom = replace(P, portal_mode="custom")
-    rendered = text(sections.portal_page(custom))
-    assert 'name="hotspot/netguard-login.html"' in rendered
-    assert 'name="hotspot/login.html"' not in rendered
-    assert "preserving hotspot/login.html unchanged" in rendered
-    assert 'new URL(\\"\\$(link-login-only)\\"' in rendered
-    assert 'q.get(\\"voucher\\")' in rendered
-    assert "hexMD5" not in rendered
+def test_the_script_leaves_the_login_page_alone_unless_netguards_portal_was_chosen():
+    # P carries no portal choice: the login page is the owner's, not ours.
+    assert P.portal_mode == "custom"
+    rendered = text(sections.portal_page(P))
+    assert "/file" not in rendered
+    assert "login.html" not in rendered.replace("leaving the router's login page", "")
+
+
+def test_netguard_portal_is_written_into_the_folder_the_hotspot_really_serves():
+    rendered = text(sections.portal_page(NG))
+    assert ':local ngPortalDir [/ip hotspot profile get [find where name="netguard"] html-directory]' in rendered
+    assert ':local ngLogin ($ngPortalDir . "/login.html")' in rendered
+    assert "name=$ngLogin" in rendered
+    assert '"hotspot/login.html"' not in rendered
+
+
+def test_netguard_portal_waits_for_routeros_to_finish_creating_the_default_pages():
+    # RouterOS writes a new hotspot's default pages a moment AFTER the server
+    # is added. Checked too early, login.html "does not exist", and the add
+    # then fails with "file already exists" (seen on CHR 7.16.2).
+    ls = sections.portal_page(NG)
+    wait = next(i for i, l in enumerate(ls) if l.startswith(":while ") and ":delay" in l)
+    write = next(i for i, l in enumerate(ls) if "/file add name=$ngLogin" in l)
+    assert wait < write
+
+
+def test_netguard_portal_page_is_marked_as_netguards():
+    from app.services.portal_install import NETGUARD_PAGE_MARKER
+    from app.services.provisioning.sections import render_portal_html
+    assert NETGUARD_PAGE_MARKER in render_portal_html(P.device_id)
+
+
+def test_the_script_never_sets_the_hotspot_html_folder():
+    # It is created once with RouterOS's default and never changed again, so a
+    # folder the owner later points the hotspot at survives every re-run.
+    assert "html-directory" not in text(sections.hotspot_server(P))
 
 
 def test_custom_portal_button_has_client_variables_and_no_plan():

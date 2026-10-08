@@ -19,6 +19,8 @@ FIXED = dict(
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
     api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
     device_id="11111111-1111-1111-1111-111111111111",
+    # The golden covers the fullest script: the one that also installs the portal page.
+    portal_mode="netguard",
 )
 OUT = Path(__file__).parent / "fixtures" / "provision_expected.rsc"
 

@@ -11,6 +11,7 @@ what we intended is valid.
 import html
 from urllib.parse import quote
 
+from app.services.portal_install import NETGUARD_PAGE_MARKER
 from .params import ProvisionParams
 
 TAG = 'comment="NetGuard"'
@@ -305,7 +306,8 @@ def render_portal_html(device_id: str, plans=()) -> str:
     # Dollar signs are escaped for the provisioning script so RouterOS writes
     # the hotspot variables literally; the hotspot renderer expands them per client.
     return (
-        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<!doctype html>' + NETGUARD_PAGE_MARKER +
+        '<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         '<title>Buy WiFi</title><style>*{box-sizing:border-box}body{margin:0;background:#0d110f;color:#fff;font-family:Arial,sans-serif}'
         '.box{max-width:500px;margin:7vh auto;padding:32px;background:#171d1a;box-shadow:0 18px 50px #0008;text-align:center}'
         '.wifi{font-size:44px;color:#8d3caf}h1{font-size:34px;margin:8px 0}p{color:#aeb6b2}.plans{display:grid;gap:12px;margin:24px 0;text-align:left}'
@@ -373,26 +375,28 @@ def custom_portal_button(device_id: str) -> str:
 
 
 def portal_page(p: ProvisionParams) -> list[str]:
-    """Install the default portal page; custom portals use the dashboard snippet."""
-    if not p.device_id:
-        return ["# --- captive portal page ---", "# No device id supplied; leaving the existing login page unchanged."]
-    helper = render_autologin_html().replace('"', '\\"')
-    lines = [
-        "# --- captive portal page ---",
-        ':if ([:len [/file find where name="hotspot/netguard-login.html"]] = 0) do={ '
-        f'/file add name="hotspot/netguard-login.html" contents="{helper}" '
-        f'}} else={{ /file set [find where name="hotspot/netguard-login.html"] contents="{helper}" }}',
-    ]
-    if p.portal_mode == "custom":
-        lines.append("# Custom portal mode: preserving hotspot/login.html unchanged.")
-        return lines
+    """Install NetGuard's login page -- only when the owner chose NetGuard's portal.
+
+    Any other router keeps the login page it has. The dashboard can add a Buy
+    button to that page; this script never touches it.
+    """
+    if p.portal_mode != "netguard" or not p.device_id:
+        return ["# --- captive portal page ---",
+                "# NetGuard's portal was not chosen for this router; leaving the router's login page unchanged."]
     portal_html = render_portal_html(p.device_id, p.portal_plans).replace('"', '\\"')
-    lines.append(
-        ':if ([:len [/file find where name="hotspot/login.html"]] = 0) do={ '
-        f'/file add name="hotspot/login.html" contents="{portal_html}" '
-        f'}} else={{ /file set [find where name="hotspot/login.html"] contents="{portal_html}" }}'
-    )
-    return lines
+    return [
+        "# --- captive portal page ---",
+        "# Written into the folder the hotspot actually serves, which need not be hotspot/.",
+        ':local ngPortalDir [/ip hotspot profile get [find where name="netguard"] html-directory]',
+        ':local ngLogin ($ngPortalDir . "/login.html")',
+        "# RouterOS creates a new hotspot's default pages a moment after the server is",
+        "# added; replacing login.html before it appears fails with 'file already exists'.",
+        ':local ngWait 0',
+        ':while ([:len [/file find where name=$ngLogin]] = 0 && $ngWait < 20) do={ :delay 500ms; :set ngWait ($ngWait + 1) }',
+        ':if ([:len [/file find where name=$ngLogin]] = 0) do={ '
+        f'/file add name=$ngLogin contents="{portal_html}" '
+        f'}} else={{ /file set [find where name=$ngLogin] contents="{portal_html}" }}',
+    ]
 
 
 def _fw_comment(name: str) -> str:

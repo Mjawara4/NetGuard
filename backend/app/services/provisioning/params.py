@@ -70,7 +70,7 @@ def build_params(*, site_slug: str, wg_private_key: str, wg_client_ip: str,
                  hotspot_login_password: str = "root",
                  device_id: str | None = None,
                  portal_plans: tuple[tuple[str, str, str], ...] = (),
-                 portal_mode: str = "netguard",
+                 portal_mode: str = "custom",
                  timezone: str = "Africa/Banjul",
                  lan_cidr: str = "10.15.0.0/16") -> ProvisionParams:
     # Validate site slug: use fullmatch to reject trailing newlines

@@ -485,7 +485,7 @@ async def generate_provision_script(
             wg_server_port=settings.WG_SERVER_PORT,
             api_password=api_password, recovery_password=recovery_password,
             portal_plans=portal_plans,
-            portal_mode=(device.voucher_template or {}).get("portal_mode", "netguard"),
+            portal_mode=(device.voucher_template or {}).get("portal_mode", "custom"),
         )
     except ValueError as e:
         msg = str(e)

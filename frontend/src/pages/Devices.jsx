@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { Link } from 'react-router-dom';
-import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText, Copy, Check } from 'lucide-react';
+import { Plus, X, Server, Activity, Wifi, Cpu, HardDrive, FileText } from 'lucide-react';
 import ResponsiveTable from '../components/ResponsiveTable';
 import ResponsiveModal from '../components/ResponsiveModal';
 import { Button } from '../components/ui';
 import OnboardWizard from '../components/OnboardWizard';
+import PortalSettings from '../components/PortalSettings';
 
 export default function Devices() {
     const [devices, setDevices] = useState([]);
@@ -13,52 +14,6 @@ export default function Devices() {
     const [showWizard, setShowWizard] = useState(false);
     const [selectedDevice, setSelectedDevice] = useState(null);
     const [deviceMetrics, setDeviceMetrics] = useState({});
-    const [portalCopied, setPortalCopied] = useState(false);
-    const [portalConfig, setPortalConfig] = useState(null);
-    const [portalBusy, setPortalBusy] = useState(false);
-    const [portalNotice, setPortalNotice] = useState('');
-
-    const portalSnippet = portalConfig?.button_html || (selectedDevice ? `<a href="https://app.netguard.fun/buy?router=${selectedDevice.id}&mac=$(mac)&ip=$(ip)">Buy WiFi</a>` : '');
-
-    const copyPortalSnippet = async () => {
-        try {
-            await navigator.clipboard.writeText(portalSnippet);
-            setPortalCopied(true);
-            window.setTimeout(() => setPortalCopied(false), 2000);
-        } catch {
-            setPortalCopied(false);
-            alert('Copy was blocked by the browser. Select and copy the code manually.');
-        }
-    };
-
-    const savePortalMode = async (mode) => {
-        setPortalBusy(true);
-        setPortalNotice('');
-        try {
-            await api.post(`/hotspot/${selectedDevice.id}/portal-mode`, { mode });
-            setPortalConfig(current => ({ ...current, mode }));
-            setPortalNotice(mode === 'custom' ? 'Custom mode enabled. Setup scripts will preserve login.html.' : 'NetGuard portal mode enabled.');
-        } catch (e) {
-            setPortalNotice(e.response?.data?.detail || 'Unable to save portal mode.');
-        } finally {
-            setPortalBusy(false);
-        }
-    };
-
-    const runPortalAction = async (action) => {
-        setPortalBusy(true);
-        setPortalNotice('');
-        try {
-            const { data } = await api.post(`/hotspot/${selectedDevice.id}/portal/${action}`);
-            if (action === 'install-custom') setPortalConfig(current => ({ ...current, mode: 'custom' }));
-            setPortalNotice(action === 'restore' ? 'Original custom login.html restored from backup.' : 'Buy WiFi button and automatic-login helper installed. Backup saved on the router.');
-        } catch (e) {
-            setPortalNotice(e.response?.data?.detail || 'Portal update failed.');
-        } finally {
-            setPortalBusy(false);
-        }
-    };
-
     const [newDevice, setNewDevice] = useState({
         name: '',
         ip_address: '',
@@ -149,14 +104,6 @@ export default function Devices() {
     useEffect(() => {
         let interval;
         if (selectedDevice) {
-            setPortalConfig(null);
-            setPortalNotice('');
-            setPortalCopied(false);
-            if (selectedDevice.device_type === 'router') {
-                api.get(`/hotspot/${selectedDevice.id}/portal-config`)
-                    .then(({ data }) => setPortalConfig(data))
-                    .catch(() => setPortalConfig({ mode: 'netguard' }));
-            }
             interval = setInterval(() => {
                 fetchDeviceMetrics(selectedDevice.id);
             }, 10000);
@@ -522,41 +469,7 @@ export default function Devices() {
                                     </div>
                                 </div>
 
-                                {selectedDevice.device_type === 'router' && (
-                                    <div className="bg-white dark:bg-ink-800 p-6 rounded-lg shadow-sm border border-ink-200 dark:border-ink-700">
-                                        <div className="flex items-start justify-between gap-4 mb-4">
-                                            <div>
-                                                <h4 className="font-bold text-ink-900 dark:text-ink-50">Custom Portal Payment Button</h4>
-                                                <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">For a custom-designed captive portal. The router ID is already included.</p>
-                                            </div>
-                                            <button onClick={copyPortalSnippet} className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-md bg-signal-600 text-white text-xs font-bold">
-                                                {portalCopied ? <Check size={15} /> : <Copy size={15} />}
-                                                {portalCopied ? 'Copied' : 'Copy HTML'}
-                                            </button>
-                                        </div>
-                                        <div className="mb-4 grid grid-cols-2 gap-2">
-                                            <button disabled={portalBusy} onClick={() => savePortalMode('netguard')} className={`px-3 py-2 rounded-md text-xs font-bold border ${portalConfig?.mode !== 'custom' ? 'bg-signal-600 text-white border-signal-600' : 'border-ink-300 dark:border-ink-600 text-ink-700 dark:text-ink-200'}`}>NetGuard portal</button>
-                                            <button disabled={portalBusy} onClick={() => savePortalMode('custom')} className={`px-3 py-2 rounded-md text-xs font-bold border ${portalConfig?.mode === 'custom' ? 'bg-signal-600 text-white border-signal-600' : 'border-ink-300 dark:border-ink-600 text-ink-700 dark:text-ink-200'}`}>Custom portal</button>
-                                        </div>
-                                        {portalConfig?.mode === 'custom' && <p className="mb-4 rounded-md bg-up/10 p-3 text-xs font-bold text-up dark:text-ink-100">Custom portal enabled — NetGuard setup scripts will preserve your existing login.html.</p>}
-                                        <textarea readOnly value={portalSnippet} aria-label="Custom portal Buy WiFi HTML" className="w-full min-h-32 p-3 rounded-md bg-ink-900 text-ink-100 font-mono text-xs border border-ink-700 resize-y" />
-                                        <div className="mt-4 rounded-md bg-ink-50 dark:bg-ink-900 p-4 text-xs text-ink-600 dark:text-ink-300 space-y-2">
-                                            <p className="font-bold text-ink-900 dark:text-ink-50">Where to paste it</p>
-                                            <p>WinBox → Files → hotspot → download <code>login.html</code>.</p>
-                                            <p>Paste the HTML inside the page&rsquo;s <code>&lt;body&gt;</code>, save it, then upload it back into the <code>hotspot</code> folder.</p>
-                                            <p>Keep <code>$(mac)</code> and <code>$(ip)</code> unchanged; MikroTik fills them for each customer.</p>
-                                        </div>
-                                        <div className="mt-4">
-                                            <span className="inline-block px-6 py-3 rounded-md bg-signal-600 text-white font-bold">Buy WiFi</span>
-                                            <span className="ml-3 text-xs text-ink-500 dark:text-ink-400">Button preview</span>
-                                        </div>
-                                        <div className="mt-4 flex flex-wrap gap-2">
-                                            <button disabled={portalBusy} onClick={() => runPortalAction('install-custom')} className="px-4 py-2 rounded-md bg-up text-white text-xs font-bold disabled:opacity-50">Install button automatically</button>
-                                            <button disabled={portalBusy} onClick={() => runPortalAction('restore')} className="px-4 py-2 rounded-md border border-ink-300 dark:border-ink-600 text-xs font-bold text-ink-700 dark:text-ink-200 disabled:opacity-50">Restore backup</button>
-                                        </div>
-                                        {portalNotice && <p role="status" className="mt-3 text-xs font-medium text-ink-700 dark:text-ink-200">{portalNotice}</p>}
-                                    </div>
-                                )}
+                                {selectedDevice.device_type === 'router' && <PortalSettings device={selectedDevice} />}
                             </div>
                         ) : (
                             <div className="bg-white dark:bg-ink-800 p-12 rounded-lg border border-dashed border-ink-200 dark:border-ink-700 text-center text-ink-500 dark:text-ink-400 flex flex-col items-center justify-center sticky top-8 h-[500px]">

@@ -1,0 +1,121 @@
+"""Changing a router's captive-portal login page without losing the owner's.
+
+The login page belongs to whoever runs the hotspot. NetGuard may add one marked
+Buy button to it, or replace it when the owner explicitly chooses NetGuard's
+portal -- and in both cases keeps a copy of the owner's page first, and changes
+nothing at all if it cannot.
+
+`files` is anything with exists(name), read(name) -> str | None and
+write(name, contents); read returns None when the router has the file but will
+not hand over its contents.
+"""
+
+import re
+
+NETGUARD_PAGE_MARKER = "<!-- NETGUARD-PORTAL -->"
+# Pages NetGuard installed before the marker existed.
+_LEGACY_NETGUARD_TEXT = "Choose a plan and pay securely with Modem Pay."
+_BUTTON_RE = re.compile(r"<!-- NETGUARD-BUY-START -->.*?<!-- NETGUARD-BUY-END -->", re.DOTALL)
+
+
+class PortalError(Exception):
+    """The portal was left exactly as it was; the message says why."""
+
+
+def login_name(directory: str) -> str:
+    return f"{directory}/login.html"
+
+
+def backup_name(directory: str) -> str:
+    return f"{directory}/login.netguard-backup.html"
+
+
+def is_netguard_page(html) -> bool:
+    return bool(html) and (NETGUARD_PAGE_MARKER in html or _LEGACY_NETGUARD_TEXT in html)
+
+
+def without_buy_button(html: str) -> str:
+    return _BUTTON_RE.sub("", html)
+
+
+def with_buy_button(html: str, button: str) -> str:
+    html = without_buy_button(html)
+    pos = html.lower().rfind("</body>")
+    return html[:pos] + button + html[pos:] if pos >= 0 else html + button
+
+
+def _users_backup(files, directory):
+    """The owner's saved page, or None. A copy of NetGuard's page is not one."""
+    saved = files.read(backup_name(directory))
+    return saved if saved and not is_netguard_page(saved) else None
+
+
+def describe(files, directory: str) -> dict:
+    name = login_name(directory)
+    if not files.exists(name):
+        page = "missing"
+    else:
+        html = files.read(name)
+        page = "unreadable" if html is None else "netguard" if is_netguard_page(html) else "custom"
+    return {"directory": directory, "login_page": page,
+            "has_backup": _users_backup(files, directory) is not None}
+
+
+def _write_verified(files, name: str, contents: str) -> None:
+    files.write(name, contents)
+    if files.read(name) != contents:
+        raise PortalError(f"The router did not store {name} intact")
+
+
+def _keep_users_page(files, directory: str, page: str) -> None:
+    """Save the owner's page (minus our button) unless a copy already exists."""
+    if _users_backup(files, directory) is not None:
+        return
+    try:
+        _write_verified(files, backup_name(directory), without_buy_button(page))
+    except PortalError as exc:
+        raise PortalError(f"{exc}; your login page was not changed") from exc
+
+
+def install_custom(files, directory: str, button: str) -> dict:
+    name = login_name(directory)
+    if not files.exists(name):
+        raise PortalError(f"{name} was not found on the router")
+    current = files.read(name)
+    if current is None:
+        raise PortalError("The router did not return your login page, so nothing was changed")
+    if is_netguard_page(current):
+        original = _users_backup(files, directory)
+        if original is None:
+            raise PortalError(
+                f"{name} is NetGuard's own page and the router has no copy of yours. "
+                "Point the hotspot at the folder holding your portal, then try again.")
+    else:
+        original = without_buy_button(current)
+        _keep_users_page(files, directory, current)
+    updated = with_buy_button(original, button)
+    if updated != current:
+        _write_verified(files, name, updated)
+    return {"directory": directory, "backup": backup_name(directory)}
+
+
+def install_netguard(files, directory: str, page: str) -> dict:
+    name = login_name(directory)
+    if files.exists(name):
+        current = files.read(name)
+        if current is None:
+            raise PortalError(
+                "The router did not return your current login page, so NetGuard could not "
+                "keep a copy of it. Nothing was changed.")
+        if not is_netguard_page(current):
+            _keep_users_page(files, directory, current)
+    files.write(name, page)
+    return {"directory": directory, "backup": backup_name(directory)}
+
+
+def restore(files, directory: str) -> dict:
+    original = _users_backup(files, directory)
+    if original is None:
+        raise PortalError("The router has no saved copy of your own login page")
+    _write_verified(files, login_name(directory), original)
+    return {"directory": directory}

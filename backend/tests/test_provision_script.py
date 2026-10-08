@@ -11,6 +11,8 @@ FIXED = dict(
     wg_server_endpoint="74.208.167.166", wg_server_port=51820,
     api_password="Xk7mQp2rTz9wLb4nHc6v", recovery_password="Qw8ZeRtY3uIoP5aSdF1g",
     device_id="11111111-1111-1111-1111-111111111111",
+    # The golden covers the fullest script: the one that also installs the portal page.
+    portal_mode="netguard",
 )
 EXPECTED = Path(__file__).parent / "fixtures" / "provision_expected.rsc"
 
@@ -114,9 +116,9 @@ def test_every_add_is_attributable_to_netguard():
             continue
         if any(m in line for m in MENUS_WITHOUT_COMMENT):
             continue
-        # RouterOS files do not have a comment property; the fixed path is the handle.
-        if ('/file add name="hotspot/login.html"' in line
-                or '/file add name="hotspot/netguard-login.html"' in line):
+        # RouterOS files do not have a comment property; the login page is
+        # identified by the NETGUARD-PORTAL marker inside it.
+        if "/file add name=$ngLogin" in line and "<!-- NETGUARD-PORTAL -->" in line:
             continue
         seen += 1
         # Prefix match: firewall rules say "NetGuard fw: ...", the API user
