@@ -244,4 +244,17 @@ describe('rotation is the exceptional action, not the easy one', () => {
         expect(screen.queryByTestId('rotate-confirm')).toBeNull();
         expect(scriptCalls()).toHaveLength(0);
     });
+
+    it('asks for the connect-only script when the router already has a hotspot', async () => {
+        api.post.mockResolvedValue({ data: { ...RESULT, recovery_password: null, warnings: ['Your network, hotspot, firewall rules, other services and login page are not changed.'] } });
+        await openModal();
+        fireEvent.click(screen.getByLabelText(/already has a hotspot/i));
+        generate();
+        await screen.findByTestId('script-body');
+        expect(scriptCalls()[0][2].params).toEqual({ site_slug: 'counter-router', timezone: 'Africa/Banjul', rotate: false, mode: 'connect' });
+        // No break-glass account is created on an owner's router, so none is shown.
+        expect(screen.queryByTestId('recovery-password')).toBeNull();
+        expect(screen.queryByText(/Your connection will drop/i)).toBeNull();
+        expect(screen.getByTestId('api-password').textContent).toBe('API-SECRET-111');
+    });
 });

@@ -5,7 +5,7 @@
 :if ([:tonum [:pick [/system resource get version] 0 [:find [/system resource get version] "."]]] < 7) do={ :error "NetGuard: RouterOS 7 or newer is required" }
 # A hotspot or tunnel that is not ours means a configured router: refuse. Ours (left by an earlier
 # run that failed part-way) is tolerated so the script can be run again.
-:if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }
+:if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it. Use the existing hotspot script from the NetGuard dashboard instead" }
 # "NetGuard VPN" is TRANSITIONAL: it is what backend/app/services/wireguard.py tagged the
 # interface with before the two generators were aligned. Routers already in the field carry
 # it, and refusing them would send a customer who did exactly what the UI told them to do
@@ -106,18 +106,18 @@
 :if ([:len [/ip hotspot walled-garden find where dst-host="na-gateway.mastercard.com"]] = 0) do={ /ip hotspot walled-garden add dst-host=na-gateway.mastercard.com comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="ye1.i.lencr.org"]] = 0) do={ /ip hotspot walled-garden add dst-host=ye1.i.lencr.org comment="NetGuard" }
 :if ([:len [/ip hotspot walled-garden find where dst-host="ye1.c.lencr.org"]] = 0) do={ /ip hotspot walled-garden add dst-host=ye1.c.lencr.org comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="app.netguard.fun" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=app.netguard.fun protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="api.modempay.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=api.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="checkout.modempay.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=checkout.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="test.checkout.modempay.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=test.checkout.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="cdnjs.cloudflare.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=cdnjs.cloudflare.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="fonts.googleapis.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=fonts.googleapis.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="fonts.gstatic.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=fonts.gstatic.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="na-gateway.mastercard.com" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=na-gateway.mastercard.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.i.lencr.org" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.i.lencr.org protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.c.lencr.org" and protocol=tcp and dst-port=443]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.c.lencr.org protocol=tcp dst-port=443 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.i.lencr.org" and protocol=tcp and dst-port=80]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.i.lencr.org protocol=tcp dst-port=80 action=accept comment="NetGuard" }
-:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.c.lencr.org" and protocol=tcp and dst-port=80]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.c.lencr.org protocol=tcp dst-port=80 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="app.netguard.fun" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=app.netguard.fun protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="api.modempay.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=api.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="checkout.modempay.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=checkout.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="test.checkout.modempay.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=test.checkout.modempay.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="cdnjs.cloudflare.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=cdnjs.cloudflare.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="fonts.googleapis.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=fonts.googleapis.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="fonts.gstatic.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=fonts.gstatic.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="na-gateway.mastercard.com" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=na-gateway.mastercard.com protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.i.lencr.org" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.i.lencr.org protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.c.lencr.org" and protocol="tcp" and dst-port="443"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.c.lencr.org protocol=tcp dst-port=443 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.i.lencr.org" and protocol="tcp" and dst-port="80"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.i.lencr.org protocol=tcp dst-port=80 action=accept comment="NetGuard" }
+:if ([:len [/ip hotspot walled-garden ip find where dst-host="ye1.c.lencr.org" and protocol="tcp" and dst-port="80"]] = 0) do={ /ip hotspot walled-garden ip add dst-host=ye1.c.lencr.org protocol=tcp dst-port=80 action=accept comment="NetGuard" }
 
 # --- captive portal page ---
 # Written into the folder the hotspot actually serves, which need not be hotspot/.

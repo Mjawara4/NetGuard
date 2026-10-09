@@ -94,4 +94,26 @@ describe('onboarding wizard', () => {
         fireEvent.click(screen.getByRole('button', { name: /add router/i }));
         expect(await screen.findByRole('alert')).toBeTruthy();
     });
+
+    it('asks for the connect-only script when the router already has a hotspot', async () => {
+        api.post.mockImplementation((url) => {
+            if (url === '/inventory/devices') return Promise.resolve({ data: { id: 'd1', name: 'Shop' } });
+            if (url.endsWith('/provision-script')) return Promise.resolve({ data: { ...SCRIPT, recovery_password: null } });
+            return Promise.resolve({ data: {} });
+        });
+        render(<OnboardWizard onClose={() => {}} onComplete={() => {}} />);
+        fireEvent.change(screen.getByTestId('wiz-name'), { target: { value: 'Shop' } });
+        fireEvent.click(screen.getByRole('button', { name: /add router/i }));
+        await screen.findByText(/get the router ready/i);
+        fireEvent.click(screen.getByRole('button', { name: /it already has a hotspot/i }));
+        expect(screen.getByText(/do not reset the router/i)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /router is ready/i }));
+        fireEvent.click(await screen.findByRole('button', { name: /turn on vpn/i }));
+        await screen.findByText(/get your setup file/i);
+        fireEvent.click(screen.getByRole('button', { name: /get script/i }));
+        await screen.findByTestId('wiz-api-pw');
+        const call = api.post.mock.calls.find(([u]) => u.endsWith('/provision-script'));
+        expect(call[2].params).toMatchObject({ mode: 'connect', rotate: false });
+        expect(screen.queryByText(/netguard-recovery/)).toBeNull();
+    });
 });

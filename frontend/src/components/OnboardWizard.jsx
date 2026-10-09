@@ -60,6 +60,8 @@ export default function OnboardWizard({ onClose, onComplete }) {
     const [wgReady, setWgReady] = useState(false);
     const [slug, setSlug] = useState('');
     const [timezone] = useState('Africa/Banjul');
+    // 'connect' is for a router already running a hotspot: nothing of the owner's is changed.
+    const [mode, setMode] = useState('full');
     const [result, setResult] = useState(null); // { script, api_password, recovery_password, site_slug }
     const [copied, setCopied] = useState(false);
     const [reach, setReach] = useState('waiting'); // waiting | connected
@@ -103,7 +105,7 @@ export default function OnboardWizard({ onClose, onComplete }) {
         setBusy(true); setError('');
         try {
             const res = await api.post(`/inventory/devices/${device.id}/provision-script`, null,
-                { params: { site_slug: slug, timezone, rotate: false } });
+                { params: { site_slug: slug, timezone, rotate: false, ...(mode === 'connect' ? { mode: 'connect' } : {}) } });
             setResult(res.data);
         } catch (e) {
             const d = e.response?.data?.detail;
@@ -180,13 +182,35 @@ export default function OnboardWizard({ onClose, onComplete }) {
                     {step === 1 && (
                         <div className="space-y-4">
                             <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50">Get the router ready</h2>
-                            <RouterDiagram />
-                            <ol className="text-sm text-ink-700 dark:text-ink-200 space-y-2 list-decimal pl-5">
-                                <li>If it&rsquo;s been set up before, reset it: <span className="font-mono text-xs">System &rarr; Reset Configuration</span>, leave &ldquo;No Default Configuration&rdquo; unticked.</li>
-                                <li>Put the <span className="font-bold">internet cable into port 1</span>. This is the one people get wrong.</li>
-                                <li>Plug your laptop into port 2 and open WinBox.</li>
-                                <li>Set your laptop to a fixed address <span className="font-mono text-xs">10.15.0.50</span>, mask <span className="font-mono text-xs">255.255.0.0</span>, so you can still reach the router after setup.</li>
-                            </ol>
+                            <div className="grid sm:grid-cols-2 gap-2">
+                                <button type="button" aria-pressed={mode === 'full'} onClick={() => setMode('full')}
+                                    className={`text-left p-3 rounded-md border text-sm ${mode === 'full' ? 'border-signal-600 bg-signal-600/10' : 'border-ink-200 dark:border-ink-700'} text-ink-900 dark:text-ink-50`}>
+                                    <span className="block font-bold">New or reset router</span>
+                                    <span className="block text-xs text-ink-500 dark:text-ink-400">NetGuard sets up everything.</span>
+                                </button>
+                                <button type="button" aria-pressed={mode === 'connect'} onClick={() => setMode('connect')}
+                                    className={`text-left p-3 rounded-md border text-sm ${mode === 'connect' ? 'border-signal-600 bg-signal-600/10' : 'border-ink-200 dark:border-ink-700'} text-ink-900 dark:text-ink-50`}>
+                                    <span className="block font-bold">It already has a hotspot</span>
+                                    <span className="block text-xs text-ink-500 dark:text-ink-400">Keep my setup; just connect NetGuard.</span>
+                                </button>
+                            </div>
+                            {mode === 'full' ? (
+                                <>
+                                    <RouterDiagram />
+                                    <ol className="text-sm text-ink-700 dark:text-ink-200 space-y-2 list-decimal pl-5">
+                                        <li>If it&rsquo;s been set up before, reset it: <span className="font-mono text-xs">System &rarr; Reset Configuration</span>, leave &ldquo;No Default Configuration&rdquo; unticked.</li>
+                                        <li>Put the <span className="font-bold">internet cable into port 1</span>. This is the one people get wrong.</li>
+                                        <li>Plug your laptop into port 2 and open WinBox.</li>
+                                        <li>Set your laptop to a fixed address <span className="font-mono text-xs">10.15.0.50</span>, mask <span className="font-mono text-xs">255.255.0.0</span>, so you can still reach the router after setup.</li>
+                                    </ol>
+                                </>
+                            ) : (
+                                <ol className="text-sm text-ink-700 dark:text-ink-200 space-y-2 list-decimal pl-5">
+                                    <li><span className="font-bold">Do not reset the router.</span> Leave your hotspot, network and login page as they are.</li>
+                                    <li>Make sure the router is online, then open WinBox the way you normally do.</li>
+                                    <li>NetGuard will add a VPN tunnel, an API user and the payment sites. Nothing of yours is changed or removed.</li>
+                                </ol>
+                            )}
                             <div className="flex justify-between">
                                 <Button variant="ghost" onClick={() => go(0)}>Back</Button>
                                 <Button onClick={() => go(2)}>Router is ready</Button>
@@ -211,7 +235,7 @@ export default function OnboardWizard({ onClose, onComplete }) {
                             <h2 className="text-xl font-bold text-ink-900 dark:text-ink-50">Get your setup file</h2>
                             {!result ? (
                                 <>
-                                    <label className="block text-xs font-medium text-ink-500 dark:text-ink-400">Short name (becomes the WiFi name)</label>
+                                    <label className="block text-xs font-medium text-ink-500 dark:text-ink-400">{mode === 'connect' ? 'Short name (used for the file name)' : 'Short name (becomes the WiFi name)'}</label>
                                     <input value={slug} onChange={(e) => setSlug(slugify(e.target.value))} data-testid="wiz-slug"
                                         className="w-full bg-white dark:bg-ink-800 dark:text-ink-100 border border-ink-200 dark:border-ink-700 rounded-md px-4 py-3 text-sm font-mono" />
                                     <div className="flex justify-between">
@@ -230,10 +254,12 @@ export default function OnboardWizard({ onClose, onComplete }) {
                                             <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">WiFi admin / API password</div>
                                             <code data-testid="wiz-api-pw" className="block font-mono text-sm break-all select-all text-ink-900 dark:text-ink-50">{result.api_password}</code>
                                         </div>
-                                        <div className="bg-ink-50 dark:bg-ink-800 p-3 rounded-md">
-                                            <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Recovery login (netguard-recovery)</div>
-                                            <code className="block font-mono text-sm break-all select-all text-ink-900 dark:text-ink-50">{result.recovery_password}</code>
-                                        </div>
+                                        {result.recovery_password && (
+                                            <div className="bg-ink-50 dark:bg-ink-800 p-3 rounded-md">
+                                                <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Recovery login (netguard-recovery)</div>
+                                                <code className="block font-mono text-sm break-all select-all text-ink-900 dark:text-ink-50">{result.recovery_password}</code>
+                                            </div>
+                                        )}
                                     </div>
                                     <div>
                                         <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Your setup file</div>
@@ -258,7 +284,9 @@ export default function OnboardWizard({ onClose, onComplete }) {
                                 Or drag the <span className="font-mono text-xs">.rsc</span> into <span className="font-bold">Files</span> and run:
                             </p>
                             <code className="block bg-ink-900 text-ink-100 p-3 rounded-md text-xs font-mono overflow-x-auto">/import file-name=netguard-{result?.site_slug || '<name>'}.rsc</code>
-                            <p className="text-xs text-ink-500 dark:text-ink-400">Your WinBox will drop partway through when the ports move. That&rsquo;s expected &mdash; reconnect on <span className="font-mono">10.15.0.50</span>.</p>
+                            {mode === 'connect'
+                                ? <p className="text-xs text-ink-500 dark:text-ink-400">Your hotspot keeps running and your WinBox stays connected. Afterwards, add the Buy button from the router&rsquo;s Captive Portal card.</p>
+                                : <p className="text-xs text-ink-500 dark:text-ink-400">Your WinBox will drop partway through when the ports move. That&rsquo;s expected &mdash; reconnect on <span className="font-mono">10.15.0.50</span>.</p>}
                             <div className="flex justify-between">
                                 <Button variant="ghost" onClick={() => go(3)}>Back</Button>
                                 <Button onClick={() => go(5)}>I&rsquo;ve applied it</Button>

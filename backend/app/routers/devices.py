@@ -351,6 +351,7 @@ async def generate_provision_script(
     # Query object, which is truthy. Over HTTP FastAPI resolves it, but any direct
     # call (every test here) would silently take the rotate branch.
     rotate: Annotated[bool, Query(description="Mint new credentials instead of reusing the stored ones")] = False,
+    mode: Annotated[str, Query(description="full: set up a new router. connect: join a router that already runs a hotspot, changing nothing of the owner's")] = "full",
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor),
 ):
@@ -381,6 +382,12 @@ async def generate_provision_script(
     from app.services.provisioning.params import build_params
     from app.services.provisioning.script import build_provision_script
     from app.services.provisioning.secrets import generate_api_password
+
+    from app.services.provisioning.connect import build_connect_script
+
+    if mode not in ("full", "connect"):
+        raise HTTPException(status_code=400, detail="mode must be full or connect")
+    connect_only = mode == "connect"
 
     try:
         device_uuid = UUID(device_id)
@@ -469,7 +476,9 @@ async def generate_provision_script(
     # so on a re-run this value is shown but harmlessly unused. The router's own
     # `admin` password is never set or changed by the script -- it belongs to the
     # operator.
-    recovery_password = generate_api_password()
+    # A router that is already in service gets no break-glass account: a
+    # full-access login is not NetGuard's to add to someone's configured router.
+    recovery_password = None if connect_only else generate_api_password()
     # Only plans the fulfilment webhook can deliver get a Buy card.
     portal_plans = tuple(
         (str(profile), str(details["price"]), details["currency"])
@@ -497,7 +506,7 @@ async def generate_provision_script(
         logger.error(f"Provisioning parameters rejected for device {device.id}: {msg}")
         raise HTTPException(status_code=500, detail=f"Cannot generate a valid script: {msg}")
 
-    script = build_provision_script(params)
+    script = build_connect_script(params) if connect_only else build_provision_script(params)
 
     # Store exactly what the script sets. NetGuard reaches the RouterOS API with
     # ssh_username/ssh_password (hotspot.py), so monitoring works the moment the
@@ -534,12 +543,18 @@ async def generate_provision_script(
                 "The API credential was rotated: any script generated earlier for this "
                 "router no longer matches what NetGuard stores.",
             ]
-        ) + [
+        ) + ([
+            "This script only connects NetGuard to the hotspot already on the router. "
+            "Your network, hotspot, firewall rules, other services and login page are not changed.",
+            "To sell vouchers, set prices for your plans and then add the Buy button "
+            "from the router's Captive Portal card.",
+            "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",
+        ] if connect_only else [
             "The router's own admin password is never set or changed by this script -- "
             "you manage it. On a NEW or factory-reset router it starts BLANK: set it "
             "immediately (the summary the script prints shows the command).",
             "netguard-recovery is a break-glass full-access login, applied only to a new "
             "or factory-reset router and shown once. Save it; it is never stored.",
             "The netguard user is API-only (no ssh); SSH-based remediation for this router will be refused.",
-        ],
+        ]),
     )

@@ -178,6 +178,9 @@ export default function Devices() {
     const [scriptError, setScriptError] = useState(null); // { kind, message }
     const [scriptNotice, setScriptNotice] = useState('');
     const [showRotateConfirm, setShowRotateConfirm] = useState(false);
+    // 'full' builds a network on a new router; 'connect' joins a router that already
+    // runs a hotspot and changes nothing of the owner's.
+    const [scriptMode, setScriptMode] = useState('full');
 
     const slugify = (name) => (name || '')
         .toLowerCase()
@@ -191,6 +194,7 @@ export default function Devices() {
     const openScriptModal = () => {
         if (!selectedDevice) return;
         setScriptSlug(slugify(selectedDevice.name));
+        setScriptMode('full');
         setScriptResult(null);
         setScriptError(null);
         setScriptNotice('');
@@ -219,7 +223,7 @@ export default function Devices() {
             const res = await api.post(
                 `/inventory/devices/${selectedDevice.id}/provision-script`,
                 null,
-                { params: { site_slug: scriptSlug, timezone: scriptTimezone, rotate } }
+                { params: { site_slug: scriptSlug, timezone: scriptTimezone, rotate, ...(scriptMode === 'connect' ? { mode: 'connect' } : {}) } }
             );
             setScriptResult(res.data);
         } catch (e) {
@@ -631,6 +635,17 @@ export default function Devices() {
                                     again if you are about to install the new script.
                                 </p>
                             </div>
+                            <fieldset className="space-y-2">
+                                <legend className="block text-xs font-bold text-ink-500 mb-1 dark:text-ink-400">Which router is this?</legend>
+                                <label className="flex items-start gap-2 text-sm text-ink-900 dark:text-ink-50">
+                                    <input type="radio" name="script-mode" className="mt-1" checked={scriptMode === 'full'} onChange={() => setScriptMode('full')} />
+                                    <span><span className="font-bold">New or reset router</span> &mdash; full setup. NetGuard builds the network, hotspot and firewall.</span>
+                                </label>
+                                <label className="flex items-start gap-2 text-sm text-ink-900 dark:text-ink-50">
+                                    <input type="radio" name="script-mode" className="mt-1" checked={scriptMode === 'connect'} onChange={() => setScriptMode('connect')} />
+                                    <span><span className="font-bold">Router that already has a hotspot</span> &mdash; connect only. Your network, hotspot, firewall and login page stay exactly as they are.</span>
+                                </label>
+                            </fieldset>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="script-site-slug" className="block text-xs font-bold text-ink-500 mb-1 dark:text-ink-400">Site name on the router</label>
@@ -751,14 +766,27 @@ export default function Devices() {
                     {scriptResult && (
                         <>
                             <div className="bg-warn/10 dark:bg-warn/20 p-4 rounded-md text-sm text-ink-900 dark:text-ink-50" role="alert">
-                                <p className="font-bold mb-1">Save both passwords now. They are shown only once.</p>
-                                <p>
-                                    The script does not print them, NetGuard cannot show the admin password again, and closing this
-                                    window discards both. Generating again creates new passwords and breaks any router already set up from this script.
-                                </p>
+                                {scriptResult.recovery_password ? (
+                                    <>
+                                        <p className="font-bold mb-1">Save both passwords now. They are shown only once.</p>
+                                        <p>
+                                            The script does not print them, NetGuard cannot show the admin password again, and closing this
+                                            window discards both. Generating again creates new passwords and breaks any router already set up from this script.
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="font-bold mb-1">This script only connects NetGuard to your router.</p>
+                                        <p>
+                                            It adds a VPN tunnel, an API user and the payment sites your customers need. Your network, hotspot,
+                                            firewall rules and login page are not changed, and your connection will not drop.
+                                        </p>
+                                    </>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {scriptResult.recovery_password && (
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">Recovery login (netguard-recovery)</div>
                                     <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">A full-access break-glass account, for WinBox, WebFig and the console.</div>
@@ -774,6 +802,7 @@ export default function Devices() {
                                         The router&rsquo;s own <span className="font-mono">admin</span> password is never set by NetGuard. A new router starts with a BLANK admin password &mdash; set one in WinBox right after importing.
                                     </div>
                                 </div>
+                                )}
                                 <div className="bg-ink-50 dark:bg-ink-900 p-4 rounded-md">
                                     <div className="text-xs font-bold text-ink-500 dark:text-ink-400 mb-1">NetGuard API password</div>
                                     <div className="text-xs text-ink-500 dark:text-ink-400 mb-2">
@@ -801,11 +830,18 @@ export default function Devices() {
                                     and run <span className="font-mono">/import file-name=netguard-{scriptResult.site_slug}.rsc</span>. Same result;
                                     an import isn&rsquo;t limited by paste size and reports a bad line more cleanly, so it&rsquo;s the safer choice when you can&rsquo;t watch it run.
                                 </p>
-                                <p>
-                                    Your connection will drop partway through. The script moves ports ether2 to ether8 onto a new bridge, which ends
-                                    the session you installed from. This is expected and the router keeps running the script. Afterwards the router
-                                    answers on a new address in 10.15.x.
-                                </p>
+                                {scriptResult.recovery_password ? (
+                                    <p>
+                                        Your connection will drop partway through. The script moves ports ether2 to ether8 onto a new bridge, which ends
+                                        the session you installed from. This is expected and the router keeps running the script. Afterwards the router
+                                        answers on a new address in 10.15.x.
+                                    </p>
+                                ) : (
+                                    <p>
+                                        When it finishes, open this router&rsquo;s <span className="font-bold">Captive Portal</span> card here to add the
+                                        Buy button to your login page.
+                                    </p>
+                                )}
                             </div>
 
                             <pre className="bg-ink-900 text-ink-100 p-4 rounded-md text-xs sm:text-sm font-mono overflow-auto whitespace-pre-wrap max-h-[300px] border border-ink-700" data-testid="script-body">

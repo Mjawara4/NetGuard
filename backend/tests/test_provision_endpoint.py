@@ -491,3 +491,41 @@ async def test_recovery_is_in_every_script_gated_on_fresh():
         guard = [l for l in resp.script.splitlines()
                  if "netguard-recovery" in l and "add " in l and not l.lstrip().startswith("#")][0]
         assert "$ngfresh" in guard, f"recovery not fresh-gated with {kw}: {guard[:90]}"
+
+
+# --- mode=connect: a router that already runs a hotspot ---
+
+async def test_connect_mode_returns_the_connect_only_script(builder_spy):
+    device = _device(ip="10.13.13.42")
+    resp, db = await _call(device, mode="connect")
+    builder_spy.assert_not_called()
+    assert "NetGuard connected to this router" in resp.script
+    assert "/ip address add address=10.13.13.42/24 interface=wireguard-netguard" in resp.script
+    assert "/interface bridge" not in resp.script and "/ip hotspot add" not in resp.script
+    # NetGuard still learns how to reach the router.
+    assert device.ssh_username == "netguard" and device.ip_address == "10.13.13.42"
+    assert f'password="{resp.api_password}"' in resp.script
+    db.commit.assert_awaited()
+
+
+async def test_connect_mode_hands_out_no_full_access_recovery_login():
+    resp, _ = await _call(_device(), mode="connect")
+    assert resp.recovery_password is None
+    assert "netguard-recovery" not in resp.script
+    assert not any("recovery" in w or "factory-reset" in w for w in resp.warnings)
+    assert any("not changed" in w for w in resp.warnings)
+
+
+async def test_an_unknown_mode_is_refused_before_anything_is_written(builder_spy):
+    device = _device()
+    with pytest.raises(HTTPException) as ei:
+        await _call(device, mode="takeover")
+    assert ei.value.status_code == 400
+    builder_spy.assert_not_called()
+    assert device.ssh_username == "admin"
+
+
+async def test_full_mode_is_still_the_default(builder_spy):
+    resp, _ = await _call(_device())
+    builder_spy.assert_called_once()
+    assert "NetGuard provisioning complete" in resp.script

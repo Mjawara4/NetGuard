@@ -62,7 +62,7 @@ def preflight(p: ProvisionParams) -> list[str]:
         ':if ([:tonum [:pick [/system resource get version] 0 [:find [/system resource get version] "."]]] < 7) do={ :error "NetGuard: RouterOS 7 or newer is required" }',
         "# A hotspot or tunnel that is not ours means a configured router: refuse. Ours (left by an earlier",
         "# run that failed part-way) is tolerated so the script can be run again.",
-        ':if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it" }',
+        ':if ([:len [/ip hotspot find where name!="netguard"]] > 0) do={ :error "NetGuard: this router already has a hotspot; refusing to overwrite it. Use the existing hotspot script from the NetGuard dashboard instead" }',
         '# "NetGuard VPN" is TRANSITIONAL: it is what backend/app/services/wireguard.py tagged the',
         "# interface with before the two generators were aligned. Routers already in the field carry",
         "# it, and refusing them would send a customer who did exactly what the UI told them to do",
@@ -255,9 +255,12 @@ def voucher_profiles(p: ProvisionParams) -> list[str]:
     return lines
 
 
-def walled_garden(p: ProvisionParams) -> list[str]:
-    lines = ["# --- walled garden ---",
-             "# Hosts the phone probes to detect a captive portal; blocked, the portal never pops."]
+def walled_garden(p: ProvisionParams, payment_only: bool = False) -> list[str]:
+    """`payment_only` is for a hotspot NetGuard did not build: it adds what a
+    customer needs to pay, and leaves captive-portal detection to the owner."""
+    lines = ["# --- walled garden ---"]
+    if not payment_only:
+        lines.append("# Hosts the phone probes to detect a captive portal; blocked, the portal never pops.")
     portal_hosts = (
         "app.netguard.fun", "api.modempay.com", "checkout.modempay.com",
         "test.checkout.modempay.com",
@@ -269,22 +272,27 @@ def walled_garden(p: ProvisionParams) -> list[str]:
         # app.netguard.fun. Chrome commonly serves these from its own cache.
         "ye1.i.lencr.org", "ye1.c.lencr.org",
     )
-    for host in ("connectivitycheck.gstatic.com", "captive.apple.com",
-                 "www.msftconnecttest.com", p.hotspot_dns_name, *portal_hosts):
+    detection_hosts = () if payment_only else (
+        "connectivitycheck.gstatic.com", "captive.apple.com",
+        "www.msftconnecttest.com", p.hotspot_dns_name)
+    for host in (*detection_hosts, *portal_hosts):
         lines.append(_once("/ip hotspot walled-garden", f'dst-host="{host}"',
                            f"dst-host={host} {TAG}"))
     # HTTPS is encrypted before the HTTP walled-garden proxy can inspect the
     # request. Add IP-walled-garden hostname entries as well; RouterOS resolves
     # these dynamically and lets TCP/443 reach only the payment dependencies.
+    # The guard compares protocol and port as STRINGS: RouterOS stores them that
+    # way here, and an unquoted `protocol=tcp and dst-port=443` matches nothing
+    # (measured on a CHR), so every re-run added the whole set again.
     for host in portal_hosts:
         lines.append(_once(
-            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol=tcp and dst-port=443',
+            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol="tcp" and dst-port="443"',
             f"dst-host={host} protocol=tcp dst-port=443 action=accept {TAG}",
         ))
     # The certificate's AIA and CRL endpoints use plain HTTP, not HTTPS.
     for host in ("ye1.i.lencr.org", "ye1.c.lencr.org"):
         lines.append(_once(
-            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol=tcp and dst-port=80',
+            "/ip hotspot walled-garden ip", f'dst-host="{host}" and protocol="tcp" and dst-port="80"',
             f"dst-host={host} protocol=tcp dst-port=80 action=accept {TAG}",
         ))
     return lines
@@ -421,6 +429,26 @@ def _fw_comment(name: str) -> str:
     return f'comment="NetGuard fw: {name}"'
 
 
+def _fw_above_stock(args: str, name: str, where: str, fallback: str = "") -> str:
+    """Add the rule ABOVE the first rule of the router's own that matches `where`.
+
+    Never by index. `destination=0` is not ours to claim: a stock config with the fasttrack rule
+    carries a builtin `special dummy rule to show fasttrack counters` at index 0 and a move past it
+    fails (`failure: cannot move builtin`), which aborts the whole block. So: find the first
+    rule that is neither dynamic (that dummy, and the hotspot's own) nor ours, and use
+    place-before. If there is none (a blank router) fall back to `fallback`, which appends or
+    goes before our own terminal rule. Needed because a stock `drop all not coming from LAN`
+    would otherwise drop tunnel traffic before our accept is reached.
+    """
+    fwmenu = "/ip firewall filter"
+    find = f'[{fwmenu} find where {where} and !dynamic and !(comment~"^NetGuard fw")]'
+    c = _fw_comment(name)
+    add = f"{fwmenu} add {args}"
+    body = (f":local t {find}; :if ([:len $t] > 0) do={{ {add} place-before=[:pick $t 0] {c} }} "
+            f"else={{ {add}{fallback} {c} }}")
+    return _guard(fwmenu, f'comment="NetGuard fw: {name}"', body)
+
+
 def firewall(p: ProvisionParams) -> list[str]:
     """Input-chain firewall, service pinning and discovery hardening.
 
@@ -443,24 +471,6 @@ def firewall(p: ProvisionParams) -> list[str]:
         return _once(fwmenu, f'comment="NetGuard fw: {name}"',
                      f"{args} {before()} {_fw_comment(name)}")
 
-    def fw_above_stock(args: str, name: str, where: str, fallback: str = "") -> str:
-        """Add the rule ABOVE the first rule of the router's own that matches `where`.
-
-        Never by index. `destination=0` is not ours to claim: a stock config with the fasttrack rule
-        carries a builtin `special dummy rule to show fasttrack counters` at index 0 and a move past it
-        fails (`failure: cannot move builtin`), which aborts the whole block. So: find the first
-        rule that is neither dynamic (that dummy, and the hotspot's own) nor ours, and use
-        place-before. If there is none (a blank router) fall back to `fallback`, which appends or
-        goes before our own terminal rule. Needed because a stock `drop all not coming from LAN`
-        would otherwise drop tunnel traffic before our accept is reached.
-        """
-        find = f'[{fwmenu} find where {where} and !dynamic and !(comment~"^NetGuard fw")]'
-        c = _fw_comment(name)
-        add = f"{fwmenu} add {args}"
-        body = (f":local t {find}; :if ([:len $t] > 0) do={{ {add} place-before=[:pick $t 0] {c} }} "
-                f"else={{ {add}{fallback} {c} }}")
-        return _guard(fwmenu, f'comment="NetGuard fw: {name}"', body)
-
     lines = [
         "# --- firewall ---",
         "# Terminal rule first; every other rule is placed before it, in order.",
@@ -470,13 +480,13 @@ def firewall(p: ProvisionParams) -> list[str]:
         fw("chain=input action=drop connection-state=invalid", "drop invalid"),
         "# Scoped to the tunnel interface: matching on source address alone would accept a",
         "# 10.13.13.x source spoofed from the WAN or LAN, and skip the DNS drops below.",
-        fw_above_stock(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}",
+        _fw_above_stock(f"chain=input action=accept src-address={p.wg_subnet_cidr} in-interface={WG_INTERFACE}",
                        "accept netguard tunnel", _INPUT_TERMINAL, f" {before()}"),
         "# Explicit accept for the WireGuard port. Without it the tunnel only survives the WAN drop",
         "# while conntrack holds the flow: udp-timeout is 30s and persistent-keepalive is 25s, a 5s",
         "# margin. A lapsed keepalive would leave ~25s where a server-initiated packet is dropped.",
         "# WireGuard silently ignores unauthenticated packets, so the exposure is negligible.",
-        fw_above_stock(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}",
+        _fw_above_stock(f"chain=input action=accept protocol=udp dst-port={WG_LISTEN_PORT} in-interface={wan}",
                        "accept wireguard", _INPUT_TERMINAL, f" {before()}"),
         fw("chain=input action=accept protocol=icmp", "accept icmp"),
         "# allow-remote-requests=yes is needed for LAN clients; without these the WAN could use the router as an open resolver.",
@@ -486,7 +496,7 @@ def firewall(p: ProvisionParams) -> list[str]:
         "# that can route to the LAN subnet reaches customers' devices. Only NEW connections from the WAN",
         "# are dropped (LAN-initiated flows and their replies are `established`). It goes above the router's",
         "# own first forward rule so no earlier accept (e.g. a stock config's ipsec accepts) can bypass it.",
-        fw_above_stock(f"chain=forward action=drop connection-state=new in-interface={wan}",
+        _fw_above_stock(f"chain=forward action=drop connection-state=new in-interface={wan}",
                        "drop wan forward", "chain=forward"),
         "# --- service hardening ---",
         "/ip service set telnet disabled=yes",
