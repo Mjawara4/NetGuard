@@ -115,4 +115,22 @@ describe('PortalSettings', () => {
         await screen.findByLabelText('Portal folder');
         expect(screen.queryByRole('alert')).toBeNull();
     });
+
+    it('lets the owner say which hotspot to work with when the router has several', async () => {
+        serve({ status: { directory: 'hotspot', login_page: 'custom', has_backup: false, folders: ['hotspot', 'test'], chosen_directory: '', attention: null,
+            hotspot: 'staff', hotspots: [{ name: 'staff', interface: 'bridge-staff', directory: 'hotspot', disabled: false }, { name: 'guests', interface: 'bridge-guests', directory: 'test', disabled: false }] } });
+        render(<PortalSettings device={DEVICE} />);
+        const picker = await screen.findByLabelText('Hotspot');
+        expect(picker).toHaveValue('staff');
+        fireEvent.change(picker, { target: { value: 'guests' } });
+        await waitFor(() => expect(api.post).toHaveBeenCalledWith(`/hotspot/${DEVICE.id}/portal/hotspot`, { name: 'guests' }));
+    });
+
+    it('shows no hotspot chooser on a router with one hotspot', async () => {
+        serve({ status: { directory: 'test', login_page: 'custom', has_backup: false, folders: ['test'], chosen_directory: '', attention: null,
+            hotspot: 'netguard', hotspots: [{ name: 'netguard', interface: 'bridge-hotspot', directory: 'test', disabled: false }] } });
+        render(<PortalSettings device={DEVICE} />);
+        await screen.findByLabelText('Portal folder');
+        expect(screen.queryByLabelText('Hotspot')).toBeNull();
+    });
 });

@@ -179,3 +179,12 @@ def test_attention_when_the_router_left_the_folder_the_owner_chose():
 
 def test_attention_when_netguards_page_shows_on_a_router_set_to_the_owners_portal():
     assert pi.attention("custom", "", {"directory": "hotspot", "login_page": "netguard"}) == "netguard_page"
+
+
+def test_the_portal_hotspot_is_the_one_the_owner_named_else_the_first_enabled():
+    a, b, c = ({"name": "a", "disabled": True}, {"name": "b", "disabled": False}, {"name": "c", "disabled": False})
+    assert pi.pick_hotspot([a, b, c]) is b
+    assert pi.pick_hotspot([a, b, c], "c") is c
+    assert pi.pick_hotspot([a, b, c], "gone") is b
+    assert pi.pick_hotspot([a]) is a
+    assert pi.pick_hotspot([]) is None

@@ -1027,6 +1027,10 @@ class PortalModeUpdate(BaseModel):
 class PortalFolderUpdate(BaseModel):
     directory: str
 
+
+class PortalHotspotUpdate(BaseModel):
+    name: str
+
 @router.post("/{device_id}/voucher-template")
 async def update_voucher_template(device_id: str, template: VoucherTemplate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
@@ -1044,7 +1048,7 @@ async def update_voucher_template(device_id: str, template: VoucherTemplate, db:
     saved = template.model_dump()
     # The portal choice lives in the same record but is not this form's to
     # set: only the portal endpoints change it.
-    for key in ("portal_mode", "portal_directory"):
+    for key in ("portal_mode", "portal_directory", "portal_hotspot"):
         kept = (device.voucher_template or {}).get(key)
         if kept:
             saved[key] = kept
@@ -1115,36 +1119,48 @@ def _read_router_files(device, name):
         connection.disconnect()
 
 
-def _active_hotspot_directory(device):
-    """Read the enabled hotspot's configured, case-sensitive HTML directory."""
+def _router_hotspots(device):
+    """Each hotspot server on the router, with the folder its profile serves."""
     connection = _portal_api(device)
     try:
         api = connection.get_api()
         servers = api.get_resource("/ip/hotspot").get()
-        profiles = api.get_resource("/ip/hotspot/profile").get()
-        active = next((row for row in servers if not row.get("disabled", False)), None)
-        if not active and servers:
-            active = servers[0]
-        profile_name = active.get("profile") if active else None
-        profile = next((row for row in profiles if row.get("name") == profile_name), None)
-        directory = str((profile or {}).get("html-directory") or "hotspot").strip("/")
-        if not portal_install.is_safe_directory(directory):
-            raise HTTPException(status_code=409, detail="The router hotspot HTML directory is not safe to modify")
-        return directory
+        profiles = {row.get("name"): row for row in api.get_resource("/ip/hotspot/profile").get()}
     finally:
         connection.disconnect()
+    return [{
+        "name": row.get("name"),
+        "interface": row.get("interface"),
+        "profile": row.get("profile"),
+        # routeros_api hands booleans back as the strings "true"/"false".
+        "disabled": str(row.get("disabled", "false")).lower() == "true",
+        "directory": str((profiles.get(row.get("profile")) or {}).get("html-directory") or "hotspot").strip("/"),
+    } for row in servers]
+
+
+def _saved_portal_hotspot(device) -> str:
+    return (device.voucher_template or {}).get("portal_hotspot") or ""
+
+
+def _active_hotspot_directory(device):
+    """The case-sensitive HTML directory of the hotspot the portal work applies to."""
+    active = portal_install.pick_hotspot(_router_hotspots(device), _saved_portal_hotspot(device))
+    directory = active["directory"] if active else "hotspot"
+    if not portal_install.is_safe_directory(directory):
+        raise HTTPException(status_code=409, detail="The router hotspot HTML directory is not safe to modify")
+    return directory
 
 
 def _set_hotspot_directory(device, directory):
-    """Point the hotspot in use at `directory`."""
+    """Point the hotspot the portal work applies to at `directory`."""
+    active = portal_install.pick_hotspot(_router_hotspots(device), _saved_portal_hotspot(device))
+    if not active or not active.get("profile"):
+        raise portal_install.PortalError("The router has no hotspot to point at that folder")
     port = _portal_api_port(device)
     connection = _portal_api(device)
     try:
-        api = connection.get_api()
-        servers = api.get_resource("/ip/hotspot").get()
-        active = next((row for row in servers if not row.get("disabled", False)), None) or (servers[0] if servers else None)
-        profiles = api.get_resource("/ip/hotspot/profile")
-        profile = next((row for row in profiles.get() if active and row.get("name") == active.get("profile")), None)
+        profiles = connection.get_api().get_resource("/ip/hotspot/profile")
+        profile = next((row for row in profiles.get() if row.get("name") == active["profile"]), None)
         if not profile:
             raise portal_install.PortalError("The router has no hotspot to point at that folder")
         try:
@@ -1285,8 +1301,12 @@ async def get_portal_status(device_id: str, db: AsyncSession = Depends(get_db), 
     chosen = _saved_portal_directory(device)
 
     def read():
+        hotspots = _router_hotspots(device)
+        active = portal_install.pick_hotspot(hotspots, _saved_portal_hotspot(device))
         status = portal_install.describe(_router_files(device), _active_hotspot_directory(device))
         return {**status,
+                "hotspot": active["name"] if active else None,
+                "hotspots": [{k: h[k] for k in ("name", "interface", "directory", "disabled")} for h in hotspots],
                 "folders": portal_install.portal_folders(_router_file_names(device)),
                 "chosen_directory": chosen,
                 "attention": portal_install.attention(_saved_portal_mode(device), chosen, status)}
@@ -1313,6 +1333,30 @@ async def set_portal_folder(device_id: str, body: PortalFolderUpdate, db: AsyncS
     result = await _portal_action(switch)
     await _save_portal_mode(device, "custom", db, directory=directory)
     return {"status": "saved", "mode": "custom", **result}
+
+
+@router.post("/{device_id}/portal/hotspot")
+async def set_portal_hotspot(device_id: str, body: PortalHotspotUpdate, db: AsyncSession = Depends(get_db), actor=Depends(get_authorized_actor)):
+    """On a router with several hotspots, name the one NetGuard's portal work applies to.
+
+    Only NetGuard's record changes; nothing is written to the router.
+    """
+    device = await _portal_device(device_id, db, actor)
+
+    def check():
+        chosen = next((h for h in _router_hotspots(device) if h["name"] == body.name), None)
+        if chosen is None:
+            raise portal_install.PortalError(f"The router has no hotspot named {body.name}")
+        return chosen
+
+    chosen = await _portal_action(check)
+    settings = dict(device.voucher_template or {})
+    settings["portal_hotspot"] = chosen["name"]
+    # A folder remembered for another hotspot is not this one's.
+    settings.pop("portal_directory", None)
+    device.voucher_template = settings
+    await db.commit()
+    return {"status": "saved", "hotspot": chosen["name"], "directory": chosen["directory"]}
 
 
 @router.post("/{device_id}/portal-mode")

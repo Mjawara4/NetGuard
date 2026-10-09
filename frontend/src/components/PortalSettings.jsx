@@ -112,6 +112,10 @@ export default function PortalSettings({ device }) {
         setNotice(`The hotspot now serves your portal from ${directory}/. NetGuard will put it back there after a router reset.`);
     });
 
+    const useHotspot = (name) => request('portal/hotspot', { name }, () => {
+        setNotice(`NetGuard now works with the hotspot "${name}" on this router.`);
+    });
+
     const restore = () => request('portal/restore', undefined, () => {
         setMode('custom');
         setNotice('Your own login page is back.');
@@ -149,6 +153,16 @@ export default function PortalSettings({ device }) {
                 <div role="alert" className="mb-4 rounded-md border border-warn bg-warn/10 p-3 text-xs text-ink-800 dark:text-ink-100">
                     The router is showing NetGuard&apos;s page although this router is set to your own portal. Pick the folder holding your portal below{status.has_backup ? ', or use "Restore my page"' : ''}.
                 </div>
+            )}
+
+            {status?.hotspots?.length > 1 && (
+                <label className="mb-4 block text-xs font-bold text-ink-700 dark:text-ink-200">
+                    <span className="block mb-1">Hotspot</span>
+                    <select aria-label="Hotspot" value={status.hotspot || ''} disabled={busy} onChange={(e) => useHotspot(e.target.value)} className="px-3 py-2 rounded-md border border-ink-300 dark:border-ink-600 bg-white dark:bg-ink-900 text-xs font-normal text-ink-900 dark:text-ink-50">
+                        {status.hotspots.map((h) => <option key={h.name} value={h.name}>{`${h.name} (${h.interface})${h.disabled ? ' — disabled' : ''}`}</option>)}
+                    </select>
+                    <span className="block mt-1 font-normal text-ink-500 dark:text-ink-400">This router has more than one hotspot. The login page and folder below belong to the one selected.</span>
+                </label>
             )}
 
             {status?.folders?.length > 0 && (

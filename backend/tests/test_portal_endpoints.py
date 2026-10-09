@@ -13,6 +13,12 @@ pytestmark = pytest.mark.asyncio
 CUSTOM = "<html><body><h1>Kumbija WiFi</h1></body></html>"
 
 
+HOTSPOTS = [
+    {"name": "staff", "interface": "bridge-staff", "profile": "p1", "disabled": False, "directory": "hotspot"},
+    {"name": "guests", "interface": "bridge-guests", "profile": "p2", "disabled": False, "directory": "test"},
+]
+
+
 class Files:
     def __init__(self, files=None, unreadable=()):
         self.files, self.unreadable, self.writes = dict(files or {}), set(unreadable), []
@@ -36,6 +42,7 @@ def _setup(monkeypatch, files, template=None):
     monkeypatch.setattr(hotspot, "_portal_device", AsyncMock(return_value=device))
     monkeypatch.setattr(hotspot, "_active_hotspot_directory", lambda d: "test")
     monkeypatch.setattr(hotspot, "_router_files", lambda d: files)
+    monkeypatch.setattr(hotspot, "_router_hotspots", lambda d: HOTSPOTS)
     return device, db
 
 
@@ -112,7 +119,10 @@ async def test_status_says_what_the_router_is_actually_serving(monkeypatch):
     _folders(monkeypatch, ["test/login.html"], active="test")
     out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
     assert out == {"directory": "test", "login_page": "custom", "has_backup": False,
-                   "folders": ["test"], "chosen_directory": "", "attention": None}
+                   "folders": ["test"], "chosen_directory": "", "attention": None,
+                   "hotspot": "staff",
+                   "hotspots": [{"name": "staff", "interface": "bridge-staff", "directory": "hotspot", "disabled": False},
+                                {"name": "guests", "interface": "bridge-guests", "directory": "test", "disabled": False}]}
 
 
 def test_large_pages_are_read_with_get_not_print(monkeypatch):
@@ -258,3 +268,44 @@ async def test_saving_the_voucher_template_keeps_the_portal_folder(monkeypatch):
     actor = hotspot.User(role=hotspot.UserRole.SUPER_ADMIN)
     await hotspot.update_voucher_template(str(device.id), hotspot.VoucherTemplate(), db=db, actor=actor)
     assert device.voucher_template["portal_directory"] == "test"
+
+
+# --- which hotspot, on a router with several ---
+
+async def test_choosing_a_hotspot_is_remembered_and_writes_nothing_to_the_router(monkeypatch):
+    files = Files({"test/login.html": CUSTOM})
+    device, db = _setup(monkeypatch, files, {"portal_mode": "custom", "portal_directory": "hotspot"})
+    out = await hotspot.set_portal_hotspot(str(device.id), hotspot.PortalHotspotUpdate(name="guests"), db=db, actor=None)
+    assert out == {"status": "saved", "hotspot": "guests", "directory": "test"}
+    assert device.voucher_template["portal_hotspot"] == "guests"
+    assert device.voucher_template["portal_mode"] == "custom"
+    # The folder remembered for the other hotspot does not carry over.
+    assert "portal_directory" not in device.voucher_template
+    assert files.writes == []
+
+
+async def test_a_hotspot_the_router_does_not_have_is_refused(monkeypatch):
+    device, db = _setup(monkeypatch, Files(), {"portal_hotspot": "staff"})
+    with pytest.raises(HTTPException) as error:
+        await hotspot.set_portal_hotspot(str(device.id), hotspot.PortalHotspotUpdate(name="nope"), db=db, actor=None)
+    assert error.value.status_code == 409
+    assert device.voucher_template["portal_hotspot"] == "staff"
+    db.commit.assert_not_awaited()
+
+
+def test_the_portal_folder_is_read_from_the_hotspot_the_owner_chose(monkeypatch):
+    device = Device(id=uuid.uuid4(), site_id=uuid.uuid4(), name="r", ip_address="10.0.0.1")
+    monkeypatch.setattr(hotspot, "_router_hotspots", lambda d: HOTSPOTS)
+    assert hotspot._active_hotspot_directory(device) == "hotspot"
+    device.voucher_template = {"portal_hotspot": "guests"}
+    assert hotspot._active_hotspot_directory(device) == "test"
+
+
+async def test_saving_the_voucher_template_keeps_the_chosen_hotspot(monkeypatch):
+    device, db = _setup(monkeypatch, Files(), {"portal_hotspot": "guests"})
+    result = MagicMock()
+    result.scalars.return_value.first.return_value = device
+    db.execute = AsyncMock(return_value=result)
+    await hotspot.update_voucher_template(
+        str(device.id), hotspot.VoucherTemplate(), db=db, actor=hotspot.User(role=hotspot.UserRole.SUPER_ADMIN))
+    assert device.voucher_template["portal_hotspot"] == "guests"

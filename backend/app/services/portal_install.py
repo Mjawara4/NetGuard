@@ -52,6 +52,16 @@ def portal_folders(names) -> list[str]:
                   if is_safe_directory(d) and d.rsplit("/", 1)[0] not in holding - {d})
 
 
+def pick_hotspot(hotspots, saved: str = ""):
+    """The hotspot NetGuard's portal work applies to on a router with several.
+
+    The one the owner named if the router still has it, else the first that is
+    enabled, else the first. None when the router has no hotspot.
+    """
+    by_name = next((h for h in hotspots if saved and h.get("name") == saved), None)
+    return by_name or next((h for h in hotspots if not h.get("disabled")), None) or (hotspots[0] if hotspots else None)
+
+
 def attention(mode: str, chosen: str, status: dict):
     """Why the router is not showing what the owner chose, or None.
 
