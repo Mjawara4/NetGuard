@@ -71,7 +71,26 @@ def attention(mode: str, chosen: str, status: dict):
         return "wrong_folder"
     if mode == "custom" and status.get("login_page") == "netguard":
         return "netguard_page"
+    if status.get("buy_button") == "other":
+        return "other_router_button"
     return None
+
+
+_BUTTON_ROUTER_RE = re.compile(r"/buy\?router=([^&\"'\s]+)")
+
+
+def buy_button(html, device_id: str) -> str:
+    """Whose Buy button a page carries: "none", "this" router's or an "other" one's.
+
+    A portal folder outlives a router reset and can be copied between routers,
+    and it carries its button with it. A button for another router sends
+    customers to that router's plans, or to nothing once it has been removed.
+    """
+    block = _BUTTON_RE.search(html or "")
+    if not block:
+        return "none"
+    owners = set(_BUTTON_ROUTER_RE.findall(block.group(0)))
+    return "this" if owners == {str(device_id)} else "other"
 
 
 def without_buy_button(html: str) -> str:
@@ -90,15 +109,17 @@ def _users_backup(files, directory):
     return saved if saved and not is_netguard_page(saved) else None
 
 
-def describe(files, directory: str) -> dict:
+def describe(files, directory: str, device_id: str = "") -> dict:
     name = login_name(directory)
+    html = None
     if not files.exists(name):
         page = "missing"
     else:
         html = files.read(name)
         page = "unreadable" if html is None else "netguard" if is_netguard_page(html) else "custom"
     return {"directory": directory, "login_page": page,
-            "has_backup": _users_backup(files, directory) is not None}
+            "has_backup": _users_backup(files, directory) is not None,
+            "buy_button": buy_button(html, device_id) if page == "custom" else "none"}
 
 
 def _write_verified(files, name: str, contents: str) -> None:

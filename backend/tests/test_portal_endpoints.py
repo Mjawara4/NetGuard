@@ -118,7 +118,7 @@ async def test_status_says_what_the_router_is_actually_serving(monkeypatch):
     device, db = _setup(monkeypatch, files)
     _folders(monkeypatch, ["test/login.html"], active="test")
     out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
-    assert out == {"directory": "test", "login_page": "custom", "has_backup": False,
+    assert out == {"directory": "test", "login_page": "custom", "has_backup": False, "buy_button": "none",
                    "folders": ["test"], "chosen_directory": "", "attention": None,
                    "hotspot": "staff",
                    "hotspots": [{"name": "staff", "interface": "bridge-staff", "directory": "hotspot", "disabled": False},
@@ -323,3 +323,38 @@ async def test_an_offline_router_is_reported_as_unreachable_not_as_a_server_erro
         await hotspot.get_portal_status(str(device.id), db=db, actor=None)
     assert error.value.status_code == 503
     assert "could not reach" in error.value.detail
+
+
+def _button_for(router):
+    from app.services.provisioning.sections import custom_portal_button
+    return CUSTOM.replace("</body>", custom_portal_button(router) + "</body>")
+
+
+async def test_status_flags_a_buy_button_left_over_from_another_router(monkeypatch):
+    files = Files({"test/login.html": _button_for("2563d54e-924b-49ee-8b32-ca0c79a1c75f")})
+    device, db = _setup(monkeypatch, files, {"portal_directory": "test"})
+    _folders(monkeypatch, NAMES, active="test")
+    out = await hotspot.get_portal_status(str(device.id), db=db, actor=None)
+    assert out["buy_button"] == "other"
+    assert out["attention"] == "other_router_button"
+    assert files.writes == []
+
+
+async def test_choosing_a_folder_repoints_a_buy_button_left_over_from_another_router(monkeypatch):
+    files = Files({"test/login.html": _button_for("2563d54e-924b-49ee-8b32-ca0c79a1c75f")})
+    device, db = _setup(monkeypatch, files)
+    _folders(monkeypatch, NAMES)
+    out = await hotspot.set_portal_folder(str(device.id), hotspot.PortalFolderUpdate(directory="test"), db=db, actor=None)
+    assert out["buy_button"] == "this"
+    assert files.files["test/login.html"] == _button_for(str(device.id))
+    assert files.files["test/login.netguard-backup.html"] == CUSTOM
+
+
+async def test_choosing_a_folder_leaves_this_routers_own_button_alone(monkeypatch):
+    device, db = _setup(monkeypatch, Files())
+    files = Files({"test/login.html": _button_for(str(device.id))})
+    monkeypatch.setattr(hotspot, "_router_files", lambda d: files)
+    _folders(monkeypatch, NAMES)
+    out = await hotspot.set_portal_folder(str(device.id), hotspot.PortalFolderUpdate(directory="test"), db=db, actor=None)
+    assert out["buy_button"] == "this"
+    assert files.writes == []

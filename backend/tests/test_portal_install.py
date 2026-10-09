@@ -188,3 +188,32 @@ def test_the_portal_hotspot_is_the_one_the_owner_named_else_the_first_enabled():
     assert pi.pick_hotspot([a, b, c], "gone") is b
     assert pi.pick_hotspot([a]) is a
     assert pi.pick_hotspot([]) is None
+
+
+ME, OTHER = "9aa95e41-b63b-42f1-a896-a239ceeac95b", "2563d54e-924b-49ee-8b32-ca0c79a1c75f"
+
+
+def _page_for(router):
+    button = ('<!-- NETGUARD-BUY-START --><a href="https://app.netguard.fun/buy?router=' + router
+              + '&mac=$(mac)">Buy WiFi</a><script>var dst="https://app.netguard.fun/buy?router=' + router
+              + '&connected=1"</script><!-- NETGUARD-BUY-END -->')
+    return CUSTOM.replace("</body>", button + "</body>")
+
+
+def test_describe_says_whose_buy_button_the_page_carries():
+    assert pi.describe(Files({LOGIN: CUSTOM}), DIR, ME)["buy_button"] == "none"
+    assert pi.describe(Files({LOGIN: _page_for(ME)}), DIR, ME)["buy_button"] == "this"
+    assert pi.describe(Files({LOGIN: _page_for(OTHER)}), DIR, ME)["buy_button"] == "other"
+    assert pi.describe(Files({LOGIN: NETGUARD}), DIR, ME)["buy_button"] == "none"
+    assert pi.describe(Files({}), DIR, ME)["buy_button"] == "none"
+
+
+def test_a_link_to_another_router_outside_our_button_is_the_owners_business():
+    page = CUSTOM.replace("</body>", '<a href="https://app.netguard.fun/buy?router=' + OTHER + '">x</a></body>')
+    assert pi.describe(Files({LOGIN: page}), DIR, ME)["buy_button"] == "none"
+
+
+def test_attention_when_the_buy_button_belongs_to_another_router():
+    status = {"directory": "test", "login_page": "custom", "buy_button": "other"}
+    assert pi.attention("custom", "test", status) == "other_router_button"
+    assert pi.attention("custom", "test", {**status, "buy_button": "this"}) is None

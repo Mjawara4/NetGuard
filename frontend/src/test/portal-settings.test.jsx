@@ -109,6 +109,14 @@ describe('PortalSettings', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(/NetGuard's page/i);
     });
 
+    it('warns when the Buy button belongs to another router and fixes it on request', async () => {
+        serve({ status: { directory: 'test', login_page: 'custom', has_backup: true, buy_button: 'other', folders: ['test'], chosen_directory: 'test', attention: 'other_router_button' } });
+        render(<PortalSettings device={DEVICE} />);
+        expect(await screen.findByRole('alert')).toHaveTextContent(/belongs to another router/i);
+        fireEvent.click(screen.getByRole('button', { name: 'Fix the Buy button' }));
+        await waitFor(() => expect(api.post.mock.calls.some(([url]) => url.endsWith('/portal/install-custom'))).toBe(true));
+    });
+
     it('shows no warning when the router serves what the owner chose', async () => {
         serve({ status: { directory: 'test', login_page: 'custom', has_backup: true, folders: ['hotspot', 'test'], chosen_directory: 'test', attention: null } });
         render(<PortalSettings device={DEVICE} />);

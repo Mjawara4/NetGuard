@@ -1306,7 +1306,7 @@ async def get_portal_status(device_id: str, db: AsyncSession = Depends(get_db), 
     def read():
         hotspots = _router_hotspots(device)
         active = portal_install.pick_hotspot(hotspots, _saved_portal_hotspot(device))
-        status = portal_install.describe(_router_files(device), _active_hotspot_directory(device))
+        status = portal_install.describe(_router_files(device), _active_hotspot_directory(device), str(device.id))
         return {**status,
                 "hotspot": active["name"] if active else None,
                 "hotspots": [{k: h[k] for k in ("name", "interface", "directory", "disabled")} for h in hotspots],
@@ -1322,16 +1322,21 @@ async def set_portal_folder(device_id: str, body: PortalFolderUpdate, db: AsyncS
     """Serve the owner's portal from the folder they picked, and remember it.
 
     The setup script puts the hotspot back on this folder after a router reset.
-    No login page is written.
+    The login page is written only to re-point a Buy button it already carries
+    for another router, which would otherwise sell that router's plans.
     """
     device = await _portal_device(device_id, db, actor)
+    from app.services.provisioning.sections import custom_portal_button
     directory = body.directory.strip().strip("/")
 
     def switch():
         if directory not in portal_install.portal_folders(_router_file_names(device)):
             raise portal_install.PortalError(f"{directory}/login.html was not found on the router")
         _set_hotspot_directory(device, directory)
-        return portal_install.describe(_router_files(device), directory)
+        files = _router_files(device)
+        if portal_install.describe(files, directory, str(device.id))["buy_button"] == "other":
+            portal_install.install_custom(files, directory, custom_portal_button(str(device.id)))
+        return portal_install.describe(files, directory, str(device.id))
 
     result = await _portal_action(switch)
     await _save_portal_mode(device, "custom", db, directory=directory)

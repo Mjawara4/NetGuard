@@ -160,6 +160,13 @@ export default function PortalSettings({ device }) {
                 </div>
             )}
 
+            {status?.attention === 'other_router_button' && (
+                <div role="alert" className="mb-4 rounded-md border border-warn bg-warn/10 p-3 text-xs text-ink-800 dark:text-ink-100">
+                    <p>The Buy WiFi button on this login page belongs to another router, so customers here can&apos;t see this router&apos;s plans. This happens when a portal folder is reused.</p>
+                    <button type="button" disabled={busy} onClick={addButton} className="mt-2 px-3 py-2 rounded-md bg-signal-600 text-white text-xs font-bold disabled:opacity-50">Fix the Buy button</button>
+                </div>
+            )}
+
             {status?.hotspots?.length > 1 && (
                 <label className="mb-4 block text-xs font-bold text-ink-700 dark:text-ink-200">
                     <span className="block mb-1">Hotspot</span>
