@@ -160,6 +160,17 @@ def install_custom(files, directory: str, button: str) -> dict:
     return {"directory": directory, "backup": backup_name(directory)}
 
 
+def repoint_buy_button(files, directory: str, device_id: str, button: str) -> bool:
+    """Make a Buy button that belongs to another router this router's. True if it did.
+
+    A page with no button is left without one: adding it is the owner's call.
+    """
+    if describe(files, directory, device_id)["buy_button"] != "other":
+        return False
+    install_custom(files, directory, button)
+    return True
+
+
 def install_netguard(files, directory: str, page: str) -> dict:
     name = login_name(directory)
     if files.exists(name):

@@ -1334,8 +1334,7 @@ async def set_portal_folder(device_id: str, body: PortalFolderUpdate, db: AsyncS
             raise portal_install.PortalError(f"{directory}/login.html was not found on the router")
         _set_hotspot_directory(device, directory)
         files = _router_files(device)
-        if portal_install.describe(files, directory, str(device.id))["buy_button"] == "other":
-            portal_install.install_custom(files, directory, custom_portal_button(str(device.id)))
+        portal_install.repoint_buy_button(files, directory, str(device.id), custom_portal_button(str(device.id)))
         return portal_install.describe(files, directory, str(device.id))
 
     result = await _portal_action(switch)

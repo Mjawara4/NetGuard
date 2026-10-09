@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -67,8 +68,13 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Could not verify TimescaleDB hypertable: {e}")
         # Non-critical, continue startup
     
+    # Keep every router's Buy button pointing at its own router.
+    from app.services import portal_keeper
+    keeper = asyncio.create_task(portal_keeper.run_forever())
+
     yield
     # Shutdown
+    keeper.cancel()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
