@@ -133,4 +133,13 @@ describe('PortalSettings', () => {
         await screen.findByLabelText('Portal folder');
         expect(screen.queryByLabelText('Hotspot')).toBeNull();
     });
+
+    it('says the router is offline instead of showing nothing', async () => {
+        api.get.mockImplementation((url) => {
+            if (url.endsWith('/portal-config')) return Promise.resolve({ data: { mode: 'custom', button_html: '' } });
+            return Promise.reject({ response: { status: 503, data: { detail: 'NetGuard could not reach this router.' } } });
+        });
+        render(<PortalSettings device={DEVICE} />);
+        expect(await screen.findByText(/can't reach this router/i)).toBeInTheDocument();
+    });
 });

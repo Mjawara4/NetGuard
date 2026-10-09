@@ -32,7 +32,8 @@ async def _load_context(db: AsyncSession, device_id: UUID):
         select(Device, Organization)
         .join(Site, Device.site_id == Site.id)
         .join(Organization, Site.organization_id == Organization.id)
-        .where(Device.id == device_id)
+        # A retired router sells nothing.
+        .where(Device.id == device_id, Device.archived_at.is_(None))
     )
     row = result.first()
     if not row:

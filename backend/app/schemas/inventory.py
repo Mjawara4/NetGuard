@@ -91,6 +91,7 @@ class DeviceResponse(BaseModel):
     wg_public_key: Optional[str] = None
     # wg_private_key excluded - sensitive
     created_at: datetime
+    archived_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True

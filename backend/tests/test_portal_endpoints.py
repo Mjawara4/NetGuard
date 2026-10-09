@@ -309,3 +309,17 @@ async def test_saving_the_voucher_template_keeps_the_chosen_hotspot(monkeypatch)
     await hotspot.update_voucher_template(
         str(device.id), hotspot.VoucherTemplate(), db=db, actor=hotspot.User(role=hotspot.UserRole.SUPER_ADMIN))
     assert device.voucher_template["portal_hotspot"] == "guests"
+
+
+async def test_an_offline_router_is_reported_as_unreachable_not_as_a_server_error(monkeypatch):
+    import routeros_api
+    device, db = _setup(monkeypatch, Files())
+
+    def offline(d):
+        raise routeros_api.exceptions.RouterOsApiConnectionError("timed out")
+
+    monkeypatch.setattr(hotspot, "_router_hotspots", offline)
+    with pytest.raises(HTTPException) as error:
+        await hotspot.get_portal_status(str(device.id), db=db, actor=None)
+    assert error.value.status_code == 503
+    assert "could not reach" in error.value.detail

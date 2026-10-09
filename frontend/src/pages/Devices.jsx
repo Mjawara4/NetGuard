@@ -26,10 +26,28 @@ export default function Devices() {
         fetchDevices();
     }, []);
 
+    // Routers the owner removed that had taken payments: kept, hidden, restorable.
+    const [removedDevices, setRemovedDevices] = useState([]);
+
     const fetchDevices = async () => {
         const res = await api.get('/inventory/devices');
         setDevices(res.data);
+        try {
+            const removed = await api.get('/inventory/devices', { params: { archived: true } });
+            setRemovedDevices((removed.data || []).filter((d) => d.archived_at));
+        } catch {
+            setRemovedDevices([]);
+        }
     }
+
+    const handleRestore = async (deviceId) => {
+        try {
+            await api.post(`/inventory/devices/${deviceId}/restore`);
+            fetchDevices();
+        } catch (e) {
+            alert(`Could not restore the router: ${e.response?.data?.detail || e.message}`);
+        }
+    };
 
     const fetchDeviceMetrics = async (deviceId) => {
         try {
@@ -50,9 +68,12 @@ export default function Devices() {
     };
 
     const handleDelete = async (deviceId) => {
-        if (window.confirm("Are you sure you want to delete this device? All history will be lost.")) {
+        if (window.confirm("Remove this device from your list?\n\nA router that has taken customer payments is kept under \"Removed routers\" with its history, and can be restored. Any other device is deleted permanently, with its history.")) {
             try {
-                await api.delete(`/inventory/devices/${deviceId}`);
+                const res = await api.delete(`/inventory/devices/${deviceId}`);
+                if (res?.data?.result === 'archived') {
+                    alert(`Router removed from your list. It has ${res.data.payments} completed payment${res.data.payments === 1 ? '' : 's'}, so its history was kept. You can bring it back under "Removed routers".`);
+                }
                 fetchDevices();
                 if (selectedDevice && selectedDevice.id === deviceId) {
                     setSelectedDevice(null);
@@ -378,6 +399,20 @@ export default function Devices() {
                                     emptyMessage="Your inventory is empty."
                                 />
                             </div>
+                            {removedDevices.length > 0 && (
+                                <details className="mt-4 bg-white dark:bg-ink-800 p-4 rounded-lg border border-ink-200 dark:border-ink-700">
+                                    <summary className="cursor-pointer text-sm font-bold text-ink-700 dark:text-ink-200">{`Removed routers (${removedDevices.length})`}</summary>
+                                    <p className="mt-2 text-xs text-ink-500 dark:text-ink-400">These took customer payments, so their history is kept. They are not monitored and sell nothing.</p>
+                                    <ul className="mt-3 space-y-2">
+                                        {removedDevices.map((d) => (
+                                            <li key={d.id} className="flex items-center justify-between gap-3 text-sm text-ink-900 dark:text-ink-50">
+                                                <span>{d.name} <span className="font-mono text-xs text-ink-500 dark:text-ink-400">{d.ip_address}</span></span>
+                                                <button type="button" onClick={() => handleRestore(d.id)} className="px-3 py-1 rounded-md border border-ink-300 dark:border-ink-600 text-xs font-bold text-ink-700 dark:text-ink-200">Restore</button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </details>
+                            )}
                         </div>
                     </div>
 

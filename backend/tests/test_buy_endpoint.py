@@ -189,3 +189,18 @@ async def test_status_returns_the_voucher_once_fulfilled():
                            amount=10, currency="GMD", status="fulfilled", voucher_username="abcd1234")
     out = await buy.payment_status(intent=intent.id, router=intent.device_id, db=_status_db(intent))
     assert out == {"status": "fulfilled", "voucher_username": "abcd1234"}
+
+
+async def test_a_retired_router_is_not_found_by_the_buy_page():
+    from unittest.mock import AsyncMock, MagicMock
+    import uuid
+    from fastapi import HTTPException
+    from app.routers import buy
+    result = MagicMock()
+    result.first.return_value = None
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+    with pytest.raises(HTTPException) as error:
+        await buy._load_context(db, uuid.uuid4())
+    assert error.value.status_code == 404
+    assert "archived_at IS NULL" in str(db.execute.await_args.args[0])

@@ -18,6 +18,14 @@ from app.routers import devices
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def payments(monkeypatch):
+    """Completed payments on the router under test; none unless a test says so."""
+    state = {"count": 0}
+    monkeypatch.setattr(devices, "_completed_payments", AsyncMock(side_effect=lambda db, device_id: state["count"]))
+    return state
+
+
 def _db(device):
     result = MagicMock()
     result.scalars.return_value.first.return_value = device
@@ -94,3 +102,57 @@ async def test_missing_device_is_404_and_deletes_nothing():
     assert getattr(ei.value, "status_code", None) == 404
     db.delete.assert_not_awaited()
     db.commit.assert_not_awaited()
+
+
+# --- a router that has taken money is retired, never erased ---
+
+async def test_unpaid_payment_attempts_go_with_the_router():
+    # They reference the device, so leaving them made every delete fail with a 500.
+    device = Device(id=uuid.uuid4(), name="r1", ip_address="10.13.13.3", site_id=uuid.uuid4())
+    db = _db(device)
+    out = await devices.delete_device(str(device.id), db=db, actor=APIKey(organization_id=None))
+    tables = _executed_tables(db)
+    assert "payment_intents" in tables
+    assert out == {"result": "deleted", "payments": 0}
+    db.delete.assert_awaited_once_with(device)
+
+
+async def test_a_router_with_completed_payments_is_retired_and_nothing_is_deleted(payments):
+    payments["count"] = 13
+    device = Device(id=uuid.uuid4(), name="r1", ip_address="10.13.13.3", site_id=uuid.uuid4(), is_active=True)
+    db = _db(device)
+    out = await devices.delete_device(str(device.id), db=db, actor=APIKey(organization_id=None))
+    assert out == {"result": "archived", "payments": 13}
+    assert device.archived_at is not None
+    assert device.is_active is False
+    assert _executed_tables(db) == [], "history was deleted from a router that has taken payments"
+    db.delete.assert_not_awaited()
+    db.commit.assert_awaited_once()
+
+
+async def test_a_retired_router_can_be_restored(payments):
+    from datetime import datetime
+    device = Device(id=uuid.uuid4(), name="r1", ip_address="10.13.13.3", site_id=uuid.uuid4(),
+                    is_active=False, archived_at=datetime(2026, 10, 9))
+    db = _db(device)
+    db.refresh = AsyncMock()
+    out = await devices.restore_device(str(device.id), db=db, actor=APIKey(organization_id=None))
+    assert device.archived_at is None and device.is_active is True
+    assert out is device
+    db.commit.assert_awaited_once()
+
+
+async def test_the_device_list_leaves_retired_routers_out_unless_asked():
+    db = _db(None)
+    db.execute.return_value.scalars.return_value.all.return_value = []
+    await devices.get_devices(skip=0, limit=100, archived=False, db=db, actor=APIKey(organization_id=None))
+    assert "archived_at IS NULL" in str(db.execute.await_args.args[0])
+    await devices.get_devices(skip=0, limit=100, archived=True, db=db, actor=APIKey(organization_id=None))
+    assert "archived_at IS NOT NULL" in str(db.execute.await_args.args[0])
+
+
+async def test_agents_get_no_credentials_for_a_retired_router():
+    db = _db(None)
+    db.execute.return_value.scalars.return_value.all.return_value = []
+    await devices.get_device_credentials(db=db, actor=APIKey(organization_id=None))
+    assert "archived_at IS NULL" in str(db.execute.await_args.args[0])

@@ -34,7 +34,7 @@ export default function PortalSettings({ device }) {
                 setStatus(data);
                 setFolder(data.directory || '');
             })
-            .catch(() => setStatus(null));
+            .catch((e) => setStatus(e?.response?.status === 503 ? { offline: true } : null));
     }, [device.id]);
 
     useEffect(() => {
@@ -135,7 +135,12 @@ export default function PortalSettings({ device }) {
                 <button type="button" disabled={busy} aria-pressed={mode === 'netguard'} onClick={chooseNetguard} className={modeButton(mode === 'netguard')}>NetGuard portal</button>
             </div>
 
-            {status && (
+            {status?.offline && (
+                <p className="mb-4 rounded-md bg-ink-50 dark:bg-ink-900 p-3 text-xs text-ink-700 dark:text-ink-200">
+                    NetGuard can&apos;t reach this router right now, so it can&apos;t show or change its login page. Check that the router is online.
+                </p>
+            )}
+            {status && !status.offline && (
                 <p className="mb-4 rounded-md bg-ink-50 dark:bg-ink-900 p-3 text-xs text-ink-700 dark:text-ink-200">
                     {SERVING[status.login_page] || 'Router state unknown'}
                     {status.directory && <> — <code>{`${status.directory}/login.html`}</code></>}

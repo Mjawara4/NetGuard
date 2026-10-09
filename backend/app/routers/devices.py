@@ -1,6 +1,8 @@
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+
 from sqlalchemy import select, delete
 from typing import Annotated, List
 from uuid import UUID
@@ -98,7 +100,8 @@ async def get_device_credentials(
     if actor.organization_id:
         query = select(Device).join(Site).where(Site.organization_id == actor.organization_id)
 
-    result = await db.execute(query)
+    # A retired router is not monitored.
+    result = await db.execute(query.where(Device.archived_at.is_(None)))
     out = []
     for d in result.scalars().all():
         decrypt_device_secrets(d)
@@ -117,6 +120,7 @@ async def get_device_credentials(
 async def get_devices(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    archived: Annotated[bool, Query(description="List the retired routers instead of the ones in use")] = False,
     db: AsyncSession = Depends(get_db),
     actor = Depends(get_authorized_actor)
 ):
@@ -136,6 +140,9 @@ async def get_devices(
             else:
                 return []
 
+    # Every consumer of this list -- the dashboard, monitoring, the tunnel peer
+    # list -- should stop seeing a retired router, so it is the default.
+    base_query = base_query.where(Device.archived_at.isnot(None) if archived else Device.archived_at.is_(None))
     result = await db.execute(base_query.offset(skip).limit(limit))
     devices = result.scalars().all()
     for d in devices:
@@ -158,8 +165,58 @@ async def get_device(device_id: str, db: AsyncSession = Depends(get_db), actor =
         raise HTTPException(status_code=404, detail="Device not found")
     return device
 
-@router.delete("/devices/{device_id}", status_code=204)
+# Payments in these states mean money changed hands.
+_COMPLETED_PAYMENT_STATES = ("paid", "fulfilled")
+
+
+async def _completed_payments(db: AsyncSession, device_id: UUID) -> int:
+    from sqlalchemy import func
+    from app.models.core import PaymentIntent
+    result = await db.execute(
+        select(func.count()).select_from(PaymentIntent).where(
+            PaymentIntent.device_id == device_id,
+            PaymentIntent.status.in_(_COMPLETED_PAYMENT_STATES)))
+    return int(result.scalar() or 0)
+
+
+async def _owned_device(device_id: str, db: AsyncSession, actor):
+    try:
+        device_uuid = UUID(device_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
+        query = select(Device).where(Device.id == device_uuid)
+    elif isinstance(actor, APIKey) and not actor.organization_id:
+        query = select(Device).where(Device.id == device_uuid)
+    else:
+        query = select(Device).join(Site).where(Device.id == device_uuid, Site.organization_id == actor.organization_id)
+    device = (await db.execute(query)).scalars().first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device
+
+
+@router.post("/devices/{device_id}/restore", response_model=DeviceResponse)
+async def restore_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    """Bring a retired router back into the device list."""
+    device = await _owned_device(device_id, db, actor)
+    device.archived_at = None
+    device.is_active = True
+    await db.commit()
+    await db.refresh(device)
+    return device
+
+
+@router.delete("/devices/{device_id}")
 async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):
+    """Remove a router. One that has taken payments is retired, not erased.
+
+    Payment records are the only proof of what customers paid, so a router that
+    has any completed payment keeps its row and all its history: it is marked
+    archived, which drops it from every device list (and so from monitoring and
+    the tunnel peer list), and can be restored. A router with no completed
+    payment is deleted outright, along with payment attempts that never paid.
+    """
     
     # Check existence and ownership
     if isinstance(actor, User) and actor.role == UserRole.SUPER_ADMIN:
@@ -184,9 +241,16 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), acto
     # violation, surfaced to the operator as "Failed to delete device". The first
     # pass missed hotspot_sales/voucher_batches; the second missed that incidents
     # and auto_fix_actions reference the alerts we were deleting.
-    from app.models.core import VoucherSale, VoucherBatch
+    from app.models.core import PaymentIntent, VoucherSale, VoucherBatch
     from app.models.monitoring import Incident, AutoFixAction
     dev_uuid = UUID(device_id)
+
+    paid = await _completed_payments(db, dev_uuid)
+    if paid:
+        device.archived_at = datetime.utcnow()
+        device.is_active = False
+        await db.commit()
+        return {"result": "archived", "payments": paid}
     device_alerts = select(Alert.id).where(Alert.device_id == dev_uuid)
 
     # Grandchildren first: they point at this device's alerts.
@@ -197,11 +261,13 @@ async def delete_device(device_id: str, db: AsyncSession = Depends(get_db), acto
     await db.execute(delete(VoucherSale).where(VoucherSale.device_id == dev_uuid))
     await db.execute(delete(VoucherBatch).where(VoucherBatch.device_id == dev_uuid))
     await db.execute(delete(Metric).where(Metric.device_id == dev_uuid))
+    # Only attempts that never paid can be left here; see the check above.
+    await db.execute(delete(PaymentIntent).where(PaymentIntent.device_id == dev_uuid))
 
     # The device row goes last, after everything that references it.
     await db.delete(device)
     await db.commit()
-    return
+    return {"result": "deleted", "payments": 0}
 
 @router.put("/devices/{device_id}", response_model=DeviceResponse)
 async def update_device(device_id: str, device_update: DeviceCreate, db: AsyncSession = Depends(get_db), actor = Depends(get_authorized_actor)):

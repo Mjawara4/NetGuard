@@ -1284,6 +1284,9 @@ async def _portal_action(action, *args):
         return await asyncio.to_thread(action, *args)
     except portal_install.PortalError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (routeros_api.exceptions.RouterOsApiConnectionError, OSError) as exc:
+        # An offline router is an ordinary state, not a server fault.
+        raise HTTPException(status_code=503, detail="NetGuard could not reach this router. Check that it is online.") from exc
 
 
 @router.get("/{device_id}/portal-config")

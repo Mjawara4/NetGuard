@@ -106,6 +106,9 @@ class Device(Base):
 
     # Store secrets securely in real world, this is MVP
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Set when the owner removes a router that has taken payments. The row and
+    # its history stay; it is left out of every device list.
+    archived_at = Column(DateTime, nullable=True)
     
     site = relationship("Site", back_populates="devices")
     metrics = relationship("Metric", back_populates="device")
